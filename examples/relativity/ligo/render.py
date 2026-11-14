@@ -1,10 +1,8 @@
-"""Drawing for gravitational-wave antenna patterns: maps of the sky in the Mollweide projection, each
-direction placed over the point on Earth it is straight above, and a ring of free masses across a
-wave from overhead.
-"""
+"""Mollweide sky maps and overhead free-mass ring diagrams render gravitational-wave antenna patterns and spin-two polarization sweeps."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colormaps, patheffects
@@ -12,184 +10,240 @@ from matplotlib.colors import Normalize, to_rgb
 from matplotlib.projections.geo import MollweideAxes
 
 from numga import stack
+from numga.render import Camera, contours, planar, simplices
+from numga.topology import Topology
+from examples.relativity.ligo import core
 from examples.util import charts
 from examples.util.animation import capture
-from numga.topology import Topology
-from numga.render import Camera, contours, planar, simplices
 from examples.util.panels import offset_panel, overlay, panel
-from examples.relativity.ligo import core
 
-# Colour maps for signed responses, for sensitivities and for likeness; the colours of the sites, the
-# ring and the arms; the drawn reach of the arms on the ring, the samples of the ring at rest, and the
-# ring view's half width; the sizes in pixels of the detectors' maps, three to a row and a row per detector, and of
-# the network's two maps; the sites' discs, twice a dot's size, and the arms, twice a curve's width, in pixels.
-SIGNED, SENSITIVE = "RdBu_r", "magma"
-SITE, LABEL, RING, REST, ARM = "#22d3ee", "#0f172a", "#0369a1", "#cbd5e1", "#f97316"
-ARM_REACH = 1.25
-REST_SAMPLES = 199
-RING_LIMIT = 1.5
-MAP_PX, ROW_PX, NETWORK_PX = 760, 140, (600, 160)
-SITE_RADIUS, ARM_WIDTH = charts.MARKER_PX, 2 * charts.LINE_PX
-# The Mollweide projection of longitudes and latitudes, in radians, onto the plane of a map, an ellipse twice as wide as
-# it is high, its half width and height these; the map's view a little wider, for its outline. The graticule: meridians
-# every 30 degrees, between the parallels at 75 degrees, and parallels every 15 degrees, white and faint; the samples
-# along a meridian, and along the outline.
+# Colour maps for signed responses and sensitivities, plus detector-site, ring, and arm inks.
+signed_cmap, sensitivity_cmap = "RdBu_r", "magma"
+site_colour, label_colour, ring_colour, rest_colour, arm_colour = (
+    "#22d3ee",
+    "#0f172a",
+    "#0369a1",
+    "#cbd5e1",
+    "#f97316",
+)
+arm_reach = 1.25
+n_rest_samples = 199
+ring_limit = 1.5
+map_px, row_px, network_px = 760, 140, (600, 160)
+site_radius, arm_width = charts.MARKER_PX, 2 * charts.LINE_PX
+
+# Mollweide projection geometry and graticule sampling counts.
 mollweide = MollweideAxes.MollweideTransform(1)
-MAP_HALF, MAP_MARGIN = np.array([2 * np.sqrt(2), np.sqrt(2)]), 1.02
-MERIDIANS, PARALLELS = np.radians(np.arange(-150, 151, 30)), np.radians(np.arange(-75, 76, 15))
-GRATICULE_OPACITY = 0.25
-N_MERIDIAN_SAMPLES, N_OUTLINE_SAMPLES = 31, 121
-# The polarization animation's response in flat bands, centred on evenly spaced levels from -1 to 1, an odd count so
-# that no response is one band, white: a frame changes only where the bands' edges move.
-N_RESPONSE_BANDS = 9
+map_half, map_margin = np.array([2 * np.sqrt(2), np.sqrt(2)]), 1.02
+meridian_angles = np.radians(np.arange(-150, 151, 30))
+parallel_angles = np.radians(np.arange(-75, 76, 15))
+n_meridians, n_parallels = len(meridian_angles), len(parallel_angles)
+graticule_opacity = 0.25
+n_meridian_samples, n_outline_samples = 31, 121
+# Odd band count centres zero response on a white band so frame diffs move only along band edges.
+n_response_bands = 9
 
 
-# --- plumbing -------------------------------------------------------------------------
-def lonlat(directions: core.Point) -> np.ndarray:
-    """The longitude and latitude in radians of directions, on the last axis, from their pairings with the planes x, y
-    and z."""
+def longitude_latitude(directions: core.Point) -> np.ndarray:
+    """Longitude and latitude coordinates (`[..., 2]`, radians) read out unit spatial directions by pairing with `x`, `y`, and `z`."""
     mv = core.mv
     longitude = np.arctan2((mv.y & directions).to_array(), (mv.x & directions).to_array())
     latitude = np.arcsin(np.clip((mv.z & directions).to_array(), -1, 1))
     return np.stack([longitude, latitude], axis=-1)
 
 
-def projected(longitudes_latitudes: np.ndarray) -> np.ndarray:
-    """Longitudes and latitudes in radians, on the last axis, as places on the map, across and up, on the last axis:
-    the Mollweide projection."""
+def mollweide_places(longitudes_latitudes: np.ndarray) -> np.ndarray:
+    """Planar coordinates (`[..., 2]`) map radian `(longitude, latitude)` pairs onto the Mollweide ellipse."""
     shape = longitudes_latitudes.shape
     return mollweide.transform(longitudes_latitudes.reshape(-1, 2)).reshape(shape)
 
 
-def graticule() -> tuple[planar.Point, Topology]:
-    """The map's meridians, between the parallels at 75 degrees, and its parallels, straight across the map: their
-    points on the map, one line after another, and the chains of edges along them."""
-    cap = PARALLELS[-1]
-    latitudes = np.linspace(-cap, cap, N_MERIDIAN_SAMPLES)
-    meridians = np.stack(np.broadcast_arrays(MERIDIANS[:, None], latitudes[None, :]), axis=-1)   # [meridians, samples, 2]
-    parallels = np.stack(np.broadcast_arrays(np.array([-np.pi, np.pi])[None, :], PARALLELS[:, None]), axis=-1)   # [parallels, 2, 2]
+def map_graticule() -> tuple[planar.Point, Topology]:
+    """Meridian and parallel sample points on the Mollweide plane pair with their chain topology."""
+    cap = parallel_angles[-1]
+    latitudes = np.linspace(-cap, cap, n_meridian_samples)
+    meridians = np.stack(
+        np.broadcast_arrays(meridian_angles[:, None], latitudes[None, :]),
+        axis=-1,
+    )                                                                                   # [n_meridians, n_meridian_samples, 2]
+    parallels = np.stack(
+        np.broadcast_arrays(np.array([-np.pi, np.pi])[None, :], parallel_angles[:, None]),
+        axis=-1,
+    )                                                                                   # [n_parallels, 2, 2]
     places = np.concatenate([meridians.reshape(-1, 2), parallels.reshape(-1, 2)])
-    return (planar.mv.point(projected(places)),
-            Topology.chains([N_MERIDIAN_SAMPLES] * len(MERIDIANS) + [2] * len(PARALLELS)))
+    chains = Topology.chains([n_meridian_samples] * n_meridians + [2] * n_parallels)
+    return planar.mv.point(mollweide_places(places)), chains
 
 
-def outline() -> planar.Point:
-    """The map's rim, the meridian at the antimeridian on both sides, up the left and down the right: its points on the
-    map, a closed loop of them."""
-    latitudes = np.linspace(-np.pi / 2, np.pi / 2, N_OUTLINE_SAMPLES)
+def map_outline() -> planar.Point:
+    """Antimeridian rim points (`[2 * n_outline_samples] Point-`) trace the closed outer boundary of the Mollweide ellipse."""
+    latitudes = np.linspace(-np.pi / 2, np.pi / 2, n_outline_samples)
     left = np.stack(np.broadcast_arrays(-np.pi, latitudes), axis=-1)
     right = np.stack(np.broadcast_arrays(np.pi, latitudes[::-1]), axis=-1)
-    return planar.mv.point(projected(np.concatenate([left, right])))
+    return planar.mv.point(mollweide_places(np.concatenate([left, right])))
 
 
 def map_camera(ax: plt.Axes) -> Camera:
-    """A map's axes framed about the projection's ellipse, without axes; the camera looking down on the map's plane."""
-    half = MAP_MARGIN * MAP_HALF
+    """Planar camera frames `ax` tightly around the Mollweide ellipse with axes hidden."""
+    half = map_margin * map_half
     ax.set(xlim=(-half[0], half[0]), ylim=(-half[1], half[1]), aspect="equal")
     ax.set_axis_off()
     return panel(ax, planar.mv.x, planar.mv.y, planar.mv.w)
 
 
-def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str, low: float, high: float,
-            zeniths: core.Point, names: list[str], bands: tuple[contours.Bands, ...] = ()) -> None:
-    """One map over the sky `[latitudes, longitudes]`, each direction at the place the Mollweide projection gives its
-    longitude and latitude, coloured between its corners, or filled in `bands`, with a faint graticule and its outline,
-    and a disc over each site, with its name."""
+def rgb_ink(colour: str) -> np.ndarray:
+    """RGB float triplet (`[3]`) converts a hex colour string for `simplices` drawing."""
+    return np.array(to_rgb(colour))
+
+
+def sky_map(
+    ax: plt.Axes,
+    directions: core.Point,
+    values: core.Scalar,
+    cmap: str,
+    low: float,
+    high: float,
+    zeniths: core.Point,
+    names: list[str],
+    bands: tuple[contours.Bands, ...] = (),
+) -> None:
+    """Renders one Mollweide sky field (`[n_latitudes, n_longitudes]`) on `ax` with graticule, rim, and labelled site markers."""
     n_latitudes, n_longitudes = directions.shape
-    sky = planar.mv.point(projected(lonlat(directions))).reshape(-1)          # [latitudes * longitudes] Point-
-    values = values.to_array().reshape(-1)
-    colours = colormaps[cmap](Normalize(low, high)(values))[:, :3]
-    lines, chains = graticule()
-    sites = projected(lonlat(zeniths))                                       # [sites, 2]
+    n_sites = zeniths.shape[0]
+    sky = planar.mv.point(mollweide_places(longitude_latitude(directions))).reshape(-1)   # [n_latitudes * n_longitudes] Point-
+    flat_values = values.to_array().reshape(-1)
+    colours = colormaps[cmap](Normalize(low, high)(flat_values))[:, :3]
+    lines, chains = map_graticule()
+    sites = mollweide_places(longitude_latitude(zeniths))                                 # [n_sites, 2]
     camera = map_camera(ax)
-    overlay(ax, [
-        contours.picture(sky, Topology.grid(n_latitudes, n_longitudes), values, colours, camera,
-                         bands=bands),
-        simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=GRATICULE_OPACITY),
-        simplices.strokes(outline(), Topology.loops([2 * N_OUTLINE_SAMPLES]), np.zeros(3),
-                          charts.FRAME_PX, camera),
-        simplices.markers(planar.mv.point(sites), ink(LABEL), SITE_RADIUS + charts.FRAME_PX, camera),
-        simplices.markers(planar.mv.point(sites), ink(SITE), SITE_RADIUS, camera)])
+    overlay(
+        ax,
+        [
+            contours.picture(sky, Topology.grid(n_latitudes, n_longitudes), flat_values, colours, camera, bands=bands),
+            simplices.strokes(lines, chains, np.ones(3), charts.FRAME_PX, camera, opacity=graticule_opacity),
+            simplices.strokes(
+                map_outline(),
+                Topology.loops([2 * n_outline_samples]),
+                np.zeros(3),
+                charts.FRAME_PX,
+                camera,
+            ),
+            simplices.markers(planar.mv.point(sites), rgb_ink(label_colour), site_radius + charts.FRAME_PX, camera),
+            simplices.markers(planar.mv.point(sites), rgb_ink(site_colour), site_radius, camera),
+        ],
+    )
     for site, name in zip(sites, names):
-        ax.annotate(name, site, xytext=(6, 4), textcoords="offset points", color=LABEL,
-                    path_effects=[patheffects.withStroke(linewidth=2.5, foreground="white")])
+        ax.annotate(
+            name,
+            site,
+            xytext=(6, 4),
+            textcoords="offset points",
+            color=label_colour,
+            path_effects=[patheffects.withStroke(linewidth=2.5, foreground="white")],
+        )
 
 
 @charts.style()
-def draw_patterns(directions: core.Point, plus: core.Scalar, cross: core.Scalar, sensitivities: core.Scalar,
-                  zeniths: core.Point, names: list[str]) -> plt.Figure:
-    """A row per detector: its response to the plus strain, to the cross strain, and its sensitivity."""
-    figure = plt.figure(figsize=(MAP_PX / charts.DPI, (ROW_PX * len(names) + 10) / charts.DPI))
-    for detector, name in enumerate(names):
-        maps = [plus[detector], cross[detector], sensitivities[detector]]
-        for column, (values, cmap, low) in enumerate(zip(maps, [SIGNED, SIGNED, SENSITIVE], [-1, -1, 0])):
+def patterns_figure(
+    directions: core.Point,
+    plus_response: core.Scalar,
+    cross_response: core.Scalar,
+    sensitivities: core.Scalar,
+    zeniths: core.Point,
+    names: list[str],
+) -> plt.Figure:
+    """Renders a three-column figure per detector showing plus response, cross response, and directional sensitivity."""
+    figure = plt.figure(figsize=(map_px / charts.DPI, (row_px * len(names) + 10) / charts.DPI))
+    for detector, _ in enumerate(names):
+        for column in range(3):
             figure.add_subplot(len(names), 3, 3 * detector + column + 1)
     figure.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.02, hspace=0.08, wspace=0.06)
-    # The maps drawn once the layout is set, each at the pixels its panel gets.
     for detector, name in enumerate(names):
-        maps = [plus[detector], cross[detector], sensitivities[detector]]
-        for column, (values, cmap, low) in enumerate(zip(maps, [SIGNED, SIGNED, SENSITIVE], [-1, -1, 0])):
-            sky_map(figure.axes[3 * detector + column], directions, values, cmap, low, 1,
-                    zeniths[detector:detector + 1], [name])
+        maps = [plus_response[detector], cross_response[detector], sensitivities[detector]]
+        for column, (values, cmap, low) in enumerate(zip(maps, [signed_cmap, signed_cmap, sensitivity_cmap], [-1, -1, 0])):
+            sky_map(
+                figure.axes[3 * detector + column],
+                directions,
+                values,
+                cmap,
+                low,
+                1,
+                zeniths[detector : detector + 1],
+                [name],
+            )
     return figure
 
 
 @charts.style()
-def draw_network(directions: core.Point, network: core.Scalar, alike: core.Scalar, zeniths: core.Point,
-                 names: list[str]) -> plt.Figure:
-    """The network's sensitivity, and how alike the detectors' readings of the same wave are."""
-    figure = plt.figure(figsize=(NETWORK_PX[0] / charts.DPI, NETWORK_PX[1] / charts.DPI))
+def network_figure(
+    directions: core.Point,
+    network_sensitivity: core.Scalar,
+    alignment: core.Scalar,
+    zeniths: core.Point,
+    names: list[str],
+) -> plt.Figure:
+    """Renders side-by-side Mollweide sky maps of combined network sensitivity and detector response alignment."""
+    figure = plt.figure(figsize=(network_px[0] / charts.DPI, network_px[1] / charts.DPI))
     axes = figure.subplots(1, 2)
     figure.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.02, wspace=0.06)
-    for ax, (values, cmap, low, high) in zip(axes, [(network, SENSITIVE, 0, np.sqrt(len(names))),
-                                                     (alike, SIGNED, -1, 1)]):
+    panels = [
+        (network_sensitivity, sensitivity_cmap, 0, np.sqrt(len(names))),
+        (alignment, signed_cmap, -1, 1),
+    ]
+    for ax, (values, cmap, low, high) in zip(axes, panels):
         sky_map(ax, directions, values, cmap, low, high, zeniths, names)
     return figure
 
 
-def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point) -> None:
-    """The ring of free masses across a wave from overhead, at rest and stretched, with the detector's
-    arms, seen from above: east to the right, north up."""
+def overhead_ring_panel(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point) -> None:
+    """Renders the horizontal test-mass ring at rest and under tidal strain alongside the two interferometer arms."""
     mv = core.mv
-    ax.set(xlim=(-RING_LIMIT, RING_LIMIT), ylim=(-RING_LIMIT, RING_LIMIT), aspect="equal")
+    ax.set(xlim=(-ring_limit, ring_limit), ylim=(-ring_limit, ring_limit), aspect="equal")
     ax.set_axis_off()
-    # East and north at the site: the site's frame carries the planes y and z there, which the camera reads by.
     camera = offset_panel(ax, site >> mv.y, site >> mv.z)
-    # The ring at rest: the unit direction east turned all the way round through north.
-    turns = (mv.yz * (-np.linspace(0, 2 * np.pi, REST_SAMPLES, endpoint=False) / 2)).exp()   # [samples] Rotor+
-    rest = site >> (turns >> mv.y.dual())                                    # [samples] Point-
-    # Each arm from the site out to its drawn reach.
-    reaches = stack((0 * arms, ARM_REACH * arms), axis=-1).reshape(-1)       # [arms * 2] Point-
+    angles = np.linspace(0, 2 * np.pi, n_rest_samples, endpoint=False)
+    turns = (mv.yz * (-angles / 2)).exp()                                               # [n_rest_samples] Rotor+
+    local_rest = turns >> mv.y.dual()                                                   # [n_rest_samples] Point-
+    rest = site >> local_rest                                                           # [n_rest_samples] Point-
+    n_arms = arms.shape[0]
+    reaches = stack((0 * arms, arm_reach * arms), axis=-1).reshape(-1)                  # [2 * n_arms] Point-
     n_masses = ring.shape[0]
-    overlay(ax, [
-        simplices.strokes(rest, Topology.loops([REST_SAMPLES]), ink(REST), charts.LINE_PX, camera),
-        simplices.strokes(reaches, Topology.chains([2] * arms.shape[0]), ink(ARM), ARM_WIDTH, camera),
-        simplices.strokes(ring, Topology.loops([n_masses]), ink(RING), charts.LINE_PX, camera, opacity=0.6),
-        simplices.markers(ring, ink(RING), charts.MARKER_PX / 2, camera)])
+    overlay(
+        ax,
+        [
+            simplices.strokes(rest, Topology.loops([n_rest_samples]), rgb_ink(rest_colour), charts.LINE_PX, camera),
+            simplices.strokes(reaches, Topology.chains([2] * n_arms), rgb_ink(arm_colour), arm_width, camera),
+            simplices.strokes(ring, Topology.loops([n_masses]), rgb_ink(ring_colour), charts.LINE_PX, camera, opacity=0.6),
+            simplices.markers(ring, rgb_ink(ring_colour), charts.MARKER_PX / 2, camera),
+        ],
+    )
 
 
-def ink(colour: str) -> np.ndarray:
-    """A colour's red, green and blue."""
-    return np.array(to_rgb(colour))
-
-
-def animate_polarization(directions: core.Point, responses: core.Scalar, site: core.Rotor, arms: core.Point,
-                         rings: core.Point, name: str, size: tuple[int, int]) -> list[np.ndarray]:
-    """Each frame, in a figure `size` pixels wide and high: the ring stretched by the plus strain at the
-    polarization angle, beside the detector's response to it over the sky, in flat bands."""
-    spacing = 2 / (N_RESPONSE_BANDS - 1)
-    middles = np.linspace(-1, 1, N_RESPONSE_BANDS)
-    bands = contours.Bands(-1 - spacing / 2, spacing, colormaps[SIGNED](Normalize(-1, 1)(middles)))
+def polarization_animation(
+    directions: core.Point,
+    site: core.Rotor,
+    arms: core.Point,
+    name: str,
+    size: tuple[int, int],
+    states: Iterable[tuple[core.Scalar, core.Point]],
+) -> Iterator[np.ndarray]:
+    """Yields `[rows, columns, 3]` RGB frames pairing the deformed overhead mass ring with the banded sky response."""
+    spacing = 2 / (n_response_bands - 1)
+    middles = np.linspace(-1, 1, n_response_bands)
+    bands = contours.Bands(-1 - spacing / 2, spacing, colormaps[signed_cmap](Normalize(-1, 1)(middles)))
+    zenith = site[None] >> core.mv.x.dual()                                             # [1] Point-
 
     @charts.style()
-    def frame(index: int) -> np.ndarray:
+    def rendered_frame(sky_response: core.Scalar, deformed_ring: core.Point) -> np.ndarray:
         figure = plt.figure(figsize=(size[0] / charts.DPI, size[1] / charts.DPI))
         ring_ax = figure.add_subplot(1, 2, 1)
-        ax = figure.add_subplot(1, 2, 2)
+        map_ax = figure.add_subplot(1, 2, 2)
         figure.subplots_adjust(left=0.01, right=0.99, bottom=0.03, top=0.97, wspace=0.05)
-        draw_ring(ring_ax, site, arms, rings[index])
-        sky_map(ax, directions, responses[index], SIGNED, -1, 1, site[None] >> core.mv.x.dual(), [name], (bands,))
+        overhead_ring_panel(ring_ax, site, arms, deformed_ring)
+        sky_map(map_ax, directions, sky_response, signed_cmap, -1, 1, zenith, [name], (bands,))
         pixels = capture(figure)
         plt.close(figure)
         return pixels
-    return [frame(index) for index in range(rings.shape[0])]
+
+    for sky_response, deformed_ring in states:
+        yield rendered_frame(sky_response, deformed_ring)

@@ -1,133 +1,130 @@
-"""Satellite navigation recovers a reception event and its uncertainty from transmission events.
+"""Satellite navigation recovers a spacetime reception event and its uncertainty from arriving signal timestamps.
 
-Projective spacetime algebra describes events as intrinsic antivectors and readouts as
-extrinsic vectors. Each signal's light cone is a correlation from events to planes: the line from
-the transmission to an event, contracted with the transmission, `emitted | (emitted & Event)`.
-Timing sensitivities contribute positive dyads to an information map; its inverse
-describes uncertainty in both location and reception time.
-
-Lengths are in Earth radii and times in Earth-radius light-travel times, so light speed is one.
+Projective spacetime geometric algebra models events as intrinsic antivectors and measurement slices as extrinsic vectors. Each transmission event defines its light cone as a quadratic duality map from events to hyperplanes, `emitted | (emitted & Event)`, whose pairing with an event vanishes along null rays. Linearizing those intervals around a reception event builds a positive-definite information duality map whose inverse jointly captures spatial position and receiver-clock uncertainty.
 """
 
 from __future__ import annotations
+
+import numpy as np
 
 from numga import Algebra, NumpyContext, stack, where
 
 ga = Algebra("x+y+z+t-w0")
 mv = NumpyContext(ga).multivector
-Event = ga.gatype.antivector()
-Slice = ga.gatype.vector()
-Scalar = ga.gatype.scalar()
-Readout = Slice.derive.nondegenerate
-Step = Readout.derive.dual
-Cone = ga.gatype((Slice, Event))
-Information = ga.gatype((Readout, Step))
-Covariance = ga.gatype((Step, Readout))
-Orbit = ga.gatype.bivector()
-# The position readouts, the planes across x, y and z.
-Spatial = Slice.derive.within(Algebra("x+y+z+"))
+Scalar = ga.gatype.scalar()                                                       # Scalar+
+Event = ga.gatype.antivector()                                                    # Antivector-
+Slice = ga.gatype.vector()                                                        # Vector+
+Readout = Slice.derive.nondegenerate                                              # Vector+
+Step = Readout.derive.dual                                                        # Antivector-
+Cone = ga.gatype((Slice, Event))                                                  # Slice+ <- Event-
+Information = ga.gatype((Readout, Step))                                          # Readout+ <- Step-
+Covariance = ga.gatype((Step, Readout))                                           # Step- <- Readout+
+Orbit = ga.gatype.bivector()                                                      # Bivector+
+# Purely spatial readout planes spanning `x`, `y`, and `z`.
+Spatial = Slice.derive.within(Algebra("x+y+z+"))                                  # Vector+
 
-origin = mv.w.dual()
-across = mv.x.dual()
-time = -mv.t.dual()
+origin = mv.w.dual()                                                              # [] Event-
+across = mv.x.dual()                                                              # [] Event-
+time = -mv.t.dual()                                                               # [] Event-
 
 
-def orbit_positions(planes: Orbit, phases: Scalar, radius: float,
+# --- math -----------------------------------------------------------------------------
+def orbit_positions(planes: Orbit, phases: np.ndarray, radius: float,
                     angular_speed: float, times: Scalar) -> Event:
-    """Circular satellite trajectories, evaluated at coordinate times in the local inertial frame."""
-    rotation = (-planes * ((phases + angular_speed * times) / 2)).exp()
-    return origin + (rotation >> across) * radius + time * times
+    """Circular satellite trajectories in `planes` (`[n_satellites] Bivector+`) at `phases`, `radius`, and
+    `angular_speed` take coordinate `times` (`[...] Scalar+`) to `[..., n_satellites] Event-`."""
+    rotations = (-planes * ((phases + angular_speed * times) / 2)).exp()          # [..., n_satellites] Rotor+
+    return origin + (rotations >> across) * radius + time * times                 # [..., n_satellites] Event-
 
 
 def spatial_distance(first: Event, second: Event) -> Scalar:
-    """The distance between events of unit weight in the frame whose time `mv.t` reads: minus the squared norm of the
-    line joining them, their interval, with the square of the time between them added back."""
+    """Rest-frame spatial distance (`[...] Scalar+`) between unit-weight events `first` and `second`
+    combines the squared coordinate-time separation with minus the spacetime join's squared norm."""
     return ((mv.t & (first - second)).squared() - (first & second).scalar_norm_squared()).square_root()
 
 
-def emitted_events(receiver: Event, planes: Orbit, phases: Scalar, radius: float,
+def emitted_events(receiver: Event, planes: Orbit, phases: np.ndarray, radius: float,
                    angular_speed: float, n_steps: int) -> Event:
-    """Retarded transmission events on the orbits whose signals reach the receiver together."""
-    reception_time = mv.t & receiver
-    emission_time = reception_time
+    """Fixed-point iteration over `n_steps` light-time updates locates the retarded satellite
+    transmission events (`[n_satellites] Event-`) whose signals arrive together at `receiver`."""
+    reception_time = mv.t & receiver                                              # [] Scalar+
+    emission_times = reception_time                                               # [] Scalar+
     for _ in range(n_steps):
-        satellites = orbit_positions(planes, phases, radius, angular_speed, emission_time)
-        emission_time = reception_time - spatial_distance(receiver, satellites)
-    return orbit_positions(planes, phases, radius, angular_speed, emission_time)
+        satellites = orbit_positions(planes, phases, radius, angular_speed, emission_times)  # [n_satellites] Event-
+        emission_times = reception_time - spatial_distance(receiver, satellites)  # [n_satellites] Scalar+
+    return orbit_positions(planes, phases, radius, angular_speed, emission_times)  # [n_satellites] Event-
 
 
 def light_cones(emitted: Event) -> Cone:
-    """Homogeneous quadratic correlations whose vertices are the transmission events."""
-    # The line from the transmission to an event, contracted with the transmission: a plane, which the event pairs
-    # with to the line's interval, zero exactly when the line is a light ray.
-    return emitted | (emitted & Event)
+    """Transmission vertices `emitted` (`[..., n_satellites] Event-`) define light-cone quadratic duality maps
+    `emitted | (emitted & Event)` (`[..., n_satellites] Slice+ <- Event-`)."""
+    return emitted | (emitted & Event)                                            # [..., n_satellites] Slice+ <- Event-
 
 
-def intersect_cones(cones: Cone) -> Event:
-    """The two intersections of four light cones, in a finite coordinate-time chart."""
-    # Two cones of one Lorentz form differ by a pair of planes, the plane at infinity and their radical plane: the
-    # difference sends an event to the radical plane times its weight plus the plane at infinity times the radical
-    # plane's reading of it. Read at the origin, the second term is half the difference's own reading of the origin.
-    difference = cones[1:] - cones[0]
-    at_origin = difference(origin)
-    radicals = at_origin - mv.w * ((origin & at_origin) / 2)
-    axis = radicals[0] ^ radicals[1] ^ radicals[2]
+def cone_intersections(cones: Cone) -> Event:
+    """Pairwise radical planes of four `cones` (`[4] Slice+ <- Event-`) meet in a spacetime line whose
+    two intersections (`[2] Event-`) with `cones[0]` solve the four-satellite light-cone system."""
+    # Subtracting two light cones cancels the quadratic Lorentz part, leaving the radical hyperplane paired with `w`.
+    difference = cones[1:] - cones[0]                                             # [3] Slice+ <- Event-
+    at_origin = difference(origin)                                                # [3] Slice+
+    radicals = at_origin - mv.w * ((at_origin & origin) / 2)                      # [3] Slice+
+    axis = radicals[0] ^ radicals[1] ^ radicals[2]                                # [] Trivector+
 
-    # Two time slices locate points on their common line. Normalizing by the
-    # weight also gives these intersections their intrinsic event orientation.
-    base = axis ^ mv.t
-    base = base / (mv.w & base)
-    tip = axis ^ (mv.t - mv.w)
-    tip = tip / (mv.w & tip)
-    direction = tip - base
+    # Intersecting the radical line with two time slices yields unit-weight event points spanning the line.
+    base_cut = axis ^ mv.t
+    base = base_cut / (mv.w & base_cut)                                           # [] Event-
+    tip_cut = axis ^ (mv.t - mv.w)
+    tip = tip_cut / (mv.w & tip_cut)                                              # [] Event-
+    direction = tip - base                                                        # [] Event-
 
-    # The remaining cone cuts the line in two points.
-    quadratic = direction & cones[0](direction)
-    linear = base & cones[0](direction)
-    constant = base & cones[0](base)
-    root = (linear.squared() - quadratic * constant).square_root()
-    parameters = stack((-linear - root, -linear + root)) / quadratic
-    return base + direction * parameters
+    # Solving the quadratic interval along `base + parameter * direction` locates the two null intersections.
+    quadratic = cones[0](direction) & direction                                   # [] Scalar+
+    linear = cones[0](direction) & base                                           # [] Scalar+
+    constant = cones[0](base) & base                                              # [] Scalar+
+    discriminant_root = (linear.squared() - quadratic * constant).square_root()   # [] Scalar+
+    parameters = stack((-linear - discriminant_root, -linear + discriminant_root)) / quadratic  # [2] Scalar+
+    return base + direction * parameters                                          # [2] Event-
 
 
-def reception(candidates: Event, emitted: Event) -> Event:
-    """Of the cones' two intersections, the one every signal reaches after it left."""
-    after = (mv.t & (candidates[:, None] - emitted)) > 0                  # [candidates, signals]
-    return where(after[0].all(), candidates[0], candidates[1])
+def causal_reception(candidates: Event, emitted: Event) -> Event:
+    """Causal ordering selects from `candidates` (`[2] Event-`) the reception event (`[] Event-`)
+    occurring after every transmission in `emitted` (`[n_signals] Event-`)."""
+    after = (mv.t & (candidates[:, None] - emitted)) > 0                          # [2, n_signals]
+    return where(after[0].all(), candidates[0], candidates[1])                    # [] Event-
 
 
-def intervals(cones: Cone, emitted: Event, receiver: Event) -> tuple[Scalar, Readout, Scalar]:
-    """Each signal's interval from its transmission to a reception event, `receiver & cone(receiver)`, which vanishes
-    on the light cone; its readout of a small displacement of the reception, twice the cone's tangent plane there;
-    and how far a timestamp's error moves it, twice the light-travel time."""
-    tangent = cones(receiver[..., None])
-    # The tangent plane's part across the plane at infinity reads no displacement.
-    readout = 2 * tangent.cast(Readout)
-    lever = 2 * (mv.t & (receiver[..., None] - emitted))
-    return receiver[..., None] & tangent, readout, lever
+def cone_intervals(cones: Cone, emitted: Event, receiver: Event) -> tuple[Scalar, Readout, Scalar]:
+    """Pairing `cones` (`[..., n_satellites] Slice+ <- Event-`) with `receiver` yields the squared
+    intervals (`[..., n_satellites] Scalar+`), displacement readouts (`[..., n_satellites] Readout+`),
+    and timestamp error levers (`[..., n_satellites] Scalar+`)."""
+    tangent = cones(receiver[..., None])                                          # [..., n_satellites] Slice+
+    # Projecting out `w` retains the nondegenerate spacetime 1-form reading displacements `Step-`.
+    readout = 2 * tangent.cast(Readout)                                           # [..., n_satellites] Readout+
+    lever = 2 * (mv.t & (receiver[..., None] - emitted))                          # [..., n_satellites] Scalar+
+    return tangent & receiver[..., None], readout, lever
 
 
-def locate(emitted: Event, initial: Event, sigma: float,
-           n_steps: int) -> tuple[Event, Information, Covariance]:
-    """Fit the reception event to noisy timestamps, each to its light cone, and recover the local uncertainty map."""
-    cones = light_cones(emitted)
-    receiver = initial
+def fitted_reception(emitted: Event, initial: Event, sigma: float,
+                     n_steps: int) -> tuple[Event, Information, Covariance]:
+    """Gauss-Newton iteration over `n_steps` fits the reception event (`[...] Event-`) to noisy
+    `emitted` cone vertices with range uncertainty `sigma`, along with `Information` and `Covariance`."""
+    cones = light_cones(emitted)                                                  # [..., n_satellites] Slice+ <- Event-
+    receiver = initial                                                            # [...] Event-
     for _ in range(n_steps):
-        interval, readout, lever = intervals(cones, emitted, receiver)
-        # Each signal's readout contributes a positive cost for the displacements it can see, weighted by how far
-        # its timestamp's uncertainty moves its interval.
-        weight = 1 / (lever * sigma) ** 2
-        information = (weight * readout * (readout & Step)).sum(axis=-1)
-        mismatch = (weight * readout * interval).sum(axis=-1)
-        receiver = receiver - information.solve(mismatch)
+        interval, readout, lever = cone_intervals(cones, emitted, receiver)
+        weight = 1 / (lever * sigma) ** 2                                         # [..., n_satellites] Scalar+
+        information = (weight * readout * (readout & Step)).sum(axis=-1)          # [...] Readout+ <- Step-
+        mismatch = (weight * readout * interval).sum(axis=-1)                     # [...] Readout+
+        receiver = receiver - information.solve(mismatch)                         # [...] Event-
 
-    _, readout, lever = intervals(cones, emitted, receiver)
-    information = (readout * (readout & Step) / (lever * sigma) ** 2).sum(axis=-1)
-    covariance = information.inverse()
+    _, readout, lever = cone_intervals(cones, emitted, receiver)
+    information = (readout * (readout & Step) / (lever * sigma) ** 2).sum(axis=-1)  # [...] Readout+ <- Step-
+    covariance = information.inverse()                                            # [...] Step- <- Readout+
     return receiver, information, covariance
 
-def position_spread(covariance: Covariance) -> Event:
-    """The semi-axes of the position's one-standard-deviation ellipsoid `[..., 3]`: over the principal planes of the
-    covariance between position readouts, each plane's covariance over its standard deviation."""
-    variances, principal = (Spatial & covariance(Spatial)).eigh()
-    return covariance(principal) / variances.square_root()
+
+def position_semi_axes(covariance: Covariance) -> Event:
+    """Principal spatial eigendecomposition of `covariance` (`[...] Step- <- Readout+`) gives the
+    one-standard-deviation position ellipsoid semi-axes (`[..., 3] Event-`)."""
+    variances, principal = (Spatial & covariance(Spatial)).eigh()                 # [..., 3] Scalar+, Readout+
+    return covariance(principal) / variances.square_root()                        # [..., 3] Event-

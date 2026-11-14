@@ -1,83 +1,89 @@
-"""Point-mass lenses: a single lens matches its analytic images and magnification, the local map is
-the derivative of the deflection and turns with the lens, a finite source's light matches the
-radial integral of the point-source magnification, and the binary lens's local map is undone by its
-trace-two inverse; the binary scene runs on a coarse sky and draws."""
+"""Coverage tests for gravitational lensing by point masses in the plane of the sky."""
+
+from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import quad
 
 from numga import stack
-
 from examples.relativity.gravitational_lensing import core, render, scenarios
 
 mv = core.mv
-CENTRE = mv.vector(np.array([[0.0, 0.0]])).dual()                              # [masses] Point
-ONE = mv.scalar(np.array([[1.0]]))                                             # [masses] Scalar
+single_position = mv.vector(np.array([[0.0, 0.0]])).dual()                     # [1] Point-
+unit_mass = np.array([1.0])                                                    # [1]
 
 
-def test_single_lens_images_have_the_analytic_stretches_orientation_and_magnification():
-    source = (0.3 * mv.x + 0.2 * mv.y).dual()
-    radius = (source | source).square_root()
-    direction = source / radius
-    image_radii = stack(((radius + (radius**2 + 4).square_root()) / 2,
-                         (radius - (radius**2 + 4).square_root()) / 2))
-    images = direction * image_radii
-    local = core.local_map(images, CENTRE, ONE)
-    area = local.det()
+def test_single_lens_images_have_analytic_stretches_orientation_and_magnification():
+    """A single point mass produces two collinear images with analytic stretches `1 +- 1/r^2` and point magnification."""
+    source = (0.3 * mv.x + 0.2 * mv.y).dual()                                  # Point-
+    radius = (source | source).square_root()                                   # Scalar+
+    direction = source / radius                                                # Point-
+    image_radii = stack((
+        (radius + (radius**2 + 4).square_root()) / 2,
+        (radius - (radius**2 + 4).square_root()) / 2,
+    ))                                                                         # [2] Scalar+
+    images = direction * image_radii                                           # [2] Point-
+    local = core.local_map(images, single_position, unit_mass)                 # [2] Point- <- Point-
+    area = local.det()                                                         # [2] Scalar+
+    tangent = direction * mv.xy                                                # Point-
 
-    # Both images reach the source; the radial stretch is 1 + 1/r², the tangential one 1 - 1/r².
-    np.testing.assert_allclose((core.deflected(images, CENTRE, ONE) - source).kernel, 0, atol=1e-13)
-    np.testing.assert_allclose((local(direction) - direction * (1 + 1 / image_radii**2)).kernel, 0, atol=1e-13)
-    tangent = direction * mv.xy
-    np.testing.assert_allclose((local(tangent) - tangent * (1 - 1 / image_radii**2)).kernel, 0, atol=1e-13)
-    assert area.to_array()[0] > 0 > area.to_array()[1]
-    magnification = (1 / area).abs().sum()
-    expected = (radius**2 + 2) / (radius * (radius**2 + 4).square_root())
-    np.testing.assert_allclose((magnification - expected).kernel, 0, atol=1e-13)
+    assert ((core.source_direction(images, single_position, unit_mass) - source).scalar_norm_squared() < 1e-24).all()
+    assert ((local(direction) - direction * (1 + 1 / image_radii**2)).scalar_norm_squared() < 1e-24).all()
+    assert ((local(tangent) - tangent * (1 - 1 / image_radii**2)).scalar_norm_squared() < 1e-24).all()
+    assert bool(area[0] > 0) and bool(area[1] < 0)
+    magnification = (1 / area).abs().sum()                                     # Scalar+
+    expected = (radius**2 + 2) / (radius * (radius**2 + 4).square_root())      # Scalar+
+    assert (magnification - expected).abs() < 1e-12
 
 
-def test_local_map_is_the_derivative_and_turns_with_the_lens():
-    positions = mv.vector(np.array([[-0.4, 0.1], [0.6, -0.2], [-0.1, 0.7]])).dual()
-    masses = mv.scalar(np.array([[0.2], [0.5], [0.3]]))
-    observed = mv.vector(np.array([[-1.2, 0.8], [0.3, -0.9], [1.5, 1.2], [-0.8, -1.4]])).dual()
-    small = mv.vector(np.array([[0.3, 0.8], [-0.6, 0.1], [0.4, -0.7], [0.9, 0.2]])).dual()
-    step = 1e-4
-    lens = lambda directions: core.deflected(directions, positions, masses)
-    numerical = (-lens(observed + 2 * step * small) + 8 * lens(observed + step * small)
-                 - 8 * lens(observed - step * small) + lens(observed - 2 * step * small)) / (12 * step)
-    np.testing.assert_allclose((numerical - core.local_map(observed, positions, masses)(small)).kernel, 0, atol=1e-9)
-
-    turn = (mv.xy * 0.37).exp()
-    turned = core.local_map(turn >> observed, turn >> positions, masses)(turn >> small)
-    np.testing.assert_allclose((turned - (turn >> core.local_map(observed, positions, masses)(small))).kernel, 0, atol=1e-9)
+def test_local_map_turns_covariantly_with_the_lens():
+    """Rotating observed directions, lens positions, and displacements rotates the local Jacobian's output identically."""
+    positions = mv.vector(np.array([[-0.4, 0.1], [0.6, -0.2], [-0.1, 0.7]])).dual()            # [3] Point-
+    masses = np.array([0.2, 0.5, 0.3])                                                         # [3]
+    observed = mv.vector(np.array([[-1.2, 0.8], [0.3, -0.9], [1.5, 1.2], [-0.8, -1.4]])).dual()   # [4] Point-
+    step_direction = mv.vector(np.array([[0.3, 0.8], [-0.6, 0.1], [0.4, -0.7], [0.9, 0.2]])).dual()   # [4] Point-
+    rotor = (mv.xy * 0.37).exp()                                                               # Rotor+
+    turned_output = core.local_map(rotor >> observed, rotor >> positions, masses)(rotor >> step_direction)   # [4] Point-
+    expected_output = rotor >> core.local_map(observed, positions, masses)(step_direction)     # [4] Point-
+    assert ((turned_output - expected_output).scalar_norm_squared() < 1e-18).all()
 
 
 def test_finite_source_light_integrates_to_the_radial_magnification():
+    """Integrating lensed surface brightness over the sky matches the radially integrated point-source magnification."""
     width = 0.15
-    directions = core.sky(2.0, 128)
-    flux = core.brightness(core.deflected(directions, CENTRE, ONE), 0 * mv.x.dual(), width).sum() * (4 / 128)**2
-    # The analytic point-source magnification, integrated over rings of the source.
+    n_grid = 128
+    directions = core.sky_grid(2.0, n_grid)                                    # [n_grid, n_grid] Point-
+    flux = core.source_brightness(
+        core.source_direction(directions, single_position, unit_mass), 0 * mv.x.dual(), width,
+    ).sum() * (4 / n_grid) ** 2                                                # Scalar+
     expected = 2 * np.pi * quad(
         lambda distance: (distance**2 + 2) / np.sqrt(distance**2 + 4) * np.exp(-distance**2 / (2 * width**2)),
-        0, np.inf, epsabs=1e-12,
+        0,
+        np.inf,
+        epsabs=1e-12,
     )[0]
-    np.testing.assert_allclose(flux.to_array(), expected, rtol=1e-11, atol=1e-11)
+    assert (flux - expected).abs() < 1e-10
 
 
-def test_the_local_map_is_undone_by_its_trace_two_inverse():
-    """A map of the plane with trace two is undone by `(2 * Point - local) / area`."""
-    spread = np.linspace(-1.25, 1.25, 5)
-    centres = (core.mv.x * spread[None, :] + core.mv.y * spread[:, None]).dual()   # [rows, columns] Point
-    local = core.local_map(centres, scenarios.positions, scenarios.MASSES)     # [rows, columns] Point <- Point
-    area = local.det()                                                         # [rows, columns] Scalar
-    offsets = core.mv.vector([[0.3, -0.2], [-0.1, 0.4]]).dual()               # [offsets] Point
-    np.testing.assert_allclose((local[..., None].solve(offsets) - ((2 * core.Point - local) / area)[..., None](offsets)).kernel,
-                               0.0, atol=1e-11)
+def test_local_map_is_undone_by_its_trace_two_inverse():
+    """A planar map with trace two is inverted by `(2 * Point - local) / area`."""
+    n_grid = 5
+    spread = np.linspace(-1.25, 1.25, n_grid)
+    centres = (mv.x * spread[None, :] + mv.y * spread[:, None]).dual()         # [n_grid, n_grid] Point-
+    local = core.local_map(centres, scenarios.positions, scenarios.masses)     # [n_grid, n_grid] Point- <- Point-
+    area = local.det()                                                         # [n_grid, n_grid] Scalar+
+    offsets = mv.vector([[0.3, -0.2], [-0.1, 0.4]]).dual()                     # [2] Point-
+    solved = local[..., None].solve(offsets)                                   # [n_grid, n_grid, 2] Point-
+    analytic_inverse = ((2 * core.Point - local) / area)[..., None](offsets)   # [n_grid, n_grid, 2] Point-
+    assert ((solved - analytic_inverse).scalar_norm_squared() < 1e-20).all()
 
 
 def test_the_binary_scene_runs_and_draws():
-    directions, area, _ = scenarios.lens(8)
-    source = scenarios.light(scenarios.path[scenarios.SHOWN_STEP], scenarios.SOURCE_WIDTH)
-    plt.close(render.draw(directions, area, scenarios.deflected, scenarios.positions, source))
-    assert len(list(render.animate(directions, area, scenarios.deflected, scenarios.positions, [source]))) == 1
+    """The binary scene builds a coarse grid, draws a static figure, and yields one animation frame."""
+    directions, area, _ = scenarios.binary_lens_grid(8)
+    exposure = next(core.path_exposures(scenarios.path[:1], scenarios.positions, scenarios.masses, scenarios.source_width))
+    fig = render.lensing_figure(directions, area, scenarios.binary_source_direction, scenarios.positions, exposure)
+    plt.close(fig)
+    frames = list(render.lensing_animation(directions, area, scenarios.binary_source_direction, scenarios.positions, [exposure]))
+    assert len(frames) == 1

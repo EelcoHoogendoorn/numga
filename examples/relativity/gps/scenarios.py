@@ -1,4 +1,4 @@
-"""Satellite navigation near Earth's pole, with changing sky coverage and noisy clocks."""
+"""Polar GPS satellite sky-coverage scenarios with exaggerated clock and range noise."""
 
 from __future__ import annotations
 
@@ -6,82 +6,95 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import stack
 from examples.relativity.gps import core
-from examples.relativity.gps.core import across, emitted_events, locate, mv, origin, time
+from examples.relativity.gps.core import across, emitted_events, fitted_reception, mv, origin, time
 
-# Earth's radius, the orbits' altitude, light's speed and Earth's gravitational parameter, in metres and seconds;
-# lengths below are in Earth radii and times in Earth-radius light-travel times, so light speed is one.
-EARTH_RADIUS_METRES = 6_371_000
-ORBIT_ALTITUDE_METRES = 20_200_000
-LIGHT_SPEED = 299_792_458
-GRAVITATIONAL_PARAMETER = 3.986004418e14
-# The satellites, the seed of their timestamps' noise, the error of a range in metres, set far above a real
-# receiver's so that the uncertainty shows at the scale of the orbits, and of the receiver's clock in seconds, and
-# each satellite's phase along its orbit, in degrees, offset from the scene's.
-N_SATELLITES, NOISE_SEED = 6, 7
-RANGE_ERROR_METRES, CLOCK_ERROR_SECONDS = 1_500_000, 30e-6
-PHASE_OFFSETS = np.deg2rad([-12, -5, 8, 15, -9, 4])
-# The fit: the steps finding the retarded transmissions and the steps of the fit, and the start's error off the
-# receiver, along y and z, in Earth radii.
-N_EMISSION_STEPS, N_POSITION_STEPS = 3, 5
-INITIAL_Y, INITIAL_Z = 0.02, 0.01
-# The scene's phase, and the phases the satellites move between; the frames and the duration of a frame.
-PHASE = np.deg2rad(20)
-FIRST_PHASE, LAST_PHASE = np.deg2rad([5, 50])
-N_FRAMES, DURATION_MS = 98, 40
+# Earth radius, GPS orbital altitude, speed of light, and geocentric gravitational parameter in SI units.
+earth_radius_metres = 6_371_000
+orbit_altitude_metres = 20_200_000
+light_speed = 299_792_458
+gravitational_parameter = 3.986004418e14
+# Constellation count, RNG seed, exaggerated range error (metres) for orbital-scale visibility, and clock offset (seconds).
+n_satellites, noise_seed = 6, 7
+range_error_metres, clock_error_seconds = 1_500_000, 30e-6
+phase_offsets = np.deg2rad([-12, -5, 8, 15, -9, 4])
+# Retarded-time and Gauss-Newton iteration counts, plus initial transverse position offset in Earth radii.
+n_emission_steps, n_position_steps = 3, 5
+initial_y, initial_z = 0.02, 0.01
+# Reference snapshot phase, animation phase bounds, half-cycle frame count, and frame duration in milliseconds.
+snapshot_phase = np.deg2rad(20)
+first_phase, last_phase = np.deg2rad([5, 50])
+n_frames, frame_duration_ms = 98, 40
 
-# Six circular orbits sharing the polar axis, their distinct phases giving different elevations, which separates
-# radial position error from clock error; their radius and angular speed; the receiver on Earth's surface; a
-# timestamp's error; the receiver clock's reading off; and the noise on each satellite's timestamp.
-planes = (mv.yz * (-np.arange(N_SATELLITES) * (2 * np.pi / N_SATELLITES) / 2)).exp() >> mv.xy   # [satellites] Orbit+
-ORBIT_RADIUS = (EARTH_RADIUS_METRES + ORBIT_ALTITUDE_METRES) / EARTH_RADIUS_METRES
-ANGULAR_SPEED = (np.sqrt(GRAVITATIONAL_PARAMETER / (EARTH_RADIUS_METRES + ORBIT_ALTITUDE_METRES) ** 3)
-                 * EARTH_RADIUS_METRES / LIGHT_SPEED)
-receiver = origin + across                                                   # [] Event-
-SIGMA = RANGE_ERROR_METRES / EARTH_RADIUS_METRES
-clock_reading = mv.scalar([CLOCK_ERROR_SECONDS * LIGHT_SPEED / EARTH_RADIUS_METRES])   # [] Scalar+
-noise = mv.scalar(np.random.default_rng(NOISE_SEED).normal(size=(N_SATELLITES, 1)) * SIGMA)   # [satellites] Scalar+
+# Six polar orbital planes spaced around the polar `x` axis, dimensionless orbit radius and angular speed, and noise draw.
+orbit_rotors = (mv.yz * (-np.arange(n_satellites) * (2 * np.pi / n_satellites) / 2)).exp()  # [n_satellites] Rotor+
+orbital_planes = orbit_rotors >> mv.xy                                            # [n_satellites] Bivector+
+orbit_radius = (earth_radius_metres + orbit_altitude_metres) / earth_radius_metres
+angular_speed = (np.sqrt(gravitational_parameter / (earth_radius_metres + orbit_altitude_metres) ** 3)
+                 * earth_radius_metres / light_speed)
+receiver = origin + across                                                        # [] Event-
+sigma = range_error_metres / earth_radius_metres
+clock_offset_units = clock_error_seconds * light_speed / earth_radius_metres
+timestamp_noise = np.random.default_rng(noise_seed).normal(size=n_satellites) * sigma
 
 
 # --- math -----------------------------------------------------------------------------
-def positioning(phase: float) -> tuple[core.Event, core.Event, core.Covariance]:
-    """The transmissions at the scene's phase, and the reception event recovered from their six noisy timestamps,
-    with its covariance."""
-    phases = mv.scalar((PHASE_OFFSETS + phase)[..., None])                   # [satellites] Scalar+
-    emitted = emitted_events(receiver, planes, phases, ORBIT_RADIUS, ANGULAR_SPEED, N_EMISSION_STEPS)
-    observed = emitted + time * noise
-    # The starting event uses the receiver's clock and an approximate location.
-    initial = receiver + mv.y.dual() * INITIAL_Y + mv.z.dual() * INITIAL_Z + time * clock_reading
-    estimate, _, covariance = locate(observed, initial, SIGMA, N_POSITION_STEPS)
+def navigation_snapshot(phase: float) -> tuple[core.Event, core.Event, core.Covariance]:
+    """Retarded transmissions and Gauss-Newton light-cone fitting at orbital `phase` give `(emitted,
+    estimate, covariance)` (`[n_satellites] Event-`, `[] Event-`, `[] Step- <- Readout+`)."""
+    phases = phase_offsets + phase
+    emitted = emitted_events(receiver, orbital_planes, phases, orbit_radius, angular_speed, n_emission_steps)
+    observed = emitted + time * timestamp_noise                                   # [n_satellites] Event-
+    initial = receiver + mv.y.dual() * initial_y + mv.z.dual() * initial_z + time * clock_offset_units  # [] Event-
+    estimate, _, covariance = fitted_reception(observed, initial, sigma, n_position_steps)
     return emitted, estimate, covariance
 
 
-def uncertainty(n_frames: int) -> Iterator[tuple[core.Event, core.Event, core.Event, core.Event]]:
-    """The satellites moving from a narrow sky patch to a wider spread of directions, per frame, with the position's
-    spread."""
-    for phase in np.linspace(FIRST_PHASE, LAST_PHASE, n_frames):
-        emitted, estimate, covariance = positioning(phase)
-        yield emitted, receiver, estimate, core.position_spread(covariance)
+def sky_spread_states(n_steps: int) -> Iterator[tuple[core.Event, core.Event, core.Event, core.Event]]:
+    """Yields `(emitted, receiver, estimate, semi_axes)` across `n_steps` orbital phases as the
+    satellites fan out from a narrow polar cluster across the sky."""
+    for phase in np.linspace(first_phase, last_phase, n_steps):
+        emitted, estimate, covariance = navigation_snapshot(phase)
+        yield emitted, receiver, estimate, core.position_semi_axes(covariance)
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.relativity.gps import render
-    from examples.util.animation import save_figure
+    from examples.util.animation import save_animation, save_figure
 
-    emitted, estimate, covariance = positioning(PHASE)
-    save_figure(render.draw_constellation(emitted, receiver, ORBIT_RADIUS), "gps_constellation")
-    save_figure(render.draw_solution(emitted, receiver, estimate, core.position_spread(covariance), ORBIT_RADIUS),
-                "gps_positioning")
+    emitted, estimate, covariance = navigation_snapshot(snapshot_phase)
+    save_figure(render.constellation_figure(emitted, receiver, orbit_radius), "gps_constellation")
+    save_figure(render.positioning_figure(emitted, receiver, estimate, core.position_semi_axes(covariance),
+                                          orbit_radius), "gps_positioning")
+
+    recorded: list[tuple[core.Event, core.Event, core.Event, core.Event]] = []
+
+    def recording() -> Iterator[tuple[core.Event, core.Event, core.Event, core.Event]]:
+        for state in sky_spread_states(n_frames):
+            recorded.append(state)
+            yield state
+
+    save_animation(render.geometry_animation(recording()), "gps_uncertainty", frame_duration_ms)
+
+    # checks
+    # Four noiseless cones recover the exact reception event, and spreading the satellites shrinks ellipsoid volume.
+    noiseless_cones = core.light_cones(emitted[:4])                               # [4] Slice+ <- Event-
+    located = core.causal_reception(core.cone_intersections(noiseless_cones), emitted[:4])  # [] Event-
+    assert ((mv.basis() & (located - receiver)[..., None]).abs() < 1e-11).all()
+    narrow_radii = core.spatial_distance(origin + recorded[0][3], origin)         # [3] Scalar+
+    wide_radii = core.spatial_distance(origin + recorded[-1][3], origin)          # [3] Scalar+
+    assert (wide_radii < narrow_radii).all()
+    assert bool(wide_radii[0] * wide_radii[1] * wide_radii[2] < 0.4 * narrow_radii[0] * narrow_radii[1] * narrow_radii[2])
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the position's uncertainty shrinking as the satellites spread across the
-    sky, for the gallery."""
+    """Regenerates the gallery GIF `plots/gps.gif` of the shrinking position uncertainty ellipsoid."""
     from examples.relativity.gps import render
     from examples.util.animation import pin_animation
 
-    pin_animation(render.animate_geometry(uncertainty(N_FRAMES)), "gps", DURATION_MS, forward_then_back=True)
+    pin_animation(render.geometry_animation(sky_spread_states(n_frames)), "gps", frame_duration_ms)
 
 
 if __name__ == "__main__":

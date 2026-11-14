@@ -1,110 +1,111 @@
-"""Drawing for the Dirac electron: the mass shell, and trembling paths with their spin, drawn on the GPU."""
+"""GPU tube rendering frames Zitterbewegung charge trajectories and spatial spin arrows in the
+observer's rest slice."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
-from matplotlib.image import AxesImage
-from matplotlib.lines import Line2D
 
-from numga import concatenate, stack
+from numga import stack
+from numga.render import simplices, solids
+from numga.topology import Topology
+from examples.relativity.dirac import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.relativity.dirac import core
-from numga.topology import Topology
-from numga.render import simplices, solids
 from examples.util.panels import fitted, show
 
-# The observer sees the point where its time line meets the spatial slice.
+# Spatial slice projection reading where an observer time line meets the rest slice.
 space_slice = core.mv.t ^ (core.Antivector & core.time)
 
 colours = ("#2e86c1", "#7d3c98", "#c0392b")
-BACKGROUND = np.ones(3)
-# The view's elevation and azimuth in radians, azimuth zero looking along +y, and the margin around the paths as a
-# share of the larger side.
-ELEVATION, AZIMUTH = np.radians(12.0), np.radians(30.0)
-MARGIN = 0.1
-# The spin arrows' length, in the paths' units; the widths of the paths and the arrows, in pixels, and the length of
-# the strokes of the chevron at an arrow's tip, in widths of the arrow.
-SPIN_LENGTH = 0.4
-PATH_WIDTH, ARROW_WIDTH = 1.5, 1.5
-CHEVRON_LENGTH = 4.0
+background = np.ones(3)
+# Camera elevation and azimuth in radians (azimuth zero looking along +y) and framing margin.
+elevation, azimuth = np.radians(12.0), np.radians(30.0)
+margin = 0.1
+# Display length of unit spin axes in Compton wavelengths, tube stroke widths in pixels, and chevron length.
+spin_length = 0.4
+path_width, arrow_width = 1.5, 1.5
+chevron_length = 4.0
+static_width_px, static_height_px = 260, 350
+animation_width_px, animation_height_px = 240, 300
 
 
-def spin_arrow(psi: core.Spinor) -> core.Antivector:
-    """The spin's axis as the observer sees it, drawn as an arrow of the given length: the line where the spin's
-    patch crosses the observer's slice of space, at unit length, which a direction within the slice squares to."""
-    axis = core.spin(psi) ^ core.mv.t                                           # [...] Antivector-
-    return SPIN_LENGTH * axis / axis.squared().square_root()                    # [...] Antivector-
+def spin_offset(psi: core.Spinor) -> core.Antivector:
+    """Scales the observer-sliced spatial spin axis of `psi` (`[...] Spinor+`) to display length
+    `spin_length` (`[...] Antivector-`)."""
+    axis = core.spin_axis(psi)                                                  # [...] Antivector-
+    return spin_length * axis / axis.antinorm()                                 # [...] Antivector-
 
 
-def framing(ax, places: list, tips: list) -> solids.View:
-    """One view for every frame, framing the whole of each path `[mixtures] Point-[times]` and every spin arrow's tip
-    along it, as many pixels across as the axes' room holds."""
-    return fitted(solids.view([*places, *tips], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
+def camera_framing(ax, places, tips) -> solids.View:
+    """Fits one orthographic `solids.View` around `places` and `tips` inside the pixel budget of
+    `ax`."""
+    return fitted(solids.view([places.reshape(-1), tips.reshape(-1)], 0.0, elevation, azimuth, margin, 1), ax)
 
 
-def picture(places: list, tips: list, upto: int, view: solids.View) -> np.ndarray:
-    """The paths `[mixtures] Point-[times]` traced up to a time, each with its spin as an arrow from its end to the arrow's
-    tip, `[rows, columns, 3]`."""
-    rgb = np.array([to_rgb(colour) for colour in colours[: len(places)]])
-    starts = stack([place[upto - 1] for place in places])                       # [mixtures] Point-
-    ends = stack([tip[upto - 1] for tip in tips])                               # [mixtures] Point-
-    # Each path up to the time a chain of edges, each edge in its path's colour.
-    trails = concatenate([place[:upto] for place in places])                    # [mixtures * upto] Point-
-    lines = simplices.tubes(trails, Topology.chains([upto] * len(places)), np.repeat(rgb, upto - 1, axis=0),
-                            PATH_WIDTH, view, solids.gloss)
-    # Each spin's arrow a tube ending in a chevron.
-    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), Topology.chains([2] * len(places)), rgb,
-                             ARROW_WIDTH, view, solids.gloss, chevrons=np.ones(len(places)),
-                             chevron=CHEVRON_LENGTH * ARROW_WIDTH)
-    return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0), (arrows, 1.0)])
-
-
-def draw_scene(ax, places: list, tips: list, mixtures: tuple, upto: int, view: solids.View) -> AxesImage:
-    """The paths traced up to a time, each with its spin as an arrow at its end, and the legend naming them. The
-    picture shown, for an animation to set its data."""
-    shown = show(ax, picture(places, tips, upto, view), view)
-    # The tall image in the middle of the figure, the legend in the figure's corner beside it.
-    ax.figure.legend(handles=[Line2D([], [], color=colour, label=f"{share:.0%} negative energy")
-                              for share, colour in zip(mixtures, colours)], loc="upper left")
-    return shown
+def scene_picture(places, tip_ends, view: solids.View) -> np.ndarray:
+    """Renders `[n_mixtures, n_steps]` path tubes and `[n_mixtures]` terminal spin arrows into an
+    `[rows, columns, 3]` RGB image."""
+    n_mixtures, n_steps = places.shape
+    rgb = np.array([to_rgb(colour) for colour in colours[:n_mixtures]])
+    starts = places[:, -1]                                                      # [n_mixtures] Point-
+    trails = places.reshape(-1)                                                 # [n_mixtures * n_steps] Point-
+    lines = simplices.tubes(
+        trails, Topology.chains([n_steps] * n_mixtures), np.repeat(rgb, n_steps - 1, axis=0),
+        path_width, view, solids.gloss,
+    )
+    arrows = simplices.tubes(
+        stack((starts, tip_ends), axis=-1).reshape(-1), Topology.chains([2] * n_mixtures), rgb,
+        arrow_width, view, solids.gloss, chevrons=np.ones(n_mixtures),
+        chevron=chevron_length * arrow_width,
+    )
+    return solids.draw([], view, background, inks=[], translucent=[], meshes=[(lines, 1.0), (arrows, 1.0)])
 
 
 @charts.style()
-def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -> plt.Figure:
-    """The paths the currents trace, one per share of negative energy, with the spin at the end."""
-    # The projective embedding of each path as the observer slices it, and of its spin arrows' tips, the sliced
-    # arrows directions at infinity.
-    places = [solids.origin + solids.context.include_from_algebra(space_slice(trace))
-              for trace in paths]                                               # [mixtures] Point-[times]
-    tips = [place + solids.context.include_from_algebra(space_slice(spin_arrow(psi)))
-            for place, psi in zip(places, spinors)]                             # [mixtures] Point-[times]
-    figure = plt.figure(figsize=(440 / charts.DPI, 350 / charts.DPI))
+def paths_figure(states: Iterable[tuple[core.Antivector, core.Spinor]]) -> plt.Figure:
+    """Renders completed Zitterbewegung trajectories and terminal spin arrows from `states` framed
+    across every streamed trail and spin-arrow tip."""
+    collected = list(states)
+    final_paths, final_spinors = collected[-1]
+    frame_spinors = stack([psi for _, psi in collected], axis=-1)               # [..., ...] Spinor+
+    places = solids.origin + solids.context.include_from_algebra(space_slice(final_paths))
+    stride = max(1, final_paths.shape[-1] // len(collected))
+    sampled_places = places[:, stride - 1 :: stride]
+    all_tips = sampled_places + solids.context.include_from_algebra(space_slice(spin_offset(frame_spinors)))
+    tip_ends = places[:, -1] + solids.context.include_from_algebra(space_slice(spin_offset(final_spinors)))
+    figure = plt.figure(figsize=(static_width_px / charts.DPI, static_height_px / charts.DPI))
     ax = figure.add_axes((0, 0, 1, 1))
-    draw_scene(ax, places, tips, mixtures, len(times), framing(ax, places, tips))
+    view = camera_framing(ax, places, all_tips)
+    show(ax, scene_picture(places, tip_ends, view), view)
     return figure
 
 
-def animate_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple, every: int) -> Iterator[np.ndarray]:
-    """The paths drawn as they are traced, with each electron's spin at its current position."""
-    # The projective embedding of each path as the observer slices it, and of its spin arrows' tips, the sliced
-    # arrows directions at infinity.
-    places = [solids.origin + solids.context.include_from_algebra(space_slice(trace))
-              for trace in paths]                                               # [mixtures] Point-[times]
-    tips = [place + solids.context.include_from_algebra(space_slice(spin_arrow(psi)))
-            for place, psi in zip(places, spinors)]                             # [mixtures] Point-[times]
+def paths_animation(states: Iterable[tuple[core.Antivector, core.Spinor]]) -> Iterator[np.ndarray]:
+    """Yields `[rows, columns, 3]` RGB frames as `(trail, spinor)` `states` trace out inside a
+    stationary camera framed across the full trajectory."""
+    collected = list(states)
+    final_paths = collected[-1][0]                                              # [..., ...] Antivector-
+    frame_spinors = stack([psi for _, psi in collected], axis=-1)               # [..., ...] Spinor+
+    all_places = solids.origin + solids.context.include_from_algebra(space_slice(final_paths))
+    stride = max(1, final_paths.shape[-1] // len(collected))
+    sampled_places = all_places[:, stride - 1 :: stride]
+    all_tips = sampled_places + solids.context.include_from_algebra(space_slice(spin_offset(frame_spinors)))
     with charts.style():
-        figure = plt.figure(figsize=(420 / charts.DPI, 300 / charts.DPI))
+        figure = plt.figure(figsize=(animation_width_px / charts.DPI, animation_height_px / charts.DPI))
         ax = figure.add_axes((0, 0, 1, 1))
-        view = framing(ax, places, tips)
-        # The figure and its legend set up once; only the picture changes between frames.
-        shown = draw_scene(ax, places, tips, mixtures, every, view)
-        yield capture(figure)
-        for upto in range(2 * every, len(times) + 1, every):
-            shown.set_data(picture(places, tips, upto, view))
+        view = camera_framing(ax, all_places, all_tips)
+        shown = None
+        for trail, psi in collected:
+            places = solids.origin + solids.context.include_from_algebra(space_slice(trail))
+            tip_ends = places[:, -1] + solids.context.include_from_algebra(space_slice(spin_offset(psi)))
+            image = scene_picture(places, tip_ends, view)
+            if shown is None:
+                shown = show(ax, image, view)
+            else:
+                shown.set_data(image)
             yield capture(figure)
         plt.close(figure)
