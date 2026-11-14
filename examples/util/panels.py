@@ -1,5 +1,17 @@
-"""Matplotlib figure and panel helpers for pinning GPU-rendered images pixel for pixel, fitting cameras and views to
-axes, and overlaying composited layers."""
+"""Matplotlib axes layout and camera helpers place GPU-rendered `[rows, columns, ...]` images into
+figures pixel for pixel without resampling.
+
+`pinned`, `show`, `show_pixels`, and `overlay` attach an axes locator that centres an image on
+integer canvas pixels at the figure's native `dpi` (and scales each source pixel into an exact
+integer block under `animation.capture` supersampling), while keeping matplotlib data coordinates
+aligned with the image's world or pixel `extent` for text annotations and overlays.
+
+`panel` and `offset_panel` size a `numga.render.Camera` to the pixel budget `room(ax)` of a
+matplotlib `Axes` and frame it to the axes' `xlim` and `ylim`. Projective scenes supply an explicit
+`weight` plane (`panel`), whereas vector-space scenes treat points as unit-weight offsets from the
+origin (`offset_panel`). Companion notes on reading points through regressive pairings with planes
+are in `docs/orientation.md`.
+"""
 
 from __future__ import annotations
 
@@ -12,32 +24,31 @@ from numga.render.drawing import composited
 
 
 def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
-    """An image in matplotlib axes over an extent, left, right, bottom and top, without axes; the image, for an
-    animation to set its data.
+    """Displays `image` (`[rows, columns, ...]`) over `(left, right, bottom, top)` `extent` with
+    axes hidden, returning the `AxesImage` artist so animations can update its pixel data.
 
-    The axes hold the image pixel for pixel: whatever room the figure's layout gives them, they are drawn exactly as
-    many pixels across and up as the image, at the figure's own resolution, about the middle of that room and on whole
-    pixels, so that no pixel of the picture is resampled. Drawn finer, as `capture` draws, each pixel is a whole block
-    of them."""
+    An axes locator centres the image inside the layout box allocated to `ax` on whole canvas pixels
+    at the figure's base `dpi`, avoiding resampling at base resolution and mapping each source pixel
+    to an integer block when `capture` supersamples the figure.
+    """
     resolution = ax.figure.figure.dpi
     rows, columns = image.shape[:2]
 
     def exact(ax, renderer):
-        """The axes' place in the figure: the image's own pixels, about the middle of the room the layout gave them."""
         from matplotlib.transforms import Bbox
 
         figure = ax.figure.figure
         scale = figure.dpi / resolution
-        # The room in pixels of the canvas, read through the axes' own figure, a subfigure too.
-        room = ax.get_position(original=True).transformed(ax.figure.transSubfigure)
-        # The top left corner on a whole pixel of the figure's own resolution, and so of any multiple of it, counted
-        # from the top left of the canvas, as its rows of pixels are.
+        # Read the allocated box in root-canvas pixels through `ax.figure`, which may be a SubFigure.
+        allocated = ax.get_position(original=True).transformed(ax.figure.transSubfigure)
+        # Snap the top-left corner to a whole pixel at the base resolution so integer supersampling
+        # lands on whole pixels as well.
         canvas_rows = int(figure.bbox.height)
-        left = round(((room.x0 + room.x1) / 2 - columns * scale / 2) / scale) * scale
-        top = round((canvas_rows - (room.y0 + room.y1) / 2 - rows * scale / 2) / scale) * scale
+        left = round(((allocated.x0 + allocated.x1) / 2 - columns * scale / 2) / scale) * scale
+        top = round((canvas_rows - (allocated.y0 + allocated.y1) / 2 - rows * scale / 2) / scale) * scale
         bottom = canvas_rows - top - rows * scale
-        # The corner a millionth of a pixel over its whole pixel and the size a millionth under, so that the round
-        # trip through the figure's fractions lands on them as matplotlib rounds them: the corner down, the size up.
+        # Nudge the origin slightly up and the span slightly down so matplotlib's floor/ceil pixel
+        # rounding recovers the exact integer bounds after the normalized subfigure round trip.
         pixels = Bbox.from_bounds(left + 1e-6, bottom + 1e-6, columns * scale - 1e-6, rows * scale - 1e-6)
         return pixels.transformed(ax.figure.transSubfigure.inverted())
 
@@ -48,9 +59,9 @@ def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
 
 
 def room(ax) -> tuple[int, int]:
-    """The columns and rows of pixels the figure's layout gives the axes, at the figure's own resolution: the size a
-    picture shown in them is drawn at to fill them."""
-    # The root figure holds the layout; the axes' place is read in pixels through their own figure, a subfigure too.
+    """Executing the figure's layout engine determines the `(columns, rows)` pixel budget allocated
+    to `ax` at the root figure's `dpi`."""
+    # Run layout on the root figure, then read `ax` in canvas pixels through its immediate figure or subfigure.
     figure = ax.figure.figure
     if figure.get_layout_engine() is not None:
         figure.get_layout_engine().execute(figure)
@@ -59,34 +70,35 @@ def room(ax) -> tuple[int, int]:
 
 
 def fitted(view, ax):
-    """The view with as many pixels across as the room its axes get holds, the whole picture inside the room, for a
-    picture `show` holds pixel for pixel."""
+    """Replaces `view.pixels` with the largest horizontal pixel count whose aspect-matched image
+    fits completely inside `room(ax)`."""
     columns, rows = room(ax)
     return view._replace(pixels=min(columns, int(rows * view.half[0] / view.half[1])))
 
 
 def show(ax, image: np.ndarray, view):
-    """An image of a view in matplotlib axes, its middle at the origin, in the scene's units, so that places from
-    `view.across` land where they are seen, held pixel for pixel as `pinned` holds it; the image, for an animation to
-    set its data."""
+    """Pins `image` (`[rows, columns, ...]`) into `ax` over `view.extent` in scene coordinates so
+    projected points from `view.across` align with the displayed pixels, returning the `AxesImage`."""
     return pinned(ax, image, view.extent)
 
 
 def show_pixels(ax, image: np.ndarray):
-    """An image in matplotlib axes in its own pixels, rows down from the top, held pixel for pixel as `pinned` holds
-    it; the image, for an animation to set its data."""
+    """Pins `image` (`[rows, columns, ...]`) into `ax` in pixel coordinates with row `0` at the top,
+    returning the `AxesImage`."""
     rows, columns = image.shape[:2]
     return pinned(ax, image, (-0.5, columns - 0.5, rows - 0.5, -0.5))
 
 
 def labels(ax, view, places, texts: list[str], **style) -> None:
-    """Texts at points, of any weight, as a view sees them, over its image shown by `show`."""
+    """Projects `places` (`[n_places]` points of any weight) through `view.across` and draws `texts`
+    at their projected coordinates on `ax`."""
     for (x, y), text in zip(view.across(places), texts):
         ax.text(x, y, text, **style)
 
 
 def image_figure(image: np.ndarray):
-    """A figure of an image at its pixel size, without axes or margins."""
+    """Wraps `image` (`[rows, columns, ...]`) in a borderless `100`-dpi matplotlib `Figure` matching
+    its exact pixel dimensions."""
     import matplotlib.pyplot as plt
 
     figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
@@ -97,30 +109,27 @@ def image_figure(image: np.ndarray):
 
 
 def limits(ax: Axes) -> tuple[np.ndarray, np.ndarray]:
-    """The readings across and up at the middle of a matplotlib panel's limits, and half its width and height in
-    them."""
+    """Reads `ax`'s `xlim` and `ylim` into `(centre, half_span)` arrays, each of shape `[2]`."""
     left, right = ax.get_xlim()
     bottom, top = ax.get_ylim()
     return np.array([left + right, bottom + top]) / 2, np.array([right - left, top - bottom]) / 2
 
 
 def panel(ax: Axes, across: Extensor, up: Extensor, weight: Extensor) -> Camera:
-    """The camera of a matplotlib panel reading its points by the planes `across` and `up` over their weight, their
-    pairing with the plane `weight`, such as a projective algebra's plane at infinity; its limits the readings it spans,
-    as many pixels across as the panel's room holds."""
+    """Frames `ax`'s data limits with a projective `Camera` that reads horizontal and vertical
+    coordinates with `across` and `up` divided by `weight & point`, fitted to `room(ax)`."""
     return fitted(Camera(across, up, 0 * across, weight, 0.0, *limits(ax), 300), ax)
 
 
 def offset_panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
-    """The camera of a matplotlib panel reading its points by the planes `across` and `up`, each point an offset from
-    the origin of weight one, as a vector algebra's points are; its limits the readings it spans, as many pixels across
-    as the panel's room holds."""
+    """Frames `ax`'s data limits with an affine `Camera` that reads unit-weight origin offsets with
+    `across` and `up`, fitted to `room(ax)`."""
     return fitted(Camera(across, up, 0 * across, 0 * across, 1.0, *limits(ax), 300), ax)
 
 
 def overlay(ax: Axes, pictures: list, *, zorder: float | None = None):
-    """Pictures of a panel, as its camera draws them, laid over each other in order and pinned into the panel at its
-    own pixels, clear where none covers; the image, for an animation to set its data."""
+    """Composites RGBA `pictures` (`[rows, columns, 4]`) in order and pins the result over `ax`'s
+    current `xlim` and `ylim` with transparent uncovered pixels, returning the `AxesImage`."""
     shown = pinned(ax, composited(pictures), (*ax.get_xlim(), *ax.get_ylim()))
     if zorder is not None:
         shown.set_zorder(zorder)
