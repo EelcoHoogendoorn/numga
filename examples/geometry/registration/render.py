@@ -1,4 +1,4 @@
-"""Drawing for the registration example, ray traced on the GPU: the clouds as small balls, the targets as translucent shells around where the aligned points should land, and each aligned point tied to its target."""
+"""GPU ray-traced rendering of point-cloud registration draws the source and aligned clouds as opaque balls, surrounds each target with a translucent shell, and links each aligned point to its target with a rod."""
 
 from __future__ import annotations
 
@@ -12,30 +12,32 @@ from examples.util.panels import image_figure
 
 source_colour, target_colour, aligned_colour = (np.array(to_rgb(colour)) for colour in ("#94a3b8", "#0284c7", "#f43f5e"))
 background = np.ones(3)
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the points, as a
-# share of the image's larger side; and the pixels across the image.
+# Camera elevation and azimuth in radians (azimuth zero looks along +y), fractional margin around the clouds,
+# and image side length in pixels.
 elevation, azimuth = np.radians([30.0, 30.0])
 margin = 0.12
 n_pixels = 300
-# Radii in pixels: of a point, of the shell around a target, and of the tie from an aligned point to its target;
-# and how much of what lies behind them each surface of a shell hides.
+# Screen-space radii in pixels for cloud points, target shells, and residual rods, plus shell surface opacity.
 point_radius, target_radius, tie_radius = 2.5, 4.5, 1.0
 target_opacity = 0.16
 
 
 # --- plumbing -------------------------------------------------------------------------
-def draw_registration(source: Extensor, target: Extensor, aligned: Extensor) -> plt.Figure:
-    """The source, grey, the target, blue shells, and the aligned source, red, each aligned point tied to its target."""
-    # Each point seen along w: its slice by w lies in the space of x, y and z, its offset from the origin in flat space
-    # and its shadow on the equatorial space of the three-sphere, which the projective embedding places about the
-    # scene's origin.
-    w = source.context.multivector.w
-    source, target, aligned = (solids.origin + solids.context.include_from_algebra(w ^ (points.normalized() & w.dual()))
-                               for points in (source, target, aligned))       # [points] Point-, Point-, Point-
-    view = solids.view([source, target, aligned], 0.0, elevation, azimuth, margin, n_pixels)
+def registration_figure(source: Extensor, target: Extensor, aligned: Extensor) -> plt.Figure:
+    """Ray-traced figure showing the grey `source` cloud, translucent blue `target` shells, and red `aligned` points tied to their targets (`[...] Point-`)."""
+    # Slicing along w extracts the x, y, z offset from the origin in flat space and the orthographic
+    # equatorial projection on the three-sphere, which the projective scene places around its origin.
+    weight_plane = source.context.multivector.w                                # Plane+
+    source_points, target_points, aligned_points = (
+        solids.origin + solids.context.include_from_algebra(weight_plane ^ (points.normalized() & weight_plane.dual()))
+        for points in (source, target, aligned)
+    )                                                                          # [...] Point-, [...] Point-, [...] Point-
+    view = solids.view([source_points, target_points, aligned_points], 0.0, elevation, azimuth, margin, n_pixels)
     pixel = view.pixel
-    opaque = [(solids.ball(source, point_radius * pixel)[:, None], source_colour),
-              (solids.ball(aligned, point_radius * pixel)[:, None], aligned_colour),
-              (solids.rods(aligned, target, tie_radius * pixel), aligned_colour)]
-    shells = [(solids.ball(target, target_radius * pixel)[:, None], target_colour, target_opacity)]
+    opaque = [
+        (solids.ball(source_points, point_radius * pixel)[:, None], source_colour),
+        (solids.ball(aligned_points, point_radius * pixel)[:, None], aligned_colour),
+        (solids.rods(aligned_points, target_points, tie_radius * pixel), aligned_colour),
+    ]
+    shells = [(solids.ball(target_points, target_radius * pixel)[:, None], target_colour, target_opacity)]
     return image_figure(solids.draw(opaque, view, background, inks=[], translucent=shells, meshes=[]))

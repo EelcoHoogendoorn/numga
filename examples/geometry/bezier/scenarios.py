@@ -8,29 +8,29 @@ from numga import stack
 from examples.geometry.bezier import core
 
 # Samples along each curve.
-N_SAMPLES = 400
+n_samples = 400
 # The control triangle of the quadratic curve.
-QUADRATIC_POINTS = np.array([[-1.0, 0.0], [0.0, 1.5], [1.0, 0.0]])
+quadratic_points = np.array([[-1.0, 0.0], [0.0, 1.5], [1.0, 0.0]])
 # The middle weight swept from an ellipse through a parabola to a hyperbola and back, the frames of the
 # sweep, and the duration of each.
-SWEEP = (0.3, 2.0)
-N_FRAMES = 96
-DURATION_MS = 40
+weight_sweep = (0.3, 2.0)
+n_frames = 96
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def sweep(n_frames: int = N_FRAMES, n_samples: int = N_SAMPLES) -> tuple[core.Point, core.Point, core.Point, core.Conic]:
-    """As the middle weight sweeps out and back over `n_frames` frames, the quadratic curve and its complementary arc, sampled at `n_samples + 1` points, and the cone of their conic turn from an ellipse through a parabola to a hyperbola."""
-    phase = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
-    middle = np.exp(np.log(SWEEP).mean() - np.log(SWEEP[1] / SWEEP[0]) / 2 * np.cos(phase))   # [frames]
-    weights = np.stack([np.ones_like(middle), middle, np.ones_like(middle)], axis=-1)         # [frames, controls]
+def conic_sweep(n_frames: int, n_samples: int) -> tuple[core.Point, core.Point, core.Point, core.Conic]:
+    """As the middle weight sweeps out and back over `n_frames` frames, the quadratic curve and its complementary arc (`[n_frames, n_samples + 1] Point-`) and the cone of their conic (`[n_frames] Plane+ <- Point-`) pass from an ellipse through a parabola to a hyperbola."""
+    phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
+    middle_weights = np.exp(np.log(weight_sweep).mean() - np.log(weight_sweep[1] / weight_sweep[0]) / 2 * np.cos(phases))  # [n_frames]
+    weights = np.stack([np.ones_like(middle_weights), middle_weights, np.ones_like(middle_weights)], axis=-1)              # [n_frames, 3]
     # Points (x, y) at unit weight in the plane z = 1 are the duals of x * mv.x + y * mv.y + mv.z.
-    controls = (core.mv.x * QUADRATIC_POINTS[:, 0] + core.mv.y * QUADRATIC_POINTS[:, 1] + core.mv.z).dual()  # [controls] Point-
-    parameters = np.linspace(0.0, 1.0, n_samples + 1)                                         # [samples + 1]
-    weighted_controls = stack([controls * weights, controls * core.complementary(weights)], axis=1)  # [frames, arcs, controls] Point-
-    curves = core.blend(controls, weights, parameters)                                        # [frames, samples + 1] Point-
-    complements = core.blend(controls, core.complementary(weights), parameters)               # [frames, samples + 1] Point-
-    return weighted_controls, curves, complements, core.conic(controls, weights)              # [frames] Plane+ <- Point-
+    controls = (core.mv.x * quadratic_points[:, 0] + core.mv.y * quadratic_points[:, 1] + core.mv.z).dual()                # [3] Point-
+    parameters = np.linspace(0.0, 1.0, n_samples + 1)                                                                      # [n_samples + 1]
+    weighted_controls = stack([controls * weights, controls * core.complementary_weights(weights)], axis=1)                # [n_frames, 2, 3] Point-
+    curves = core.bezier_curve(controls, weights, parameters)                                                              # [n_frames, n_samples + 1] Point-
+    complements = core.bezier_curve(controls, core.complementary_weights(weights), parameters)                             # [n_frames, n_samples + 1] Point-
+    return weighted_controls, curves, complements, core.curve_conic(controls, weights)                                     # [n_frames] Plane+ <- Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -38,13 +38,14 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.geometry.bezier import render
 
-    weighted_controls, curves, complements, conics = sweep()
-    save_animation(render.animate_rays(weighted_controls, curves, complements, conics), "bezier_cone", DURATION_MS)
+    weighted_controls, curves, complements, conics = conic_sweep(n_frames, n_samples)
+    save_animation(render.animate_rays(weighted_controls, curves, complements, conics), "bezier_cone", frame_duration_ms)
 
     # checks
-    # Both arcs of the curve lie on the cone of its conic, at every middle weight.
-    assert np.abs((conics[:, None](curves) & curves).to_array()).max() < 1e-10
-    assert np.abs((conics[:, None](complements) & complements).to_array()).max() < 1e-10
+    # Both arcs lie on the cone of their conic at every middle weight, and the conic polarity map is symmetric.
+    assert ((conics[:, None](curves) & curves).abs() < 1e-10).all()
+    assert ((conics[:, None](complements) & complements).abs() < 1e-10).all()
+    assert (((conics[:, None](curves) & complements) - (conics[:, None](complements) & curves)).abs() < 1e-12).all()
 
 
 if __name__ == "__main__":

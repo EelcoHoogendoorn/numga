@@ -30,39 +30,39 @@ dot_spacing, dot_radius, point_radius = 4.0, 1.0, 2.2
 
 
 # --- plumbing -------------------------------------------------------------------------
-def dotted(polygon: core.Point, spacing: float) -> core.Point:
-    """The dots along an open polyline are spaced evenly along each side, as many as fit at the spacing, from its
-    start up to the next side's; the last corner closes it."""
+def polyline_dots(polygon: core.Point, spacing: float) -> core.Point:
+    """Evenly spaced dots sample each side of an open polyline, closed by the final corner (`[...] Point-`)."""
     sides = []
     for start, end in zip(polygon[:-1], polygon[1:]):
-        count = max(1, round(float((end - start).norm().to_array() / spacing)))
-        sides.append(start + (end - start) * np.linspace(0, 1, count, endpoint=False))
-    return concatenate(sides + [polygon[-1:]])                                # [dots] Point-
+        n_dots = max(1, round(float((end - start).norm().to_array() / spacing)))
+        sides.append(start + (end - start) * np.linspace(0, 1, n_dots, endpoint=False))
+    return concatenate(sides + [polygon[-1:]])                                # [...] Point-
 
 
-def fan(n_samples: int, offset: int) -> np.ndarray:
-    """The triangle fan connects the origin at vertex `offset` to each step along a curve of `n_samples` points."""
+def triangle_fan(n_samples: int, offset: int) -> np.ndarray:
+    """The triangle fan connects the origin at vertex `offset` to each step along a curve of `n_samples` points (`[n_samples - 1, 3]`)."""
     steps = offset + 1 + np.arange(n_samples - 1)
-    return np.stack([np.full_like(steps, offset), steps, steps + 1], axis=-1)
+    return np.stack([np.full_like(steps, offset), steps, steps + 1], axis=-1)  # [n_samples - 1, 3]
 
 
 def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, shape: core.Conic,
               view: solids.View) -> np.ndarray:
-    """Render a curve and its complement in homogeneous space with their weighted control points, the ray fans from the origin, and their projection onto the unit sphere."""
-    arcs = [curve, complement]                                                # [samples] Point- each
+    """Renders a curve and its complement in homogeneous space with their weighted control points, the ray fans from the origin, and their projection onto the unit sphere."""
+    arcs = [curve, complement]                                                # [...] Point- each
     colours = [curve_colour, complement_colour]
     # Each weighted control point on its ray from the origin, the ray reaching out to the sphere where the point lies inside it.
-    corners = controls.reshape(-1)                                            # [corners] Point-
-    reaches = where(corners.norm() < 1, corners.normalized(), corners)        # [corners] Point-
+    corners = controls.reshape(-1)                                            # [6] Point-
+    reaches = where(corners.norm() < 1, corners.normalized(), corners)        # [6] Point-
     rays = solids.rods(solids.origin, solids.origin + solids.context.include_from_algebra(reaches),
-                       line_width / 2 * view.pixel)                            # [corners, 3] Quadric
+                       line_width / 2 * view.pixel)                            # [6, 3] Plane+ <- Point-
     # The curves in the renderer's space, each point a ray's place, and where each ray meets the unit sphere.
-    places = [solids.origin + solids.context.include_from_algebra(arc) for arc in arcs]  # [samples] Point- each
-    on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]  # [samples] Point- each
+    places = [solids.origin + solids.context.include_from_algebra(arc) for arc in arcs]  # [...] Point- each
+    on_sphere_places = [solids.origin + solids.context.include_from_algebra(arc.normalized()) for arc in arcs]  # [...] Point- each
     # Both curves, chains of edges one after the other, each edge in its curve's colour.
     lengths = [len(arc) for arc in arcs]
     chains = Topology.chains(lengths)
-    edge_colours = np.repeat(colours, np.array(lengths) - 1, axis=0)          # [edges, 3]
+    V, E = chains.n_elements
+    edge_colours = np.repeat(colours, np.array(lengths) - 1, axis=0)          # [E, 3]
     arc_strokes = simplices.tubes(concatenate(places), chains, edge_colours, line_width, view, gloss=solids.gloss)
     on_sphere = simplices.tubes(concatenate(on_sphere_places), chains, edge_colours, sphere_curve_width, view,
                                 gloss=solids.gloss)
@@ -70,7 +70,7 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     # origin, its part along the degenerate blades.
     cone = solids.context.include_from_algebra(shape)(solids.Point.restrict.degenerate())      # [] Plane+ <- Point-
     # The control polygons dotted, their corners and the origin as points.
-    dots = concatenate([dotted(polygon, dot_spacing * view.pixel) for polygon in controls])  # [dots] Point-
+    dots = concatenate([polyline_dots(polygon, dot_spacing * view.pixel) for polygon in controls])  # [...] Point-
     parts = [(rays, ray_colour),
              (solids.ball(solids.origin + solids.context.include_from_algebra(dots), dot_radius * view.pixel)[:, None], control_colour),
              (solids.ball(solids.origin + solids.context.include_from_algebra(corners), point_radius * view.pixel)[:, None], control_colour),
@@ -81,21 +81,22 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     inks = [solids.Ink(len(parts), solids.half_space(sm.z)[None], solids.everywhere[None], equator_colour, line_width, 1.0),
             solids.Ink(len(parts), cone[None], solids.everywhere[None], loop_colour, line_width, 1.0)]
     # The rays from the origin to each curve: a fan of triangles, the origin and two neighbouring samples each.
-    vertices = concatenate([concatenate([solids.origin[None], arc]) for arc in places])   # [vertices] Point-
-    faces = np.concatenate([fan(len(arcs[0]), 0), fan(len(arcs[1]), len(arcs[0]) + 1)])
+    fan_vertices = concatenate([concatenate([solids.origin[None], arc]) for arc in places])    # [...] Point-
+    faces = np.concatenate([triangle_fan(len(arcs[0]), 0), triangle_fan(len(arcs[1]), len(arcs[0]) + 1)])
     face_colours = np.concatenate([np.broadcast_to(colour, (len(arc) - 1, 3)) for arc, colour in zip(arcs, colours)])
-    fans = meshes.samples(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view,
+    fans = meshes.samples(fan_vertices, faces, face_colours[:, None], meshes.flat(fan_vertices, faces), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     return solids.draw(parts, view, np.ones(3), inks, translucent=sphere,
                        meshes=[(fans, fan_opacity), (arc_strokes, 1.0), (on_sphere, 1.0)])
 
 
-def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
-    """The camera views orbit the origin across the given azimuths at a shared framing."""
+def orbit_views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
+    """Camera views orbiting the origin across the given azimuths share a common framing."""
+    n_views = len(azimuths)
     turns = np.radians(azimuths + 90)
     cameras = [solids.aim(solids.origin, np.radians(elevation), turn) for turn in turns]
-    framed_points = solids.origin + solids.context.include_from_algebra(concatenate([batch.reshape(-1) for batch in points]))   # [points] Point-
-    screens = stack(cameras)[None, :] >> solids.axes[:2, None]                # [2, views] Plane+
+    framed_points = solids.origin + solids.context.include_from_algebra(concatenate([batch.reshape(-1) for batch in points]))   # [...] Point-
+    screens = stack(cameras)[None, :] >> solids.axes[:2, None]                # [2, n_views] Plane+
     readings = (screens[..., None] & framed_points).abs().reshape(2, -1)
     half = readings.max(axis=-1).clip(1, np.inf)
     half = half + margin * half.max()
@@ -103,7 +104,8 @@ def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
 
 
 def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> Iterator[np.ndarray]:
-    """Yield the rendered frame for each conic in the batch as the camera orbits once around the origin."""
-    camera_views = views([curves, complements], azimuth + np.linspace(0, 360, curves.shape[0], endpoint=False))
-    for index in range(curves.shape[0]):
+    """Yields the rendered frame for each conic in the batch as the camera orbits once around the origin."""
+    n_frames = curves.shape[0]
+    camera_views = orbit_views([curves, complements], azimuth + np.linspace(0, 360, n_frames, endpoint=False))
+    for index in range(n_frames):
         yield draw_rays(controls[index], curves[index], complements[index], shapes[index], camera_views[index])

@@ -1,23 +1,29 @@
-"""Exact marker registration is independent of the world frame, and its first alignment step draws."""
+"""Three-point pose reconstruction is equivariant under rigid world-frame changes, and its static and animated views render."""
 
 from itertools import islice
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.geometry.three_point_pose import core, render, scenarios
 
 
-def test_reconstruction_is_independent_of_the_world_frame():
-    source, target, increments = scenarios.markers()
-    frame = (core.mv.yw * 0.8).exp() * (core.mv.xz * -0.7).exp()
-    moved_source, moved_target = frame >> source, frame >> target
-    moved_increments = core.reconstruct(moved_source, moved_target)
-    for placed, moved_placed in zip(core.placements(source, increments),
-                                    core.placements(moved_source, moved_increments)):
-        np.testing.assert_allclose((moved_placed - (frame >> placed)).kernel, 0, atol=1e-12)
+def test_reconstruction_is_equivariant_under_world_frame_motions():
+    source, target, increments = scenarios.marker_scene()
+    frame = (core.mv.yw * 0.8).exp() * (core.mv.xz * -0.7).exp()                   # [] Motor+
+    moved_source, moved_target = frame >> source, frame >> target                  # [3] Point-, [3] Point-
+    moved_increments = core.alignment_motors(moved_source, moved_target)           # [3] Motor+
+    placed = list(core.alignments(source, increments, np.ones(1)))
+    moved_placed = list(core.alignments(moved_source, moved_increments, np.ones(1)))
+    assert ((placed[-1] & target).norm() < 1e-10).all()
+    for stage, moved_stage in zip(placed, moved_placed):
+        assert ((moved_stage & (frame >> stage)).norm() < 1e-10).all()
 
 
-def test_the_first_alignment_step_draws():
-    source, target, increments = scenarios.markers()
+def test_pose_figure_and_animation_render():
+    source, target, increments = scenarios.marker_scene()
+    figure = render.pose_figure(source, target, source)
+    plt.close(figure)
     states = core.alignments(source, increments, np.ones(1))
-    list(render.animate(islice(states, 2), source, target))
+    frames = list(render.pose_animation(source, target, islice(states, 1)))
+    assert len(frames) == 1

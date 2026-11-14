@@ -1,77 +1,97 @@
-"""Kabuto folds follow a moved sheet, creases fold points and lines onto each other, folds never pull buried layers
-through stationary paper, and the first step of the folding draws."""
+"""Kabuto folds commute with rigid motions of the sheet, bisector creases fold points and lines onto each other,
+folds keep turning layers on the exit side of overlapping stationary paper, and the render entry points draw."""
 
 from itertools import islice
 
+import matplotlib.pyplot as plt
 import numpy as np
+
+from numga import stack, where
+from numga.topology import Topology
 
 from examples.geometry.origami import core, scenarios
 
 
 def test_full_folding_sequence_follows_a_moved_sheet():
-    paper, creases = scenarios.kabuto()
+    state, creases = scenarios.kabuto_recipe()
+    points, counts, offsets, sheet = state
     frame = (core.mv.xw * 0.4 + core.mv.zw * 0.6).exp() * (core.mv.xz * 0.45).exp()
-    displaced_paper = core.Paper(frame >> paper.points, paper.counts, frame >> paper.offsets, frame >> paper.sheet)
-    for crease, selected, end in zip(creases, scenarios.SELECTIONS, scenarios.ENDS):
-        paper, turning, _ = paper.split(crease, selected, scenarios.CREASE_TOLERANCE)
-        displaced_crease = frame >> crease
-        displaced_paper, displaced_turning, _ = displaced_paper.split(
-            displaced_crease, selected, scenarios.CREASE_TOLERANCE
+    displaced = (frame >> points, counts, frame >> offsets, frame >> sheet)
+    for crease, selected, end in zip(creases, scenarios.selections, scenarios.ends):
+        split_points, split_counts, split_offsets, turning = core.split_polygons(
+            points, counts, offsets, crease, selected, scenarios.crease_tolerance,
         )
-        paper = paper.folded(crease ^ paper.sheet, turning, end)
-        displaced_paper = displaced_paper.folded(displaced_crease ^ displaced_paper.sheet, displaced_turning, end)
-        np.testing.assert_allclose((displaced_paper.points - (frame >> paper.points)).kernel, 0, atol=1e-11)
-        np.testing.assert_allclose((displaced_paper.offsets - (frame >> paper.offsets)).kernel, 0, atol=1e-10)
+        displaced_crease = frame >> crease
+        d_points, d_counts, d_offsets, d_turning = core.split_polygons(
+            displaced[0], displaced[1], displaced[2], displaced_crease, selected, scenarios.crease_tolerance,
+        )
+        points, counts, offsets, sheet = core.folded_state(
+            split_points, split_counts, split_offsets, sheet, crease ^ sheet, turning, end,
+        )
+        displaced = core.folded_state(
+            d_points, d_counts, d_offsets, displaced[3], displaced_crease ^ displaced[3], d_turning, end,
+        )
+        assert (((displaced[0] - (frame >> points)).dual().scalar_norm_squared()) < 1e-20).all()
+        assert (((displaced[2] - (frame >> offsets)).dual().scalar_norm_squared()) < 1e-18).all()
 
 
 def test_point_and_line_coincidence_crease_constructions():
-    paper, _ = scenarios.kabuto()
-    first, second, third, _ = paper.points
+    state, _ = scenarios.kabuto_recipe()
+    first, second, third, _ = state[0].batch()
+    sheet = state[3]
     crease = core.point_bisector(first, third)
-    motion = ((crease ^ paper.sheet).normalized() * (np.pi / 2)).exp()
+    motion = ((crease ^ sheet).normalized() * (np.pi / 2)).exp()
     first_line, second_line = first & second, first & third
     bisector = core.line_bisector(first_line, second_line, first)
-    turn = ((bisector ^ paper.sheet).normalized() * (np.pi / 2)).exp()
+    turn = ((bisector ^ sheet).normalized() * (np.pi / 2)).exp()
     aligned_line = turn >> first_line.normalized()
     target_line = second_line.normalized()
 
-    # checks: folding aligns the given points or the unoriented lines.
-    np.testing.assert_allclose(((motion >> first) - third).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((aligned_line + target_line).kernel, 0, atol=1e-12)
+    # checks
+    assert (((motion >> first) & third).antinorm() < 1e-10).all()
+    assert (((aligned_line + target_line).dual().scalar_norm_squared()) < 1e-20).all()
 
 
 def test_folds_do_not_pull_buried_layers_through_stationary_paper():
-    from examples.geometry.origami import render
-
-    paper, creases = scenarios.kabuto()
-    for crease, selected, peak, end in zip(creases, scenarios.SELECTIONS, scenarios.PEAKS, scenarios.ENDS):
-        split_paper, turning, _ = paper.split(crease, selected, scenarios.CREASE_TOLERANCE)
-        faces = split_paper.faces()
-        points = render.coordinates(split_paper.points)[:, :2]
-        heights = (split_paper.sheet & split_paper.offsets).to_array()
+    state, creases = scenarios.kabuto_recipe()
+    points, counts, offsets, sheet = state
+    for crease, selected, peak, end in zip(creases, scenarios.selections, scenarios.peaks, scenarios.ends):
+        split_points, split_counts, split_offsets, turning = core.split_polygons(
+            points, counts, offsets, crease, selected, scenarios.crease_tolerance,
+        )
+        faces = core.polygon_faces(split_counts)
+        batch_points = split_points.batch()
+        heights = (sheet & split_offsets).batch()
         for turning_face in np.flatnonzero(turning):
             for stationary_face in np.flatnonzero(~turning):
-                first, second = points[faces[turning_face]], points[faces[stationary_face]]
-                # The separating-axis test distinguishes overlapping interiors from
-                # polygons that merely share a crease. Every face remains convex.
-                edges = np.concatenate([np.roll(first, -1, axis=0) - first,
-                                        np.roll(second, -1, axis=0) - second])
-                axes = np.column_stack([-edges[:, 1], edges[:, 0]])
-                axes /= np.linalg.norm(axes, axis=1, keepdims=True)
-                first_projection, second_projection = first @ axes.T, second @ axes.T
-                overlap = (np.minimum(first_projection.max(axis=0), second_projection.max(axis=0))
-                           - np.maximum(first_projection.min(axis=0), second_projection.min(axis=0)))
-                if np.all(overlap > 1e-8):
-                    # A positive turn lifts out of the top; a negative turn exits below.
-                    assert (heights[turning_face] - heights[stationary_face]) * np.sign(peak) >= -1e-10
-        paper = split_paper.folded(crease ^ paper.sheet, turning, end)
+                first, second = batch_points[faces[turning_face]], batch_points[faces[stationary_face]]
+                # Separating planes perpendicular to the sheet along every polygon edge distinguish
+                # overlapping face interiors from faces that only share a boundary crease.
+                first_tails, first_heads = (Topology.loops([len(first)]).incidence[1, 0] * first.field()).batch()
+                second_tails, second_heads = (Topology.loops([len(second)]).incidence[1, 0] * second.field()).batch()
+                edges = stack([*(first_tails & first_heads), *(second_tails & second_heads)])
+                edge_planes = (edges | sheet).normalized()
+                first_proj = edge_planes[:, None] & first[None, :]
+                second_proj = edge_planes[:, None] & second[None, :]
+                overlap = (
+                    where(first_proj.max(axis=1) < second_proj.max(axis=1), first_proj.max(axis=1), second_proj.max(axis=1))
+                    - where(first_proj.min(axis=1) > second_proj.min(axis=1), first_proj.min(axis=1), second_proj.min(axis=1))
+                )
+                if (overlap > 1e-8).all():
+                    assert bool((heights[turning_face] - heights[stationary_face]) * np.sign(peak) >= -1e-10)
+        points, counts, offsets, sheet = core.folded_state(
+            split_points, split_counts, split_offsets, sheet, crease ^ sheet, turning, end,
+        )
 
 
-
-def test_the_first_step_of_the_folding_draws():
+def test_origami_render_entry_points():
     from examples.geometry.origami import render
 
-    paper, creases = scenarios.kabuto()
-    states = core.folding(paper, creases, scenarios.SELECTIONS, scenarios.PEAKS, scenarios.ENDS, 1,
-                          scenarios.CREASE_TOLERANCE)
-    list(render.animate(islice(states, 2)))
+    state, creases = scenarios.kabuto_recipe()
+    figure = render.paper_figure(state)
+    plt.close(figure)
+    states = core.folding_states(
+        state, creases, scenarios.selections, scenarios.peaks, scenarios.ends, 1, scenarios.crease_tolerance,
+    )
+    frames = list(render.folding_animation(islice(states, 2)))
+    assert len(frames) == 2
