@@ -57,7 +57,7 @@ from .subspace import SubSpace, SubSpaceFactory, SupportKey
 # Default extension overloads register once core classes exist.
 from . import extensions as _extensions
 
-__version__ = "2.0.0a0"
+__version__ = "2.0.0"
 
 
 def __getattr__(name: str) -> type[Context]:

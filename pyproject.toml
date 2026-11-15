@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "numga"
-version = "2.0.0a0"
-description = "Geometric algebra and extensors in NumPy, JAX and PyTorch"
+version = "2.0.0"
+description = "Geometric algebra and extensors in NumPy, JAX, PyTorch and WebGPU"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Eelco Hoogendoorn", email = "hoogendoorn.eelco@gmail.com" }]
-keywords = ["geometric algebra", "clifford algebra", "extensors", "numpy", "jax", "pytorch"]
+keywords = ["geometric algebra", "clifford algebra", "extensors", "numpy", "jax", "pytorch", "webgpu"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -50,6 +50,8 @@ test = [
 [project.urls]
 Homepage = "https://github.com/EelcoHoogendoorn/numga"
 Repository = "https://github.com/EelcoHoogendoorn/numga"
+Documentation = "https://github.com/EelcoHoogendoorn/numga/blob/main/docs/extensors.md"
+Issues = "https://github.com/EelcoHoogendoorn/numga/issues"
 
 [tool.setuptools.packages.find]
 include = ["numga*", "examples*"]

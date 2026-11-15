@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: "numga: Geometric algebra and typed extensors in NumPy, JAX, PyTorch and WebGPU"
+message: "If you use numga in your work, please cite it using the metadata below."
+type: software
+authors:
+  - given-names: Eelco
+    family-names: Hoogendoorn
+    email: hoogendoorn.eelco@gmail.com
+repository-code: "https://github.com/EelcoHoogendoorn/numga"
+url: "https://github.com/EelcoHoogendoorn/numga"
+license: MIT
+version: 2.0.0
+keywords:
+  - geometric algebra
+  - Clifford algebra
+  - extensors
+  - multilinear algebra
+  - discrete differential geometry
+  - Python
