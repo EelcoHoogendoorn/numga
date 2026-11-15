@@ -255,7 +255,9 @@ def heat_driven_animation(bar_topology: Topology, bar_vertices: core.Point,
 
 @charts.style()
 def turns_figure(drive: core.Drive, fluxes: core.Flux) -> Figure:
-    """Plots pure-electron, pure-hole, and compensated fluxes (`[2] Flux-`) driven by `drive` (`[] Drive+`) in charge and entropy readout planes."""
+    """Pure-electron, pure-hole, and compensated fluxes (`[2] Flux-`) driven by `drive` (`[] Drive+`) appear in charge and entropy readout planes."""
+    local_mv = drive.context.multivector
+    x_dir, y_dir, time_dir = local_mv.x.dual(), local_mv.y.dual(), -local_mv.t.dual()
     figure, axes = charts.subplots(2 * turn_size[0], turn_size[1], ncols=2)
     for ax in axes:
         ax.set_xlim(*turn_across)
@@ -266,8 +268,8 @@ def turns_figure(drive: core.Drive, fluxes: core.Flux) -> Figure:
     electrons, holes = fluxes
     compensated_flux = (electrons + holes) / 2                                # [] Flux-
     arrows = stack((0 * fluxes, fluxes), axis=-1).reshape(-1)                 # [4] Flux-
-    for ax, planes in zip(axes, ((mv.xt, mv.yt), (mv.xs, mv.ys))):
-        field_view = offset_panel(ax, core.x_direction & core.time, core.y_direction & core.time)
+    for ax, planes in zip(axes, ((local_mv.xt, local_mv.yt), (local_mv.xs, local_mv.ys))):
+        field_view = offset_panel(ax, x_dir & time_dir, y_dir & time_dir)
         flux_view = offset_panel(ax, *planes)
         overlay(ax, [
             simplices.strokes(stack((0 * drive, drive)), Topology.chains([2]), electric_colour, arrow_width,

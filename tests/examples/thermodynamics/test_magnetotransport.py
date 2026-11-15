@@ -108,3 +108,13 @@ def test_scenes_run_and_draw():
     render.conductors_figure(bar_topology, bar_vertices, (left_contacts, right_contacts), ring_topology, ring_vertices,
                              (inner_contacts, outer_contacts), resolution, resolution)
     plt.close("all")
+
+
+def test_readings_at_one_place():
+    resistance, hall, seebeck, nernst, righi_leduc = scenarios.interior_readings()
+    middle = scenarios.n_frames // 2
+    assert ((hall[[0, -1]] - scenarios.strength / scenarios.valences).abs() < 1e-9).all()
+    assert ((resistance[[0, -1]] - 1.0).abs() < 1e-9).all()
+    assert hall[middle].abs() < 1e-9
+    assert nernst.abs().argmax() == middle
+    assert (righi_leduc[[0, middle, -1]].abs() < 1e-10).all()
