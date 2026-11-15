@@ -77,6 +77,15 @@ def response(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.
     return carrier_response + lattice_response
 
 
+def interior(response: Response) -> tuple[Drive, Drive]:
+    """Longitudinal charge flux, longitudinal thermal fall, and vanishing transverse charge and entropy fluxes determine
+    the isothermal current-driven and open-circuit heat-driven interior drives (`[...] Drive+`)."""
+    # Four scalar readings along the four basis planes of Drive form one invertible linear map on drives.
+    conditions = (mv.xt * (mv.xt & response(Drive)) + mv.xs * (Drive & (x_direction & entropy))
+                  + mv.yt * (mv.yt & response(Drive)) + mv.ys * (mv.ys & response(Drive)))   # [...] Drive+ <- Drive+
+    return conditions.solve(mv.xt), conditions.solve(mv.xs)
+
+
 def outflow(topology: Topology, areas: Scalar, gradients: Upright, response: Response) -> SparseExtensor:
     """Wedging triangle simplex gradients with the driven flux assembles the dual-cell charge and entropy outflow operator (`(Parcel- <- Potential+)[V <- V]`)."""
     corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]

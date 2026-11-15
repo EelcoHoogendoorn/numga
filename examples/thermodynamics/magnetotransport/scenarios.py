@@ -126,6 +126,16 @@ def bar_readings(topology: Topology, plus_probes: np.ndarray, minus_probes: np.n
             -thermal_voltages[:, 1] / longitudinal_drop, probe_temperatures[:, 1] / longitudinal_drop)
 
 
+def interior_readings() -> tuple[core.Scalar, core.Scalar, core.Scalar, core.Scalar, core.Scalar]:
+    """Interior drives of an endless insulated bar determine longitudinal resistance, Hall resistance, Seebeck
+    thermopower, Nernst signal, and the Righi-Leduc temperature ratio (`[n_frames] Scalar+`) from `response` alone."""
+    conducting = core.response(magnetic, *carriers, densities, conductivity)  # [n_frames] Flux- <- Drive+
+    current_driven, heat_driven = core.interior(conducting)                   # [n_frames] Drive+, [n_frames] Drive+
+    return (current_driven & (core.x_direction & core.time), current_driven & (core.y_direction & core.time),
+            -(heat_driven & (core.x_direction & core.time)), -(heat_driven & (core.y_direction & core.time)),
+            heat_driven & (core.y_direction & core.entropy))
+
+
 def ring_resistances(topology: Topology, high_contacts: np.ndarray, low_contacts: np.ndarray,
                      states: list) -> core.Scalar:
     """Rim voltage divided by drive current gives the Corbino ring's two-terminal resistance (`[n_frames] Scalar+`)."""
@@ -178,6 +188,8 @@ def main() -> None:
     resistance, hall, seebeck, nernst, righi_leduc = bar_readings(bar_topology, plus_probes, minus_probes, bar_states)
     save_figure(render.readings_figure(balances, resistance, hall, seebeck, nernst, righi_leduc, render.balance_names),
                 "magnetotransport_readings")
+    save_figure(render.readings_figure(balances, *interior_readings(), render.balance_names),
+                "magnetotransport_one_place")
 
     spin_frames = list(zip(
         no_field,
@@ -203,6 +215,8 @@ def main() -> None:
     corbino_resistance = (1 + strength ** 2) * np.log(1 / inner_radius) / (2 * np.pi)
     assert ((ring_resistances(ring_topology, inner_contacts, outer_contacts, ring_states)
              - corbino_resistance).abs() < 1e-2 * corbino_resistance).all()
+    for measured, found in zip((resistance, hall, seebeck, nernst, righi_leduc), interior_readings()):
+        assert ((found - measured).abs() < 0.1).all()
 
     assert ((spin_hall[[0, -1]] - spin_skews).abs() < 2e-2).all()
     assert spin_hall[middle].abs() < 1e-12

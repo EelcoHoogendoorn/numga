@@ -212,6 +212,7 @@
 - [A circle constructed twice](orientation/conformal_circle/) — Ordered points and intersecting surfaces give a conformal circle distinct orientations under reflection.
 - [Mechanical work in a mirror](orientation/mechanical_work/) — A crank's load and motion pair to the same work in a reflected experiment.
 - [Energy in a mirror](orientation/mirror_energy/) — Reflected motion and mass distributions retain the same positive kinetic energy.
+- [A spinning wheel in the plane and in space](orientation/spinning_wheel/) — A wheel's angular momentum, kinetic energy, torque and power come from the same expressions in two and three dimensions, and for its mirror image.
 - [Surface normals](orientation/normals/) — Chosen sides and vertex winding determine different behaviours of normals under reflection.
 - [Optical rotation](orientation/optical_rotation/) — Round trips distinguish polarization rotation by an optically active medium from rotation by a magnetic field.
 - [Wu experiment](orientation/wu_experiment/) — Electron emission from polarized cobalt-60 distinguishes an experiment from its mirror image.
