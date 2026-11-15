@@ -2,6 +2,7 @@
 orientation and manifoldness, its dual, its products and its subdivision, on fields of an algebra."""
 
 import numpy as np
+import pytest
 
 from numga import NumpyContext
 from numga.algebras import VGA3D
@@ -23,6 +24,7 @@ def test_boundaries_of_boundaries_vanish_across_dimensions():
 
 
 def test_border_closedness_orientation_and_manifoldness():
+    pytest.importorskip("scipy")
     # A closed tetrahedron surface wound coherently has empty border, Euler characteristic 2, and one piece.
     tet_faces = orient_coherently(np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]))
     tet = Topology(4, tet_faces)
@@ -51,6 +53,7 @@ def test_border_closedness_orientation_and_manifoldness():
 
 
 def test_the_dual_and_the_subdivision_act_on_fields():
+    pytest.importorskip("scipy")
     mv = NumpyContext(VGA3D).multivector
     coarse = Topology(4, orient_coherently(np.array([[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]])))
     dual = coarse.dual
@@ -72,6 +75,7 @@ def test_the_dual_and_the_subdivision_act_on_fields():
 
 
 def test_cone_and_product_preserve_orientation_and_manifoldness():
+    pytest.importorskip("scipy")
     loop = Topology.loops([6])
     disk = loop.cone()
     assert disk.n_dim == 2 and disk.is_oriented and disk.is_manifold and not disk.is_closed

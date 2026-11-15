@@ -4,10 +4,13 @@ algebras, a local variable starting at zero, and the antinorm, as numga computes
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from numga import NumpyContext, stack
 from numga.algebras import PGA3D, STA, VGA3D
 from numga.wgsl import Shader
+
+pytest.importorskip("wgpu")
 
 ATOL = 2e-5
 
