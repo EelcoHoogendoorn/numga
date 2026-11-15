@@ -6,7 +6,8 @@ build/
 dist/
 *.egg-info/
 
-# Generated renders; retain only the figures and animations linked by README.md, docs/ and articles/.
+# Generated renders; retain only the figures and animations linked by README.md, docs/, articles/ and paper/.
+!/paper/joss_overview.png
 /plots/*
 !/plots/arap_bending.gif
 !/plots/area_transport.gif
