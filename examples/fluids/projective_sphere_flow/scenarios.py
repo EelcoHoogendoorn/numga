@@ -1,4 +1,4 @@
-"""One mesh corner moves along its ray while diffusion stays on the unit sphere."""
+"""One vertex of the triangulated sphere moves along its ray while diffusion stays on the unit sphere."""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ planar_corners = planar.mv.point([[-0.9, -0.65], [0.9, -0.5], [-0.1, 0.95]])
 
 # --- plumbing -------------------------------------------------------------------------
 def triangle_grid(n_divisions: int) -> tuple[core.Topology, np.ndarray]:
-    """The triangles of a lattice of samples on the reference triangle, and the barycentric weights of the samples
-    `[corners, samples]`, independent of any geometric realization."""
+    """The triangles of a lattice of samples on the reference triangle, and the barycentric weights of the samples per
+    corner, independent of any geometric realization."""
     steps = np.arange(n_divisions + 1)
     first, second = np.meshgrid(steps, steps, indexing="ij")
     inside = first + second <= n_divisions
     barycentric = np.stack((n_divisions - first - second, first, second))[:, inside] / n_divisions
-    # The index of each lattice node among the samples, and the lattice cells' upward and downward triangles.
+    # The index of each lattice node among the samples, and each lattice square's upward and downward triangles.
     lookup = np.cumsum(inside).reshape(inside.shape) - 1
     corner, along_first, along_second, opposite = lookup[:-1, :-1], lookup[1:, :-1], lookup[:-1, 1:], lookup[1:, 1:]
     layers = first[:-1, :-1] + second[:-1, :-1]
@@ -46,62 +46,66 @@ def triangle_grid(n_divisions: int) -> tuple[core.Topology, np.ndarray]:
 def spherical_frames(topology: core.Topology, vertices: core.Point, radii: Iterable[np.ndarray],
                      quadrature: core.Scalar, display: np.ndarray
                      ) -> Iterator[tuple[core.Point, core.Point, core.Point, core.Scalar]]:
-    """Each frame solves the same source-and-sink problem again, under the interpolation its corner scales choose."""
-    corners = topology.incidence[2, 0] * vertices                          # [corners] Point-[faces]
-    volume = corners[0] & corners[1] & corners[2]                          # Volume-[faces]
-    quadrature_chords = (corners[:, None] * quadrature).sum(axis=0)        # [samples] Point-[faces]
-    samples = quadrature_chords.normalized()                               # [samples] Point-[faces]
-    # Radial projection expands chord area by the inverse cube of the distance.
+    """Yield the representatives, the face poles, the display points and their temperatures, as each frame's corner scales
+    choose a new interpolation for the same source and sink."""
+    corners = topology.incidence[2, 0] * vertices                          # [3] Point-[F]
+    volume = corners[0] & corners[1] & corners[2]                          # Antiscalar-[F]
     n_samples = quadrature.shape[-1]
-    measures = volume.norm() / (2 * n_samples * quadrature_chords.norm() ** 3)   # [samples] Scalar+[faces]
-    source = 2 * (mv.z & samples)                                                # [samples] Scalar+[faces]
+    quadrature_chords = (corners[:, None] * quadrature).sum(axis=0)        # [n_samples] Point-[F]
+    samples = quadrature_chords.normalized()                               # [n_samples] Point-[F]
+    # Radial projection expands chord area by the inverse cube of the distance.
+    measures = volume.norm() / (2 * n_samples * quadrature_chords.norm() ** 3)   # [n_samples] Scalar+[F]
+    source = 2 * (mv.z & samples)                                                # [n_samples] Scalar+[F]
     conductivity = core.Plane.dual()                                       # [] Point- <- Plane+
-    display_points = (corners[:, None] * display).sum(axis=0).normalized() # [samples] Point-[faces]
+    display_points = (corners[:, None] * display).sum(axis=0).normalized() # [...] Point-[F]
     for scales in radii:
-        lifted = vertices * mv.scalar(scales[..., None]).field()           # Point-[vertices]
-        _, numerator, section = core.diffusion(topology, lifted, samples, measures, source, conductivity)
-        values = (numerator & display_points) / (section & display_points)       # [samples] Scalar+[faces]
-        yield lifted, section.dual().normalized(), display_points, values
+        representatives = vertices * mv.scalar(scales[..., None]).field()  # Point-[V]
+        _, numerator, section = core.diffusion(topology, representatives, samples, measures, source, conductivity)
+        values = (numerator & display_points) / (section & display_points)       # [...] Scalar+[F]
+        yield representatives, section.dual().normalized(), display_points, values
 
 
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.projective_sphere_flow import render
 
-    topology, coordinates = shapes.sphere(n_levels)
-    vertices = mv.vector(coordinates).dual().field()                            # Point-[vertices]
+    topology, coordinates = shapes.sphere(n_levels)                             # [V, 3]
+    V, E, F = topology.n_elements
+    vertices = mv.vector(coordinates).dual().field()                            # Point-[V]
     quadrature_grid, quadrature_weights = triangle_grid(n_quadrature_divisions)
     # Each small triangle's centroid samples its share of the face, at the mean of its corners' weights.
-    corner_mean = quadrature_grid.incidence[2, 0].mean(axis=0)            # Scalar+[faces <- vertices]
-    quadrature = (corner_mean * mv.scalar(quadrature_weights[..., None]).field()).batch()  # [corners, samples] Scalar+
-    display_grid, display = triangle_grid(n_display_divisions)
-    chosen_vertex = int((mv.x & vertices.batch()).argmax())
+    corner_mean = quadrature_grid.incidence[2, 0].mean(axis=0)                  # Scalar+[F_quadrature <- V_quadrature]
+    quadrature = (corner_mean * mv.scalar(quadrature_weights[..., None]).field()).batch()  # [3, F_quadrature] Scalar+
+    display_grid, display = triangle_grid(n_display_divisions)                  # [3, V_display]
+    moving_vertex = int((mv.x & vertices.batch()).argmax())
     phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
-    radii = np.exp(log_radius_amplitude * np.sin(phases[:, None]) * (np.arange(topology.n_vertices) == chosen_vertex))
+    radii = np.exp(log_radius_amplitude * np.sin(phases[:, None]) * (np.arange(V) == moving_vertex))
     frames = spherical_frames(topology, vertices, radii, quadrature, display)
     save_animation(render.animate_sphere(topology, display_grid, frames), "projective_sphere_weights", frame_duration_ms)
 
     # The same projective quotient uses the degenerate algebra's finite affine slice.
     triangle = planar.Topology(3, [[0, 1, 2]])
-    points = (planar_corners[:, None] * display).sum(axis=0)               # [samples] Point-
-    lifted = (planar_corners * corner_scales).field()                      # Point-[corners]
-    tails, heads = triangle.incidence[1, 0] * lifted                       # Point-[edges], Point-[edges]
-    reciprocals = ((triangle.boundary[2, 1] * (tails & heads)) / (lifted.batch()[0] & lifted.batch()[1] & lifted.batch()[2])).batch()[:, 0]   # [corners] Plane+
+    points = (planar_corners[:, None] * display).sum(axis=0)               # [...] Point-
+    representatives = (planar_corners * corner_scales).field()             # Point-[V]
+    tails, heads = triangle.incidence[1, 0] * representatives              # Point-[E], Point-[E]
+    reciprocals = ((triangle.boundary[2, 1] * (tails & heads)) / (representatives.batch()[0] & representatives.batch()[1] & representatives.batch()[2])).batch()[:, 0]   # [3] Plane+
     section = reciprocals.sum(axis=0)                                      # [] Plane+
-    hats = (reciprocals[:, None] & points) / (section & points)                       # [corners, samples] Scalar+
-    gradients = (reciprocals[:, None] - hats * section) / (section & points)   # [corners, samples] Plane+
-    potential = (hats * corner_values[:, None]).sum(axis=0)                # [samples] Scalar+
-    gradient = (gradients * corner_values[:, None]).sum(axis=0)            # [samples] Plane+
+    barycentrics = (reciprocals[:, None] & points) / (section & points)    # [3, ...] Scalar+
+    gradients = (reciprocals[:, None] - barycentrics * section) / (section & points)   # [3, ...] Plane+
+    potential = (barycentrics * corner_values[:, None]).sum(axis=0)        # [...] Scalar+
+    gradient = (gradients * corner_values[:, None]).sum(axis=0)            # [...] Plane+
     # The material pairs spatial directions only; it never inverts the null metric.
-    directions = stack((planar.mv.x.dual(), planar.mv.y.dual()))           # [axes] Point-
+    directions = stack((planar.mv.x.dual(), planar.mv.y.dual()))           # [2] Point-
     conductivity = (directions * (planar.Plane & directions)).sum(axis=0)  # [] Point- <- Plane+
-    current = -conductivity(gradient)                                      # [samples] Point-
+    current = -conductivity(gradient)                                      # [...] Point-
     save_figure(render.draw_planar(points, display_grid, potential, current), "projective_affine_slice")
 
     # checks
-    np.testing.assert_allclose(hats.sum(axis=0).to_array(), 1, atol=1e-12)
-    np.testing.assert_allclose((gradients & points).to_array(), 0, atol=1e-12)
-    np.testing.assert_allclose((planar.mv.w & current).to_array(), 0, atol=1e-12)
+    # The corner functions partition unity, and their simplex gradients see no motion along the ray.
+    assert ((barycentrics.sum(axis=0) - 1).abs() < 1e-12).all()
+    assert ((gradients & points).abs() < 1e-12).all()
+    # The current is a direction, with no part along the homogeneous coordinate.
+    assert ((planar.mv.w & current).abs() < 1e-12).all()
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
-"""Cayley-Klein geometry in PGA2D: the metric is a quadric you choose.
+"""Cayley-Klein geometry in PGA2D builds distances, angles, and spheres from one chosen polarity map.
 
-Projective geometry has joins and meets but no distances. Pick one quadric, the absolute,
-as a polarity map from points to planes, and every metric notion follows from it and its
-inverse alone: distances and angles are cross ratios against the absolute, the
-perpendiculars to a plane all pass through its pole, and a sphere is the quadric of
-points at fixed cross ratio from its centre. With the unit sphere as the absolute this is
-the hyperbolic Beltrami-Klein ball. Flip one sign and the same constructions do elliptic geometry.
+Projective geometry defines joins and meets without distances or angles. Choosing one quadric as a
+polarity map from points to polar planes supplies the entire metric: distances and angles follow from
+normalized pairings through that absolute and its inverse, perpendiculars to a plane pass through its
+pole, and concentric spheres form quadrics of fixed normalized pairing with their centre. Taking the
+unit circle as the absolute yields the hyperbolic Beltrami-Klein disc, while flipping the weight sign
+yields elliptic geometry from the same constructions.
 """
 
 from __future__ import annotations
@@ -14,79 +14,73 @@ import numpy as np
 
 from numga import Extensor, NumpyContext
 from numga.algebras import PGA2D
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 ga = PGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-# Whole-extensor types (GATypes); map types read output <- inputs. Points are antivectors with intrinsic
-# orientation, and planes vectors with extrinsic orientation, each with a side, as polars and mirrors are. A join
-# of two points is a line, oriented along itself instead, an intrinsic antibivector; in PGA2D it has the grade of a
-# plane, and times an intrinsic scalar from the data it becomes a plane with a side. The polarity maps a point to
-# its polar plane, and the pole map a plane to its pole:
+# Points are intrinsic antivectors and planes are extrinsic vectors with a side, as polars and mirrors
+# carry; joining two points gives an intrinsic line, which becomes a sided plane when multiplied by the
+# triangle's intrinsic winding scalar.
 Scalar = ga.gatype.scalar()                         # Scalar+
 Point = ga.gatype.antivector()                      # Antivector-
 Plane = ga.gatype.vector()                          # Vector+
 Line = ga.gatype.antibivector()                     # Antibivector-
-Polarity = ga.gatype((Plane, Point))      # Plane+ <- Point-
-Pole = ga.gatype((Point, Plane))          # Point- <- Plane+
+Polarity = ga.gatype((Plane, Point))                # Plane+ <- Point-
 
 
-def invariant(pairing: Extensor, a: Extensor, b: Extensor) -> Scalar:
-    """The invariant of a pair against the absolute: their pairing over the root of both self-pairings."""
-    return pairing(a, b) / (pairing(a, a) * pairing(b, b)).square_root()
+def normalized_pairing(pairing: Extensor, first: Extensor, second: Extensor) -> Scalar:
+    """Normalized bilinear pairing of `first` and `second` over the root of their self-pairings (`[...] Scalar+`)."""
+    return pairing(first, second) / (pairing(first, first) * pairing(second, second)).square_root()
 
 
-# --- math -----------------------------------------------------------------------------
-def triangle(absolute: Polarity, vertices: Point) -> tuple[Plane, Scalar, Scalar, Scalar]:
-    """The sides, angles, side lengths and area of a triangle, all from the absolute."""
-    dual_absolute = absolute.inverse()                                          # [] Point- <- Plane+
+def triangle_metrics(
+    topology: Topology, absolute: Polarity, vertices: Point,
+) -> tuple[Plane, Scalar, Scalar, Scalar]:
+    """Inward side planes (`[3] Plane+[F]`), corner angles (`[3] Scalar+[F]`), opposite side lengths
+    (`[3] Scalar+[F]`), and hyperbolic area (`[] Scalar+[F]`) of triangles against `absolute`."""
+    pole_map = absolute.solve(Plane)                                       # [] Point- <- Plane+
 
-    # The invariant of two points is (a & absolute(b)) / ((a & absolute(a)) * (b & absolute(b))).square_root(),
-    # and Cayley's distance is its arccosh. The invariant of two planes is the same with the dual absolute,
-    # and the angle is its arccos. Both stay inside the algebra until the very last step.
-    distance_pairing = -(Point & absolute(Point))                         # [] Scalar+ <- (Point-, Point-)
-    angle_pairing = Plane & dual_absolute(Plane)                          # [] Scalar+ <- (Plane+, Plane+)
+    # Cayley's hyperbolic distance is arccosh of the negative normalized point pairing, and the corner
+    # angle is arccos of the normalized plane pairing through the inverse polarity.
+    distance_pairing = -(absolute(Point) & Point)                          # [] Scalar+ <- (Point-, Point-)
+    angle_pairing = Plane & pole_map(Plane)                                # [] Scalar+ <- (Plane+, Plane+)
 
-    # A triangle: its sides are joins of consecutive vertices, batched, and the angle at
-    # each vertex is between the two sides leaving it. Gauss-Bonnet gives the area as the
-    # angle defect.
-    outline = Topology.loops([3])
-    tails, heads = outline.incidence[1, 0] * vertices.field()              # Point-[sides], Point-[sides]
-    # Each vertex is the tail of the side leaving it and the head of the side arriving at it.
-    leaving, arriving = ~outline.incidence[1, 0]                           # Scalar+[vertices <- sides], Scalar+[vertices <- sides]
-    # The triangle's winding, an intrinsic scalar: the joins leaving each vertex, times it, are planes, which the
-    # absolute reads, and one factor on both planes of an angle leaves the angle as it is.
-    winding = vertices[0] & vertices[1] & vertices[2]                      # [] Scalar-
-    to_next = (leaving * ((tails & heads) * winding)).batch()              # [3] Plane+
-    to_prev = (arriving * ((heads & tails) * winding)).batch()             # [3] Plane+
-    angles = invariant(angle_pairing, to_next, to_prev).clip(-1.0, 1.0).arccos()
-    lengths = invariant(distance_pairing, tails, heads).clip(1.0, np.inf).arccosh().batch()
-    area = np.pi - angles.sum()
-    return to_next, angles, lengths, area
+    corners = topology.incidence[2, 0] * vertices                          # [3] Point-[F]
+    facing = topology.off[2, 0] * vertices                                 # [2, 3] Point-[F]
+    # Multiplying each point join by the corner's intrinsic winding turns the intrinsic line into an
+    # extrinsic plane oriented toward the interior; the common winding cancels in every angle ratio.
+    corner_windings = corners & facing[0] & facing[1]                      # [] Scalar-[F]
+    sides = (facing[0] & facing[1]) * corner_windings                      # [3] Plane+[F]
+    first_sides = (corners & facing[0]) * corner_windings                  # [3] Plane+[F]
+    second_sides = (corners & facing[1]) * corner_windings                 # [3] Plane+[F]
+    angles = normalized_pairing(angle_pairing, first_sides, second_sides).clip(-1.0, 1.0).arccos()  # [3] Scalar+[F]
+    lengths = normalized_pairing(distance_pairing, facing[0], facing[1]).clip(1.0, np.inf).arccosh()  # [3] Scalar+[F]
+    area = np.pi - angles.sum(axis=0)                                      # [] Scalar+[F]
+    return sides, angles, lengths, area
 
 
-def perpendicular(absolute: Polarity, side: Plane, point: Point) -> tuple[Point, Line, Point, Point]:
-    """The pole of a plane, the perpendicular to it from a point, its foot, and the point reflected across
-    the plane."""
-    # Every line perpendicular to a side passes through its pole, so the perpendicular from the point is
-    # their join and the foot is its meet with the side. Reflection across the side is the harmonic
-    # homology centred on the pole, and it preserves the distance to the foot.
+def perpendicular_reflection(
+    absolute: Polarity, side: Plane, point: Point,
+) -> tuple[Point, Line, Point, Point]:
+    """Pole of `side`, perpendicular line through `point`, its foot on `side`, and the harmonic
+    reflection of `point` across `side` (`[] Point-`, `[] Line-`, `[] Point-`, `[] Point-`)."""
+    # Every line perpendicular to a plane passes through its pole, so joining the point to the pole
+    # drops the perpendicular, and harmonic homology centred at the pole reflects across the plane.
     pole = absolute.solve(side)                                            # [] Point-
     normal = point & pole                                                  # [] Line-
     foot = side ^ normal                                                   # [] Point-
-    reflected = point - pole * (2.0 * (point & side) / (pole & side))      # [] Point-
-    return pole, normal, foot, reflected
+    homology_step = 2 * (side & point) / (side & pole)                     # [] Scalar+
+    reflected_point = point - pole * homology_step                         # [] Point-
+    return pole, normal, foot, reflected_point
 
 
-def spheres(absolute: Polarity, centres: Point, radii: np.ndarray) -> Polarity:
-    """Spheres of the given radii about the given centres, as quadrics: one per centre and radius."""
-    # Fixing the distance to a centre fixes the invariant, and clearing the square root
-    # turns that into a quadric in P: the dyad of the centre's polar minus np.cosh(radii) ** 2
-    # times the centre's self-invariant times the absolute. One expression, batched over the
-    # radii, drawn as the level set P & sphere(P) == 0.
-    centre = centres[:, None]
-    polar = absolute(centre)                                               # [centres, 1] Plane+
-    return polar * (polar & Point) - (centre & polar) * np.cosh(radii) ** 2 * absolute   # [centres, radii] Plane+ <- Point-
-
+def concentric_spheres(absolute: Polarity, centres: Point, radii: np.ndarray) -> Polarity:
+    """Concentric sphere quadrics (`[..., n_radii] Plane+ <- Point-`) of `radii` (`[n_radii]`) around `centres`."""
+    # Clearing the square root in the fixed-distance invariant turns each sphere into a polarity map
+    # whose null locus is P & sphere(P) == 0.
+    n_radii = len(radii)
+    centre = centres[..., None]                                            # [..., 1] Point-
+    polar = absolute(centre)                                               # [..., 1] Plane+
+    return polar * (polar & Point) - (polar & centre) * np.cosh(radii) ** 2 * absolute  # [..., n_radii] Plane+ <- Point-

@@ -1,10 +1,30 @@
-"""Extensor descriptors backed by whole-GAType multiple dispatch."""
+"""`ExtensionMethod` attaches whole-`GAType` multiple dispatch to `Extensor` as a descriptor,
+allowing mathematical domains (`norms`, `logexp`, `inverse`, `systems`, `spectra`, `forms`) to
+register implementations in separate modules without crowding `Extensor` itself or subclassing it
+per algebra or grade. Each descriptor takes its public name explicitly so methods can be installed
+on or off the class body without relying on `__set_name__`.
+
+Every `ExtensionMethod` declares a plain-English `takes` domain description used in `GATypeError`
+refusal messages whenever no registration matches an operand signature. Methods whose mathematical
+definition fixes input or output orientation across all implementations, such as `exp` requiring
+extrinsic inputs or `norm` and `cos` always returning extrinsic scalars, enforce
+`input_orientation` and `output_orientation` centrally in the dispatcher rather than repeating
+checks in each kernel.
+
+Single-signature methods fix their operand count on first registration from either the number of
+declarative patterns or a predicate's positional parameters. Methods that accept optional trailing
+operands, such as `eigh(form)` versus generalized `eigh(form, metric)` or `lstsq(operator, rhs)`
+versus `lstsq(form, rhs, metric)`, declare `overloads` up front and route each call length to its
+own independent `ExtensionMethod` table. Dispatch and specialization across types are described in
+`docs/internals.md` (section 7), with orientation constraints in `docs/orientation.md`.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from inspect import Parameter, signature
 from types import MethodType
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload as typing_overload
+from typing import TYPE_CHECKING, overload as typing_overload
 
 from numga.gatype import GAType, GATypeDispatch, GATypePattern, Orientation, Trait, TraitSet
 from numga.gatype.dispatch import is_predicate
@@ -12,101 +32,75 @@ from numga.gatype.dispatch import is_predicate
 if TYPE_CHECKING:
     from numga.extensor import Extensor
 
-_Implementation = TypeVar("_Implementation", bound=Callable[..., Any])
-
 
 class ExtensionMethod:
-    """A dynamically installable, whole-GAType-dispatched Extensor method.
+    """Each public method attaches a whole-`GAType` dispatch table (or per-arity overload tables) to
+    `Extensor`."""
 
-    Portable registrations use algebra-independent :class:`GATypePattern`
-    values (or unambiguous Trait/TraitSet shorthand). A concrete GAType binds
-    one algebra and matches every operand whose support it contains, in any
-    blade layout. A callable condition receives the complete GATypes, layout
-    included, and is tried before every declarative registration.
-
-    The name is explicit because assigning a descriptor to ``Extensor`` after
-    class creation does not invoke the descriptor ``__set_name__`` hook.
-    """
-
-    __slots__ = ("_name", "_takes", "_operand_count", "_dispatch", "_overloads", "_input_orientation", "_output_orientation")
+    __slots__ = ("_name", "_takes", "_n_operands", "_dispatch", "_overloads", "_input_orientation", "_output_orientation")
 
     def __init__(
         self,
         name: str,
         *,
         takes: str,
-        operand_counts: tuple[int, ...] = (),
+        overloads: tuple[int, ...] = (),
         input_orientation: Orientation | None = None,
         output_orientation: Orientation | None = None,
     ) -> None:
-        """`takes` says in words what the method's operands must be. It is what a call is told when
-        no case matches its types, and so documents the method's domain where a call falls outside it.
-
-        A method may declare the one orientation its operand must have, and the orientation of its
-        result whatever the operand's: facts about the mathematical function, which hold for every
-        implementation registered for it. Without a declaration the operand may have either
-        orientation, and the result has the orientation its computation gives it."""
         if not isinstance(name, str) or not name or name.startswith("_"):
             raise TypeError("an extension method name must be a public name")
         self._name = name
         self._takes = takes
-        self._operand_count: int | None = None
-        self._dispatch: GATypeDispatch | None = None
-        self._overloads = {count: ExtensionMethod(name, takes=takes) for count in operand_counts}
+        self._n_operands = None
+        self._dispatch = None
+        self._overloads = {n_operands: ExtensionMethod(name, takes=takes) for n_operands in overloads}
         self._input_orientation = input_orientation
         self._output_orientation = output_orientation
 
-    def position_of(self, implementation: Callable[..., Any]) -> int:
-        """Where a predicate-registered implementation sits; register(..., position=...) before it
-        to take precedence over it and nothing else."""
+    def position_of(self, implementation: Callable) -> int:
+        """Locating an implementation in the predicate tier lets a narrower specialization insert
+        directly ahead of it via `position`."""
         return self._dispatch.position_of(implementation)
 
-    def overload(self, operand_count: int) -> ExtensionMethod:
-        """The independently registered dispatcher for a positional overload."""
-        return self._overloads[operand_count]
+    def overload(self, n_operands: int) -> ExtensionMethod:
+        """Calls with `n_operands` operands route to their own independent `ExtensionMethod`
+        dispatcher."""
+        return self._overloads[n_operands]
 
     @property
     def name(self) -> str:
         return self._name
 
     @property
-    def operand_count(self) -> int | None:
-        return self._operand_count
+    def n_operands(self) -> int | None:
+        return self._n_operands
 
     def register(
         self,
-        *patterns: GAType | GATypePattern | Trait | TraitSet | Callable[..., object],
-        precedence: str | None = None,
+        *patterns: GAType | GATypePattern | Trait | TraitSet | Callable,
         position: int | None = None,
         fields: bool = False,
         staged: bool = False,
-    ) -> Callable[[_Implementation], _Implementation]:
-        """Register a type signature without mutating until decoration.
-
-        A staged implementation is called once per signature with the actual GATypes, and returns
-        the function that runs on values of those types.
-
-        The number of dispatched Extensor operands is the number of
-        declarative patterns. For a sole predicate it is inferred from that
-        callable's fixed positional signature, or checked against an arity
-        already established by earlier registrations.
-        """
+    ) -> Callable:
+        """`n_operands` is fixed by the first registration, either from the number of patterns or
+        from a predicate's positional signature."""
 
         if not patterns:
             raise TypeError(f"{self.name!r} registration requires a pattern")
         if self._overloads:
-            count = (
-                _predicate_operand_count(patterns[0], established=None)
+            n_operands = (
+                _predicate_n_operands(patterns[0], established=None)
                 if len(patterns) == 1 and is_predicate(patterns[0]) else len(patterns)
             )
-            return self._overloads[count].register(
-                *patterns, precedence=precedence, position=position, fields=fields, staged=staged,
+            return self._overloads[n_operands].register(
+                *patterns, position=position, fields=fields, staged=staged,
             )
         predicate = len(patterns) == 1 and is_predicate(patterns[0])
         if predicate:
-            operand_count = _predicate_operand_count(
+            n_operands = _predicate_n_operands(
                 patterns[0],
-                established=self._operand_count,
+                established=self._n_operands,
             )
         else:
             if not all(
@@ -117,24 +111,24 @@ class ExtensionMethod:
                     f"every {self.name!r} registration entry must be a GAType, "
                     "GATypePattern, Trait, or TraitSet"
                 )
-            operand_count = len(patterns)
+            n_operands = len(patterns)
 
-        if self._operand_count is not None and self._operand_count != operand_count:
+        if self._n_operands is not None and self._n_operands != n_operands:
             raise TypeError(
                 f"extension method {self.name!r} dispatches "
-                f"{self._operand_count} operands, not {operand_count}"
+                f"{self._n_operands} operands, not {n_operands}"
             )
 
-        def decorate(implementation: _Implementation) -> _Implementation:
-            if self._operand_count is not None and self._operand_count != operand_count:
+        def decorate(implementation: Callable) -> Callable:
+            if self._n_operands is not None and self._n_operands != n_operands:
                 raise TypeError(
                     f"extension method {self.name!r} dispatches "
-                    f"{self._operand_count} operands, not {operand_count}"
+                    f"{self._n_operands} operands, not {n_operands}"
                 )
             created = self._dispatch is None
             dispatch = (
                 GATypeDispatch(
-                    self.name, None, operand_count, takes=self._takes,
+                    self.name, None, n_operands, takes=self._takes,
                     input_orientation=self._input_orientation, output_orientation=self._output_orientation,
                 )
                 if created
@@ -143,20 +137,19 @@ class ExtensionMethod:
             assert dispatch is not None
             registered = dispatch.register(
                 *patterns,
-                precedence=precedence,
                 position=position,
                 fields=fields,
                 staged=staged,
             )(implementation)
             if created:
                 self._dispatch = dispatch
-            if self._operand_count is None:
-                self._operand_count = operand_count
+            if self._n_operands is None:
+                self._n_operands = n_operands
             return registered
 
         return decorate
 
-    def __call__(self, *arguments: Any, **kwargs: Any) -> Any:
+    def __call__(self, *arguments, **kwargs):
         if self._overloads:
             return self._overloads[len(arguments)](*arguments, **kwargs)
         dispatch = self._dispatch
@@ -167,18 +160,10 @@ class ExtensionMethod:
         return dispatch(*arguments, **kwargs)
 
     @typing_overload
-    def __get__(
-        self,
-        instance: None,
-        owner: type[Extensor] | None = None,
-    ) -> ExtensionMethod: ...
+    def __get__(self, instance: None, owner: type[Extensor] | None = None) -> ExtensionMethod: ...
 
     @typing_overload
-    def __get__(
-        self,
-        instance: Extensor,
-        owner: type[Extensor] | None = None,
-    ) -> MethodType: ...
+    def __get__(self, instance: Extensor, owner: type[Extensor] | None = None) -> MethodType: ...
 
     def __get__(
         self,
@@ -193,10 +178,10 @@ class ExtensionMethod:
         return MethodType(dispatch, instance)
 
 
-def _predicate_operand_count(
-    predicate: Callable[..., object],
+def _predicate_n_operands(
+    predicate: Callable,
     *,
-    established: int | None,
+    established: int | None = None,
 ) -> int:
     try:
         parameters = tuple(signature(predicate).parameters.values())

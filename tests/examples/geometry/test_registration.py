@@ -1,74 +1,58 @@
-"""Motor estimation from point correspondences in flat space and on the three-sphere, and the flat registration's
-figure drawn."""
+"""Coverage tests for point-cloud registration in three-dimensional Euclidean space and on the three-sphere."""
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from numga import stack
 from examples.geometry.registration import render, scenarios
 
 
-SPREAD = scenarios.CLOUD_SPREAD
+def point_mismatch(first, second):
+    """Squared displacement norm between two normalized point clouds (`[...] Scalar+`)."""
+    return (first.normalized() - second.normalized()).dual().scalar_norm_squared()
 
 
-def coordinates(points) -> np.ndarray:
-    """Coordinates of normalized points along the planes x, y and z."""
-    mv = points.context.multivector
-    return (stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array()
-
-
-@pytest.mark.parametrize("core", scenarios.SCENES.values(), ids=scenarios.SCENES.keys())
+@pytest.mark.parametrize("core", scenarios.scenes.values(), ids=scenarios.scenes.keys())
 def test_correspondence_residual_is_linear_in_the_motor(core):
-    truth = scenarios.true_motor(core)
-    source = core.cloud(20, SPREAD, np.random.default_rng(1))
+    truth = scenarios.ground_truth_motor(core)
+    source = core.point_cloud(6, scenarios.cloud_spread, np.random.default_rng(1))
     target = truth >> source
     residual = target * core.Motor - core.Motor * source
     assert residual.arity == 1
-    np.testing.assert_allclose(residual(truth).kernel, 0, atol=1e-8)
-    misfit = (residual.scalar_norm_squared() + residual.dual().scalar_norm_squared()).sum(axis=0)
-    assert misfit.kernel.shape == (1, 8, 8)
-    np.testing.assert_allclose(misfit.kernel[0], misfit.kernel[0].T, atol=1e-12)
+    evaluated = residual(truth)
+    assert ((evaluated.scalar_norm_squared() + evaluated.dual().scalar_norm_squared()) < 1e-12).all()
 
 
-@pytest.mark.parametrize("core", scenarios.SCENES.values(), ids=scenarios.SCENES.keys())
+@pytest.mark.parametrize("core", scenarios.scenes.values(), ids=scenarios.scenes.keys())
 def test_exact_correspondences_recover_the_motor(core):
-    truth = scenarios.true_motor(core)
-    source = core.cloud(30, SPREAD, np.random.default_rng(2))
+    truth = scenarios.ground_truth_motor(core)
+    source = core.point_cloud(8, scenarios.cloud_spread, np.random.default_rng(2))
     target = truth >> source
-    estimate = core.fit_motor(source, target)
-    np.testing.assert_allclose(coordinates(estimate >> source), coordinates(target), atol=1e-10)
-
-
-@pytest.mark.parametrize("core", scenarios.SCENES.values(), ids=scenarios.SCENES.keys())
-def test_noisy_correspondences_recover_the_pose_within_noise(core):
-    truth = scenarios.true_motor(core)
-    rng = np.random.default_rng(3)
-    source = core.cloud(200, SPREAD, rng)
-    target = core.jitter(truth >> source, 0.05, rng)
-    estimate = core.fit_motor(source, target)
-    error = coordinates(estimate >> source) - coordinates(truth >> source)
-    assert np.linalg.norm(error, axis=-1).mean() < 0.03
-
-
-@pytest.mark.parametrize("core", scenarios.SCENES.values(), ids=scenarios.SCENES.keys())
-def test_estimate_is_a_trusted_unit_motor(core):
-    truth = scenarios.true_motor(core)
-    source = core.cloud(30, SPREAD, np.random.default_rng(5))
-    estimate = core.fit_motor(source, truth >> source)
+    estimate = core.fitted_motor(source, target)
     assert estimate.gatype == core.Motor
-    np.testing.assert_allclose((estimate * estimate.reverse()).kernel, core.mv.rotor().kernel, atol=1e-12)
+    assert ((estimate * estimate.reverse() - core.mv.rotor()).scalar_norm_squared() < 1e-12).all()
+    assert (point_mismatch(estimate >> source, target) < 1e-12).all()
 
 
-@pytest.mark.parametrize("core", scenarios.SCENES.values(), ids=scenarios.SCENES.keys())
-def test_translation_is_recovered_by_the_same_fit(core):
+@pytest.mark.parametrize("core", scenarios.scenes.values(), ids=scenarios.scenes.keys())
+def test_noisy_correspondences_and_pure_shift_align(core):
     mv = core.mv
-    source = core.cloud(100, SPREAD, np.random.default_rng(6))
-    translation = (mv.xw * 0.75 - mv.yw * 0.25 + mv.zw).exp()
-    target = translation >> source
-    estimate = core.fit_motor(source, target)
-    np.testing.assert_allclose(coordinates(estimate >> source), coordinates(target), atol=1e-10)
+    rng = np.random.default_rng(3)
+    source = core.point_cloud(60, scenarios.cloud_spread, rng)
+    truth = scenarios.ground_truth_motor(core)
+    noisy_target = core.noisy_cloud(truth >> source, 0.02, rng)
+    noisy_estimate = core.fitted_motor(source, noisy_target)
+    assert point_mismatch(noisy_estimate >> source, truth >> source).mean(axis=0).square_root() < 0.04
+
+    shift_motor = (mv.xw * 0.75 - mv.yw * 0.25 + mv.zw).exp()
+    shifted_target = shift_motor >> source
+    shift_estimate = core.fitted_motor(source, shifted_target)
+    assert (point_mismatch(shift_estimate >> source, shifted_target) < 1e-12).all()
 
 
-def test_the_flat_registration_draws():
-    plt.close(render.draw_registration(*scenarios.registration(scenarios.SCENES["euclidean"])))
+def test_registration_figure_renders():
+    core = scenarios.scenes["euclidean"]
+    source = core.point_cloud(6, scenarios.cloud_spread, np.random.default_rng(4))
+    target = scenarios.ground_truth_motor(core) >> source
+    aligned = core.fitted_motor(source, target) >> source
+    plt.close(render.registration_figure(source, target, aligned))

@@ -1,8 +1,6 @@
-"""Two-view epipolar geometry recovers the relative pose of two cameras and the 3D positions of observed points from corresponding sight rays.
+"""Two-view epipolar geometry recovers the relative pose of two cameras and the 3D positions of observed landmarks from corresponding sight rays.
 
-Each sight ray is a line, the join of a camera's eye with an image point, and two lines cross in space when their regressive product `rays_1 & (motor >> rays_2)` vanishes. A twist moves a line by their commutator, so the residuals' rates under a small motion are linear forms on twists, and Gauss-Newton steps solve against the sum of their squares, a quadratic form on twists measured by the second camera's kinetic energy. With the pose found, a ray's squared distance to a point is the quadric `(rays & Point).scalar_norm_squared()`, and each landmark is the vertex of its two rays' quadrics summed.
-
-In the matrix notation of computer vision the crossing condition reads as the essential matrix constraint $\\mathbf r_2^{\\mathsf T} E\\, \\mathbf r_1 = 0$ with $E = [\\mathbf t]_\\times R$, solved by the eight-point algorithm and a singular value decomposition into four candidate poses, followed by linear triangulation.
+Each sight ray is modelled as a line, the join of a camera's optical centre with an image point, and two sight rays intersect in space when their regressive product `rays_1 & (motor >> rays_2)` vanishes. Because a twist moves a line by their commutator, the rate of change of each crossing residual under a small camera motion is a linear form on twists, and Gauss–Newton refinement solves against the sum of squared forms measured in the second camera's kinetic energy. Once the relative motor is known, a point's squared distance to a sight ray is the quadric `(sight_rays & Point).scalar_norm_squared()`, and each triangulated landmark sits at the vertex of its two rays' summed distance quadrics.
 """
 
 from __future__ import annotations
@@ -18,60 +16,45 @@ from numga.algebras import PGA3D
 ga = PGA3D
 mv = NumpyContext(ga).multivector
 
-Scalar = ga.gatype.scalar()                         # Scalar+
-Point = ga.gatype.antivector()                      # Antivector-
-Line = ga.gatype.antibivector()                     # Antibivector-
-Motor = ga.gatype.rotor()                           # Rotor+
-Twist = ga.gatype.bivector()                        # Bivector+
-# Camera 2 as a rigid body, by which a step is measured: unit masses a unit from its centre along each axis.
-body = mv.point(np.concatenate([np.eye(3), -np.eye(3)]))                 # [masses] Point-
+Scalar = ga.gatype.scalar()                                                   # Scalar+
+Point = ga.gatype.antivector()                                                # Antivector-
+Line = ga.gatype.antibivector()                                               # Antibivector-
+Motor = ga.gatype.rotor()                                                     # Rotor+
+Twist = ga.gatype.bivector()                                                  # Bivector+
+# Six unit masses at unit distance along the three coordinate axes of camera 2 define the kinetic-energy metric on twists.
+body_masses = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]])  # [6] Point-
+kinetic_energy = Twist.regressive(body_masses.regressive(body_masses.commutator(Twist)).sum(axis=0))  # [] Scalar+ <- (Twist+, Twist+)
+point_weight = mv.w & Point                                                   # [] Scalar+ <- Point-
 
 
 # --- math ------------------------------------------------------------------
-def refine(rays_1: Line, rays_2: Line, motor: Motor) -> Motor:
-    """One Gauss-Newton step on the relative camera motor, in camera 1's frame, moves it toward crossing sight rays.
-
-    The rays are calibrated sight rays, each in its own camera's frame. The motor needs a nonzero
-    baseline; the baseline's length is not observable and stays close to the given one.
-    """
-    # Camera 2's kinetic energy on twists in its own frame, to measure the step by.
-    kinetic = Twist.regressive(body.regressive(body.commutator(Twist)).sum(axis=0))  # [] Scalar+ <- (Twist+, Twist+)
-    # Two lines meet (are coplanar) iff their regressive product vanishes. For two lines
-    # it is a number, one residual per ray pair.
-    residuals = rays_1 & (motor >> rays_2)                               # [rays] Scalar-
-
-    # A twist moves a line by their commutator, so the residual's rate of change under a
-    # twist is a linear form on twists, its Jacobian.
-    jacobian = rays_1.regressive(Twist.commutator(motor >> rays_2))      # [rays] Scalar- <- Twist+
-
-    # Gauss-Newton normal equations as forms on twists, summed over ray pairs. The residual
-    # is already a number, so squaring it needs no metric: the curvature is the Jacobian
-    # form times itself, and the gradient the residual times the Jacobian form.
-    curvature = (jacobian * jacobian).sum(axis=0)                        # [] Scalar+ <- (Twist+, Twist+)
-    descent = -(residuals * jacobian).sum(axis=0)                        # [] Scalar+ <- Twist+
-
-    # Solve for the 5 observable degrees of freedom, measuring a step by the kinetic energy
-    # of camera 2. The flattest mode is the unobservable scale, which moves camera 2 along the
-    # baseline; rcond drops it by its curvature per unit energy, and the step has no
-    # component along it in that energy, so near the solution the baseline keeps its length.
-    energy = kinetic(motor << Twist, motor << Twist)                     # [] Scalar+ <- (Twist+, Twist+)
-    step = curvature.lstsq(descent, energy, rcond=1e-4)                  # [] Twist+
-    return ((step * 0.5).exp() * motor).normalized()                     # [] Motor+
+def pose_step(rays_1: Line, rays_2: Line, motor: Motor) -> Motor:
+    """One Gauss–Newton step from `motor` (`[] Motor+`) in camera 1's frame moves camera 2 toward intersecting sight rays (`[...] Line-`) while dropping the unobservable baseline-scale mode."""
+    # Two lines intersect (are coplanar) when their regressive product vanishes, giving one scalar residual per ray pair.
+    residuals = rays_1 & (motor >> rays_2)                                    # [...] Scalar-
+    # A twist moves a line by their commutator, so differentiating the crossing residual yields a linear form on twists.
+    jacobian = rays_1.regressive(Twist.commutator(motor >> rays_2))           # [...] Scalar- <- Twist+
+    # Scalar residuals square directly without a metric, forming the Gauss-Newton curvature and descent forms over twists.
+    curvature = (jacobian * jacobian).sum(axis=0)                             # [] Scalar+ <- (Twist+, Twist+)
+    descent = -(residuals * jacobian).sum(axis=0)                             # [] Scalar+ <- Twist+
+    # Measuring twists in camera 2's kinetic energy isolates the zero-curvature scale mode along the baseline for rcond truncation.
+    step_metric = kinetic_energy(motor << Twist, motor << Twist)              # [] Scalar+ <- (Twist+, Twist+)
+    step_twist = curvature.lstsq(descent, step_metric, rcond=1e-4)            # [] Twist+
+    step_motor = (step_twist * 0.5).exp()                                     # [] Motor+
+    return (step_motor * motor).normalized()                                  # [] Motor+
 
 
-def triangulate(rays_1: Line, rays_2: Line, motor: Motor) -> Point:
-    """Each triangulated world point is the point nearest its sight rays from both cameras, in camera 1's frame."""
-    # ray & Point is the plane through a ray and an unknown point, and its squared norm is the point's
-    # squared distance from the ray. The world point is the vertex of the distance quadrics summed over
-    # both views. A dyad on the point's weight pins the scale without moving the vertex, so it is one solve.
-    rays = stack([rays_1, motor >> rays_2])                              # [views, rays] Line-
-    distances = (rays & Point).scalar_norm_squared().sum(axis=0)         # [rays] Scalar+ <- (Point-, Point-)
-    weight = mv.w & Point                                                # [] Scalar+ <- Point-
-    return (distances + weight * weight).solve(weight).normalized()      # [rays] Point-
+def triangulated_points(rays_1: Line, rays_2: Line, motor: Motor) -> Point:
+    """Summing the squared-distance quadrics of `rays_1` and `motor >> rays_2` (`[...] Line-`) locates each triangulated landmark (`[...] Point-`) in camera 1's frame."""
+    # Joining a ray with a point spans the plane through both whose squared norm equals the point's squared distance to the ray.
+    sight_rays = stack([rays_1, motor >> rays_2])                             # [2, ...] Line-
+    distance_quadrics = (sight_rays & Point).scalar_norm_squared().sum(axis=0)  # [...] Scalar+ <- (Point-, Point-)
+    # Adding the projective weight dyad pins homogeneous scale without shifting the quadric vertex.
+    return (distance_quadrics + point_weight * point_weight).solve(point_weight).normalized()  # [...] Point-
 
 
-def reconstruction(rays_1: Line, rays_2: Line, motor: Motor) -> Iterator[tuple[Motor, Point]]:
-    """Successive Gauss-Newton steps from an initial motor yield each relative camera motor and the world points it triangulates."""
+def reconstruction_states(rays_1: Line, rays_2: Line, motor: Motor) -> Iterator[tuple[Motor, Point]]:
+    """Yields camera 2's relative pose (`[] Motor+`) and the triangulated landmarks (`[...] Point-`) across successive Gauss–Newton steps."""
     while True:
-        yield motor, triangulate(rays_1, rays_2, motor)
-        motor = refine(rays_1, rays_2, motor)
+        yield motor, triangulated_points(rays_1, rays_2, motor)
+        motor = pose_step(rays_1, rays_2, motor)

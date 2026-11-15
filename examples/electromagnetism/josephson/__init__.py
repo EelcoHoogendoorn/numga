@@ -1,1 +1,1 @@
-"""Fluxons in a long Josephson junction: the phase difference as a direction in a plane of its own."""
+"""Fluxons travel through a planar Josephson junction as kinks of a phase direction in an internal plane joined to the junction's spacetime."""

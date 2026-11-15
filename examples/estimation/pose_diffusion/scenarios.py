@@ -1,76 +1,121 @@
-"""Scenes for station keeping in gusts simulate a fleet of vessels holding a set point alongside the predicted covariance of their deviations.
+"""Station-keeping scenes simulate fleets of vessels holding a set point alongside the predicted and steady-state covariances of their excursions.
 
-Both scenes use the same controller and the same disturbances, which push much harder sideways than forward. In the first scene the body holds a fixed heading and its deviations stay mostly sideways; in the second it turns at a constant rate, rotating sideways disturbances into forward deviations and back so the spread becomes more isotropic.
+Both scenes share the same proportional controller and the same body-frame gust map pushing much harder sideways than forward. In the first scene the vessel holds a fixed heading so excursions remain predominantly sideways; in the second it turns steadily on the spot, rotating sideways gusts into forward excursions and rounding the spread.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
+from functools import partial
 
 import numpy as np
 
+from examples.estimation.pose_diffusion.core import (
+    Covariance,
+    Gusts,
+    Line,
+    Motor,
+    Twist,
+    fleet_diffusion,
+    gust_covariance,
+    mv,
+    position_ellipsoid,
+    position_spread,
+    steady_covariance,
+)
 from numga import stack
-from examples.estimation.pose_diffusion.core import Covariance, Gusts, Line, Motor, Twist, covariance, mv, settled
 
-# The controller relaxation gain (1/s), and the body's rotation rate in each scene.
-RELAXATION = 0.6
-rates = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}
-# The body-frame push directions (sideways, forward, and in yaw) and their standard deviations per square
-# root of a second, mostly sideways.
-pushes = stack([mv.yw, mv.wx, mv.xy])                                           # [pushes] Twist+
-STRENGTHS = np.array([0.35, 0.08, 0.15])
-gusts = (pushes * STRENGTHS * (pushes & Line)).sum(axis=-1)                     # [] Twist+ <- Line-
-# The length of a run and its time step in seconds, and the number of simulated bodies.
-SECONDS = 8.0
-DT = 0.01
-N_BODIES = 3000
-# The steps between frames of the animation, and the seed of the disturbances.
-N_STEPS_PER_FRAME = 4
-SEED = 0
-# The half-width of the square each cloud is drawn in, and the frame duration in milliseconds.
-EXTENT = 1.6
-DURATION_MS = 40
+# Controller relaxation gain (1/s) and body turning rates in each scene.
+relaxation_gain = 0.6
+turning_rates = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}
+# Body-frame push directions (sideways, forward, and yaw) and standard deviations per square-root second.
+pushes = stack([mv.yw, mv.wx, mv.xy])                                           # [3] Twist+
+gust_strengths = np.array([0.35, 0.08, 0.15])
+gusts = (pushes * gust_strengths * (pushes & Line)).sum(axis=-1)                # [] Twist+ <- Line-
+# Simulation duration and timestep in seconds, fleet size, striding per animation frame, and random seed.
+seconds = 8.0
+dt = 0.01
+n_vessels = 3000
+n_steps_per_frame = 4
+seed = 0
+# Half-width of each square cloud panel in metres, confidence level, animation frame duration in ms, and gain sweep.
+extent = 1.6
+sigmas = 2.0
+frame_duration_ms = 40
+n_gains = 60
+gains = np.linspace(0.02, 0.5, n_gains)
+tolerance = 2.0
 
 
 # --- math -----------------------------------------------------------------------------
-def diffuse(
-    rate: Twist, gusts: Gusts, seconds: float, dt: float, n_bodies: int, every: int, seed: int,
+def scene_stream(
+    rate: Twist,
+    gusts: Gusts,
+    dt: float,
+    n_steps: int,
+    n_stride: int,
+    n_vessels: int,
+    seed: int,
 ) -> Iterator[tuple[Motor, Covariance, Covariance]]:
-    """The bodies' poses, predicted covariance, and steady-state covariance every `every` steps of a fleet holding the commanded pose."""
-    # If the body turns on the spot, the error turns with it by the commutator; the controller shrinks it at RELAXATION.
-    dynamics = Twist.commutator(rate) - RELAXATION * Twist                      # [] Twist+ <- Twist+
-    noise = covariance(gusts)                                                   # [] Twist+ <- Line-
-    limit = settled(dynamics, noise)                                            # [] Twist+ <- Line-
-    rng = np.random.default_rng(seed)
-    # All bodies start at the commanded pose with zero covariance.
-    errors = mv.bivector(np.zeros((n_bodies, 3)))                               # [bodies] Twist+
-    predicted = noise * 0.0                                                     # [] Twist+ <- Line-
-    for count in range(int(seconds / dt)):
-        # White noise integrated over the step, and the dynamics acting on the covariance's twist output and line input.
-        white = mv.bivector(rng.normal(size=(n_bodies, 3))).dual() * np.sqrt(dt)   # [bodies] Line-
-        errors = errors + dynamics(errors) * dt + gusts(white)                  # [bodies] Twist+
-        growth = dynamics(predicted) + predicted(dynamics.adjugate()) + noise   # [] Twist+ <- Line-
-        predicted = predicted + growth * dt                                     # [] Twist+ <- Line-
-        if (count + 1) % every == 0:
-            # The exponential of half a twist is its motor.
-            yield (errors * 0.5).exp(), predicted, limit
+    """Yields `(poses, predicted, limit)` every `n_stride` steps for a fleet turning at `rate` (`[] Twist+`)
+    under `gusts` (`[] Twist+ <- Line-`)."""
+    # Steady turning rotates body-frame errors by `Twist.commutator(rate)` while control damps them at `relaxation_gain`.
+    dynamics = Twist.commutator(rate) - relaxation_gain * Twist                 # [] Twist+ <- Twist+
+    noise = gust_covariance(gusts)                                              # [] Twist+ <- Line-
+    limit = steady_covariance(dynamics, noise)                                  # [] Twist+ <- Line-
+    return fleet_diffusion(dynamics, gusts, noise, limit, dt, n_steps, n_stride, n_vessels, seed)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def main() -> None:
-    from examples.util.animation import save_animation, save_figure
-    from examples.estimation.pose_diffusion import render
+def save_states(states: Iterable, animate: Callable, *arguments, name: str, duration_ms: int) -> list:
+    """Streams `states` once through `animate(*arguments, states)` into `save_animation` and returns the collected states."""
+    from examples.util.animation import save_animation
 
-    runs = {name: list(diffuse(rate, gusts, SECONDS, DT, N_BODIES, N_STEPS_PER_FRAME, SEED)) for name, rate in rates.items()}
-    save_animation(render.animate_clouds(runs, EXTENT), "pose_diffusion", DURATION_MS)
-    save_figure(render.draw_settled({name: states[-1] for name, states in runs.items()}, EXTENT), "pose_diffusion")
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms)
+    return kept
+
+
+def main() -> None:
+    """Streams the side-by-side fleet diffusion animation and settled figure to `plots/` and checks convergence."""
+    from examples.estimation.pose_diffusion import render
+    from examples.util.animation import save_figure
+
+    n_steps = int(seconds / dt)
+    streams = [
+        scene_stream(rate, gusts, dt, n_steps, n_steps_per_frame, n_vessels, seed + index)
+        for index, rate in enumerate(turning_rates.values())
+    ]
+    ellipsoid_of = partial(position_ellipsoid, sigmas=sigmas)
+    frames = save_states(
+        zip(*streams),
+        render.clouds_animation,
+        extent,
+        ellipsoid_of,
+        name="pose_diffusion",
+        duration_ms=frame_duration_ms,
+    )
+    final_panels = list(frames[-1])
+    save_figure(render.settled_figure(final_panels, extent, ellipsoid_of), "pose_diffusion")
+    gain_controllers = -mv.scalar(gains[:, None]) * Twist                       # [n_gains] Twist+ <- Twist+
+    spreads = position_spread(steady_covariance(gain_controllers, gust_covariance(gusts)))   # [n_gains] Scalar+ <- (Plane+, Plane+)
+    save_figure(render.envelope_figure(gains, spreads, tolerance), "pose_diffusion_gain")
 
     # checks
-    # By the last frame the integrated prediction has converged to the steady-state covariance.
-    for states in runs.values():
-        _, predicted, limit = states[-1]
-        np.testing.assert_allclose(predicted.kernel, limit.kernel, atol=0.05 * np.abs(limit.kernel).max())
+    # By the final frame the Euler-integrated covariance in each scene converges to its Lyapunov steady state.
+    frame = mv.bivector(np.eye(3)).dual()                                       # [3] Line-
+    for _, predicted, limit in final_panels:
+        residual = (frame[:, None] & (predicted - limit)(frame[None, :])).abs().max()   # [] Scalar+
+        scale = (frame[:, None] & limit(frame[None, :])).abs().max()                    # [] Scalar+
+        assert bool(residual < 0.05 * scale)
 
 
 if __name__ == "__main__":
     main()
+

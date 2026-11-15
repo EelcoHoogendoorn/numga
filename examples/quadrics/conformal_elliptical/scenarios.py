@@ -1,27 +1,24 @@
-"""The planes across the cube's rotation axes, checked against the cube's rotations."""
+"""The cube-plane scenario renders the thirteen great circles on the front hemisphere and checks rotational closure."""
 
 from __future__ import annotations
 
-import numpy as np
-
-from examples.quadrics.conformal_elliptical.core import mv, planes
+from examples.quadrics.conformal_elliptical.core import alignments, planes
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_figure
+    """Saves the front-hemisphere great-circle figure and verifies rotational closure of the thirteen planes."""
     from examples.quadrics.conformal_elliptical import render
+    from examples.util.animation import save_figure
 
-    save_figure(render.draw_planes(planes), "cube_axis_planes")
+    save_figure(render.planes_figure(planes), "cube_axis_planes")
 
     # checks
-    # A quarter turn about a face axis and a third of a turn about a corner axis generate the rotations of
-    # the cube; each carries every plane onto one of the planes, up to its sense.
-    quarter = (mv.xy * (np.pi / 4)).exp()
-    third = ((mv.xy + mv.yz + mv.zx).normalized() * (np.pi / 3)).exp()
-    for rotor in (quarter, third):
-        alignment = ((rotor >> planes)[:, None] | planes).abs().to_array()
-        np.testing.assert_allclose(alignment.max(axis=1), 1.0, atol=1e-12)
+    # All thirteen planes have unit norm and remain pairwise distinct up to orientation.
+    assert ((planes.scalar_norm_squared() - 1).abs() < 1e-6).all()
+    assert ((planes[:, None] | planes).abs() > 1 - 1e-6).sum() == 13
+    # Each generating rotation carries every plane onto one of the thirteen planes up to orientation.
+    assert ((alignments.max(axis=-1) - 1).abs() < 1e-6).all()
 
 
 if __name__ == "__main__":

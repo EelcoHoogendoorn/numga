@@ -1,71 +1,57 @@
-"""Oriented tetrahedral meshes supply the incidences and sample geometry for Beltrami fields."""
+"""Tetrahedral torus topologies supply the incidences and flux-preserving edge subspaces for Beltrami fields."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, concatenate
-from numga.algebras import STA as ga
-from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology, turned
-
-ctx = NumpyContext(ga)
-mv = ctx.multivector
-Scalar = ga.gatype.scalar()  # Scalar+
-Point = ga.gatype.antivector()  # Antivector-
-Embedding = ga.gatype((Scalar, Scalar))
-# The direction in time of an observer at rest with the torus, which pairs to one with `mv.t`.
-time = -mv.t.dual()  # [] Point-
-
-
-def as_scalar(values: np.ndarray) -> Scalar:
-    """The supplied scalar data carries the algebra's scalar type."""
-    return mv.scalar(np.asarray(values)[..., None])
+from numga import concatenate
+from numga.sparse import Sparse
+from numga.topology import Topology, reverse_orientation
+from examples.electromagnetism.beltrami_fields.core import Point, mv, time
 
 
 def solid_torus(major_radius: float, minor_radius: float, n_major: int, n_minor: int) -> tuple[Topology, Point]:
-    """A reflection-symmetric solid tetrahedral torus around the z axis."""
-    major_angles = np.linspace(0.0, 2 * np.pi, n_major, endpoint=False)
-    minor_angles = np.linspace(0.0, 2 * np.pi, n_minor, endpoint=False)
-    around_tube = (mv.xz * (-minor_angles / 2)).exp()                    # [minor] Rotor+
-    around_axis = (mv.xy * (-major_angles / 2)).exp()                    # [major] Rotor+
-    unit = mv.x.dual()  # [] Point-
-    rim_circle = unit * major_radius + (around_tube >> (unit * minor_radius))  # [minor] Point-
-    # A cross-section, its centre on the tube's core and then its rim, turned to each step around the axis.
-    section_points = concatenate(((unit * major_radius)[None], rim_circle))  # [1 + minor] Point-
-    vertices = (around_axis[:, None] >> section_points[None, :]).reshape(-1).field()   # Point-[vertices]
+    """Sweeping a triangulated disc around the vertical axis builds a reflection-symmetric tetrahedral torus (`Point-[V]`)."""
+    major_angles = np.linspace(0.0, 2 * np.pi, n_major, endpoint=False)         # [n_major]
+    minor_angles = np.linspace(0.0, 2 * np.pi, n_minor, endpoint=False)         # [n_minor]
+    tube_rotors = (mv.xz * (-minor_angles / 2)).exp()                           # [n_minor] Rotor+
+    axis_rotors = (mv.xy * (-major_angles / 2)).exp()                           # [n_major] Rotor+
+    radial_unit = mv.x.dual()                                                   # [] Point-
+    minor_rim = tube_rotors >> (radial_unit * minor_radius)                     # [n_minor] Point-
+    rim_circle = radial_unit * major_radius + minor_rim                         # [n_minor] Point-
+    # Each cross-section places its centre on the tube's core and then its rim, turned around the vertical axis.
+    section_points = concatenate(((radial_unit * major_radius)[None], rim_circle))  # [n_minor + 1] Point-
+    section_grid = axis_rotors[:, None] >> section_points[None, :]              # [n_major, n_minor + 1] Point-
+    vertices = section_grid.reshape(-1).field()                                 # Point-[V]
 
-    # The cross-section, a fan of triangles about its centre, swept around the axis: each step's prism is cut from the
-    # tail of its edge, and the steps' edges run alternately backwards, so that the prisms are cut from alternate ends
-    # and the solid is its own mirror image.
-    around = Topology.loops([n_major]).elements[1]                          # [major, 2]
-    alternating = Topology(n_major, np.where(np.arange(n_major)[:, None] % 2 == 0, around, turned(around)))
+    # Alternating ring edge orientations cut adjacent prisms from opposite ends so the solid is reflection-symmetric.
+    loop_edges = Topology.loops([n_major]).elements[1]                          # [n_major, 2]
+    alternating = Topology(
+        n_major,
+        np.where(np.arange(n_major)[:, None] % 2 == 0, loop_edges, reverse_orientation(loop_edges)),
+    )
     topology = Topology.rings(1, n_minor).product(alternating)
-    raw_tets = topology.elements[-1]
-    # Each tetrahedron's three edges from its first corner, joined, span six times its signed volume; where that
-    # volume is negative, the tetrahedron's last two corners swap.
-    raw_edges = topology.oriented[3, 1] * (topology.d[0] * vertices)        # [tet_edges] Point-[tets]
-    flip = ((raw_edges[0] & raw_edges[1] & raw_edges[2]) & time) < 0
+    V, E, F, T = topology.n_elements
+    raw_tets = topology.elements[3]                                             # [T, 4]
+    # Swapping the last two corners where the triple join with `time` is negative orients every tetrahedron positively.
+    raw_edges = topology.oriented[3, 1] * (topology.d[0] * vertices)            # [6] Point-[T]
+    negative_volume = ((raw_edges[0] & raw_edges[1] & raw_edges[2]) & time) < 0
     tets = raw_tets.copy()
-    tets[flip, 2], tets[flip, 3] = raw_tets[flip, 3], raw_tets[flip, 2]
-    return Topology(len(vertices.batch()), tets), vertices
+    tets[negative_volume, 2], tets[negative_volume, 3] = raw_tets[negative_volume, 3], raw_tets[negative_volume, 2]
+    return Topology(V, tets), vertices
 
 
-def flux_preserving(topology: Topology, n_minor: int) -> Embedding:
-    """The flux-preserving edge subspace of the solid torus."""
-    # Interior edges plus the single closed poloidal boundary 1-form that carries net toroidal magnetic flux
-    # while keeping the normal magnetic flux `d1(a)` identically zero on every boundary triangle.
-    # Each boundary edge's step around the tube, the shorter way, from its ends' places in their cross-sections: the
-    # vertices are numbered cross-section after cross-section, the centre first.
-    places = topology.elements[1][topology.exterior[1]] % (n_minor + 1)     # [boundary edges, 2]
-    d_pol = (places[:, 1] - places[:, 0] + n_minor // 2) % n_minor - n_minor // 2
-    pol_edges = topology.exterior[1][d_pol != 0]
-    pol_weights = d_pol[d_pol != 0].astype(float) / np.sqrt(np.sum(d_pol != 0))
-    n_int = len(topology.interior[1])
-    # The free values are one per interior edge, then the poloidal form's amplitude.
-    first_values = SparseExtensor.selection(ctx, np.arange(n_int), n_int + 1)           # Scalar+[interior <- free]
-    last_value = SparseExtensor.selection(ctx, np.full(len(pol_edges), n_int), n_int + 1)   # Scalar+[poloidal <- free]
-    interior = ~topology.reading(topology.interior[1], 1) * first_values     # Scalar+[edges <- free]
-    # The amplitude is weighted onto each boundary edge that steps around the tube.
-    poloidal = ~topology.reading(pol_edges, 1) * spdiag(as_scalar(pol_weights).field()) * last_value  # Scalar+[edges <- free]
-    return (interior + poloidal) * Scalar                                    # (Scalar+ <- Scalar+)[edges <- free]
+def flux_preserving(topology: Topology, n_minor: int) -> Sparse:
+    """The interior edges and closed poloidal boundary circulation embed into the full edge space (`Scalar+[E <- E_free]`)."""
+    # Interior edges plus one closed poloidal boundary 1-form carry net toroidal magnetic flux
+    # while keeping normal magnetic flux identically zero on every boundary triangle.
+    V, E, F, T = topology.n_elements
+    places = topology.elements[1][topology.exterior[1]] % (n_minor + 1)         # [E_exterior, 2]
+    poloidal_steps = (places[:, 1] - places[:, 0] + n_minor // 2) % n_minor - n_minor // 2
+    poloidal_edges = topology.exterior[1][poloidal_steps != 0]
+    poloidal_weights = poloidal_steps[poloidal_steps != 0].astype(float) / np.sqrt(np.sum(poloidal_steps != 0))
+    n_interior = len(topology.interior[1])
+    n_free = n_interior + 1
+    interior = Sparse.from_indices(np.ones(n_interior), topology.interior[1], np.arange(n_interior), (E, n_free))
+    poloidal = Sparse.from_indices(poloidal_weights, poloidal_edges, np.full(len(poloidal_edges), n_interior), (E, n_free))
+    return interior + poloidal                                                  # Scalar+[E <- E_free]

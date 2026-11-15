@@ -1,110 +1,82 @@
-"""Developable surfaces by flow, in the geometric algebra of three-dimensional space.
+"""Angle-weighted normal-spread flow creases a triangulated surface into developable patches.
 
-A developable surface can be unrolled flat without stretching or tearing, like a sheet of paper bent
-into a cylinder or a cone. Stein, Grinspun and Crane, "Developability of triangle meshes" (2018),
-measure how far a triangle mesh is from that, and flow it towards it: smooth surfaces crease into
-patches that could each be cut from a flat sheet, joined along sharp folds.
+A developable surface unrolls onto a plane without stretching or tearing because it bends in at most one direction at every point. Following Stein, Grinspun, and Crane (2018), the angle-weighted sum of face-normal dyads `normals.dual() * (normals & Point)` around each vertex measures how far the surrounding faces depart from sharing a common ruling direction; its smallest eigenvalue vanishes whenever one direction meets every incident face normal at a right angle.
 
-A smooth surface is developable where its normals, all around a point, lie on one great circle of the
-sphere of directions: the surface bends in one direction only, along the rulings, and the normals turn
-about the rulings' direction. At a vertex of a mesh, the normals of the faces around it lie on one
-great circle exactly when one direction is perpendicular to all of them. Their spread, the sum of
-dyads `normal.dual() * (normal & Point)` over the faces around the vertex, each weighted by the face's angle
-at the vertex, is a map whose smallest eigenvalue measures how far they are from that: zero when some
-direction `u` meets every normal at a right angle, and growing as the normals spread over the sphere.
-The angles make the spread a property of the surface rather than of its triangles: a face split in two
-keeps its angle at the vertex. The energy is the sum of those smallest eigenvalues over the vertices.
-
-The flow moves every vertex down the energy's gradient. The smallest eigenvalue is the least value of
-the spread's form over unit directions, so its change, to first order, is the change of the form at
-the minimizing direction `u`, held fixed: each face's term, its angle times `(normal & u)**2`, changes
-as its normal turns and as its angle opens. The vertices and edges are points, antivectors, and two edges
-meet in their face's normal, twice its area long. Moving one corner of a face turns the face's normal by
-the part of the step across the edge opposite the corner, over twice the face's area, so each corner's
-share is the tangential part of the vertices' weighted directions pulled onto the normal, met with the
-opposite edge, `across & edge`, over twice the area. A corner's angle opens as either neighbour moves
-along the face square to the edge between them, by the step over that edge's length: the edge met with
-the corner's normal, `edge | corner`, over the edge's length squared and the normal's size. The gradient
-is a vector, the partner a vertex's step pairs with, `gradient & step`; the flow turns it into a step by
-the metric, `.dual()`.
-
-In matrix notation the energy reads $E = \\sum_i \\lambda_{\\min}\\left(\\sum_{ijk}
-\\theta_i^{jk} N_{ijk} N_{ijk}^{\\mathsf T}\\right)$ over the faces $ijk$ around each vertex $i$, with
-$\\theta_i^{jk}$ the face's angle at the vertex.
+Summing those smallest eigenvalues over the vertices defines the developability energy. Differentiating each vertex's minimal quadratic form at fixed minimizing direction combines two face contributions, one from turning the face normal `edges[0] & edges[1]` and one from opening the interior corner angles, and dividing each vertex gradient by the local normal-turning curvature scales steps uniformly across large and small triangles.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
-from numga import NumpyContext
+import jax
+
+from numga import Extensor, NumpyContext
 from numga.algebras import VGA3D as ga
+from numga.backend.jax import JaxContext
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Point = ga.gatype.antivector()
+Scalar = ga.gatype.scalar()                         # Scalar+
+Plane = ga.gatype.vector()                          # Vector+
+Point = ga.gatype.antivector()                      # Antivector-
+Patch = ga.gatype.antibivector()                    # Antibivector-
 
 
 # --- math -----------------------------------------------------------------------------
-def spread(topology: Topology, edges: Point, angles: Scalar) -> tuple[Vector, Point]:
-    """The unit normal of each face, `Vector-[faces]`, comes with the spread of the face normals around each vertex,
-    the sum of their dyads, each weighted by the face's angle at the vertex, a map on directions, `Point- <- Point-`,
-    at each vertex."""
-    # Two edges meet in the face's normal.
-    normals = (edges[0] & edges[1]).normalized()                                # Vector-[faces]
-    around = (~topology.incidence[2, 0] * spdiag(angles)).sum(axis=0)           # Scalar+[vertices <- faces]
-    return normals, around * (normals.dual() * (normals & Point))              # Vector-[faces], (Point- <- Point-)[vertices]
+def corner_angles(topology: Topology, edges: Point) -> Scalar:
+    """Interior angles (`[3] Scalar+[F]`) at the three corners of each triangle measure the turn between the two incident `edges` (`[3] Point-[F]`)."""
+    tails, heads = topology.corners[2, 1]                                       # [3] Scalar+[F <- F], [3] Scalar+[F <- F]
+    next_edges, previous_edges = edges[tails], edges[heads]                     # [3] Point-[F], [3] Point-[F]
+    return (-(next_edges.dual_inverse() & previous_edges) / (next_edges.norm() * previous_edges.norm())).arccos()  # [3] Scalar+[F]
 
 
-def gradient(topology: Topology, edges: Point, angles: Scalar, normals: Vector, directions: Point) -> Vector:
-    """The energy's gradient at each vertex `Vector+[vertices]`, holds each vertex's least-spread direction
-    `Point-[vertices]` fixed. A face's term at a corner is its angle there times the square of the corner's
-    direction along its normal, and changes both ways. As the normal turns: for each face, the angle-
-    weighted dyads of its corners' directions pulled onto its normal, the tangential part twice, wedged
-    with the edge facing each corner over twice the face's area. As the angle opens: each corner's angle
-    moves with its two neighbours, each along the face square to the edge from the corner, over that
-    edge's length, and with the corner itself against both."""
-    double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[faces]
-    corner_directions = topology.incidence[2, 0] * directions                   # [3] Point-[faces]
-    # A direction's pairing with a face's normal patch: its part along the normal.
-    along = normals & corner_directions                                         # [3] Scalar-[faces]
-    pulled = (corner_directions * (along * angles)).sum(axis=0)                 # Point+[faces]
-    across = 2 * (pulled - normals.dual() * (normals & pulled))                 # Point+[faces]
-    # The direction along the face joined with the edge facing each corner: the plane they span.
-    turning = (across & edges) / double_areas                                  # [3] Vector+[faces]
-    # Moving an edge's two ends opposite ways along its in-plane normal opens one corner's angle and closes
-    # the other's at the same rate, weighted by the difference of their squared normal components.
-    tails, heads = topology.corners[2, 1]
-    opening = (edges | normals) / edges.scalar_norm_squared() * (along[heads].squared() - along[tails].squared())  # [3] Vector+[faces]
-    return (~topology.incidence[2, 0] * turning + ~(topology.oriented[2, 1] * topology.d[0]) * opening).sum(axis=0)  # Vector+[vertices]
+def normal_spread(topology: Topology, edges: Point, angles: Scalar) -> tuple[Patch, Extensor]:
+    """Unit triangle patches (`Patch-[F]`) and angle-weighted normal-dyad maps (`(Point- <- Point-)[V]`) measure how far the faces around each vertex spread from a single great circle."""
+    # Two edge displacements meet in the triangle's oriented normal patch.
+    normals = (edges[0] & edges[1]).normalized()                                # Patch-[F]
+    incident_angles = (topology.incidence[2, 0].adjugate() * spdiag(angles)).sum(axis=0)  # Scalar+[V <- F]
+    return normals, incident_angles * (normals.dual() * (normals & Point))      # Patch-[F], (Point- <- Point-)[V]
 
 
-def stiffness(topology: Topology, edges: Point, angles: Scalar) -> Scalar:
-    """The energy curves at each vertex, `Scalar+[vertices]`, as sharply as this: moving a corner turns its face's normal by
-    the step over the corner's height above the opposite edge, so each face around the vertex adds its
-    angle there over that height squared, `(edge | edge) / double_areas**2`."""
-    double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[faces]
-    return (~topology.incidence[2, 0] * (angles * edges.scalar_norm_squared() / double_areas.squared())).sum(axis=0)
+def energy_gradient(topology: Topology, edges: Point, angles: Scalar, normals: Patch, directions: Point) -> Plane:
+    """The vertex gradient (`Plane+[V]`) of the developability energy at fixed least-spread `directions` (`Point-[V]`) sums each triangle's normal-turning and corner-angle variations."""
+    double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[F]
+    corner_directions = topology.incidence[2, 0] * directions                   # [3] Point-[F]
+    # Project each corner's minimizing direction onto the triangle's unit normal patch.
+    normal_projections = normals & corner_directions                            # [3] Scalar-[F]
+    weighted_directions = (corner_directions * (normal_projections * angles)).sum(axis=0)  # Bivector+[F]
+    tangent_directions = 2 * (weighted_directions - normals.dual() * (weighted_directions & normals))  # Bivector+[F]
+    # Join the tangential direction rate with the opposite edge over twice the triangle area.
+    normal_variation = (tangent_directions & edges) / double_areas              # [3] Plane+[F]
+    # Moving an edge's endpoints oppositely along its in-plane normal opens one corner angle and closes the other.
+    tails, heads = topology.corners[2, 1]                                       # [3] Scalar+[F <- F], [3] Scalar+[F <- F]
+    angle_variation = (edges | normals) / edges.scalar_norm_squared() * (normal_projections[heads].squared() - normal_projections[tails].squared())  # [3] Plane+[F]
+    return (topology.incidence[2, 0].adjugate() * normal_variation + (topology.oriented[2, 1] * topology.d[0]).adjugate() * angle_variation).sum(axis=0)  # Plane+[V]
 
 
-def flow(topology: Topology, vertices: Point, step: float) -> Iterator[tuple[Point, Scalar]]:
-    """Gradient descent on the developability energy, each vertex's step the gradient over the energy's
-    stiffness there, times `step`, yields at every step, without end, the vertices `Point-[vertices]` and each vertex's
-    smallest eigenvalue `Scalar+[vertices]`. A step of the same size everywhere
-    overshoots where triangles are small or thin, and the flow jitters there; over the stiffness, every
-    vertex moves by the same share of what its faces can take."""
-    tails, heads = topology.corners[2, 1]
-    while True:
-        # The edge facing each corner of each face, and the angle at each corner between the two edges meeting there.
-        edges = topology.boundary[2, 1] * (topology.d[0] * vertices)            # [3] Point-[faces]
-        after, before = edges[tails], edges[heads]                              # [3] Point-[faces], [3] Point-[faces]
-        angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()   # [3] Scalar+[faces]
-        normals, spreads = spread(topology, edges, angles)
-        values, directions = spreads.batch().eigh()                             # [vertices, 3] Scalar+, [vertices, 3] Point-
-        yield vertices, values[:, 0]
-        # The gradient pairs with a step; the metric turns it into one.
-        vertices = vertices - step * (gradient(topology, edges, angles, normals, directions[:, 0].field()) / stiffness(topology, edges, angles)).dual()
+def vertex_stiffness(topology: Topology, edges: Point, angles: Scalar) -> Scalar:
+    """Diagonal normal-turning curvature (`Scalar+[V]`) sums each incident corner's angle divided by its squared altitude above the opposite edge."""
+    double_areas = (edges[0] & edges[1]).norm()                                 # Scalar+[F]
+    return (topology.incidence[2, 0].adjugate() * (angles * edges.scalar_norm_squared() / double_areas.squared())).sum(axis=0)  # Scalar+[V]
+
+
+def developability_flow(topology: Topology, vertices: Point, step_scale: float, n_states: int, n_stride: int) -> Iterator[tuple[Point, Scalar]]:
+    """Yields `n_states` snapshots of vertex positions (`Point-[V]`) and minimal spread eigenvalues (`Scalar+[V]`) every `n_stride` stiffness-scaled gradient steps."""
+    def flow_step(current_vertices: Point, _: None) -> tuple[Point, Scalar]:
+        edges = topology.boundary[2, 1] * (topology.d[0] * current_vertices)    # [3] Point-[F]
+        angles = corner_angles(topology, edges)                                 # [3] Scalar+[F]
+        normals, spreads = normal_spread(topology, edges, angles)               # Patch-[F], (Point- <- Point-)[V]
+        eigenvalues, directions = spreads.batch().eigh()                        # [V, 3] Scalar+, [V, 3] Point-
+        # Convert the stiffness-scaled gradient covector into an intrinsic vertex step via the metric dual.
+        step = (energy_gradient(topology, edges, angles, normals, directions[:, 0].field()) / vertex_stiffness(topology, edges, angles)).dual()  # Point-[V]
+        return current_vertices - step_scale * step, eigenvalues[:, 0]
+
+    stride_scan = jax.jit(lambda current_vertices: jax.lax.scan(flow_step, current_vertices, length=n_stride))
+    vertices = vertices.materialize(JaxContext(ga))                             # Point-[V]
+    for _ in range(n_states):
+        next_vertices, step_values = stride_scan(vertices)                      # Point-[V], [n_stride] Scalar+
+        yield vertices.materialize(mv.context), step_values[0].materialize(mv.context).field()
+        vertices = next_vertices

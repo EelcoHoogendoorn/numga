@@ -1,25 +1,15 @@
-"""Lie-group integrators for rigid bodies, on motors and rates.
+"""Lie-group integrators step rigid-body poses and body-frame rates across any geometric algebra.
 
-The state of a body is a motor in the Lie group, its pose, and a rate in the Lie algebra,
-a bivector of angular and linear velocity in the body frame. Inertia maps a rate to its
-momentum, a forque; its inverse maps a forque back to a rate. External forques come from a
-function of the motor and the rate.
+A rigid body's pose is a rotor or motor (`Rotor+`) in the even subalgebra, and its body-frame rate is a bivector (`Bivector+`) combining angular and linear velocity. The body's inertia map sends rates to momenta (`Antibivector- <- Bivector+`), its inverse maps net forques back to rate accelerations, and external forques depend on the current motor and rate.
 
-Methods implemented:
-- Explicit symplectic Verlet (Lie-Euler)
-- Explicit Runge-Kutta 4 on Lie groups
-- Explicit 4th-order Munthe-Kaas (RKMK4) with polynomial dexpinv
-- Explicit Lie-Newmark method
-- Variational Lie-Verlet method
+Five stepping schemes share one signature:
+- Explicit symplectic Verlet (`explicit_verlet`)
+- Explicit fourth-order Runge-Kutta on the rate (`explicit_rk4`)
+- Explicit fourth-order Munthe-Kaas with truncated `dexpinv` (`explicit_rkmk4`)
+- Implicit-rate symplectic Lie-Newmark (`explicit_lie_newmark`)
+- Implicit-midpoint variational Lie-Verlet (`variational_lie_verlet`)
 
-The last two solve an implicit step by Newton's method, differentiated by JAX.
-
-The algebra is not fixed here: each function reads it from its arguments, so the same lines
-integrate rotors in any dimension as well as motors of PGA.
-
-References:
-- Hairer, Lubich, Wanner: Geometric Numerical Integration
-- Krysl: Explicit Newmark-type integrators on Lie groups
+The last two solve their implicit rate equations with fixed-count Newton iterations differentiated by JAX. Every function reads the algebra from its extensor inputs, so the same code integrates Euclidean rotors in any dimension as well as projective motors, following Hairer, Lubich, and Wanner (*Geometric Numerical Integration*) and Krysl (*Explicit Newmark-type integrators on Lie groups*).
 """
 
 from __future__ import annotations
@@ -28,163 +18,154 @@ from typing import Any, Callable
 
 from numga import Extensor, stack
 
-# The Newton steps of an implicit step.
+# Fixed Newton iteration count for each implicit rate solve.
 N_NEWTON_STEPS = 10
 
 
 # --- plumbing -------------------------------------------------------------------------
 def RK4(f: Callable, y: Any, h: float) -> Any:
-    """Classical 4th-order Runge-Kutta step."""
-    k1 = f(y)
-    k2 = f(y + 0.5 * h * k1)
-    k3 = f(y + 0.5 * h * k2)
-    k4 = f(y + h * k3)
-    return y + (h / 3.0) * (k2 + k3 + (k1 + k4) * 0.5)
+    """Classical fourth-order Runge-Kutta advances `y` across step `h` under vector field `f`."""
+    stage_1 = f(y)
+    stage_2 = f(y + 0.5 * h * stage_1)
+    stage_3 = f(y + 0.5 * h * stage_2)
+    stage_4 = f(y + h * stage_3)
+    return y + (h / 3) * (stage_2 + stage_3 + (stage_1 + stage_4) * 0.5)
 
 
 def newton(func: Callable, init: Extensor) -> Extensor:
-    """The root of `func(x) == 0` from init, by Newton steps, with the Jacobian of the kernel from JAX.
+    """Fixed-count Newton iterations find a root of `func(x) == 0` starting from `init` using a JAX forward Jacobian.
 
-    Only the implicit integrators call this, so only they need JAX installed.
+    Only the implicit integrators call `newton`, so explicit integrators run without JAX.
     """
     import jax
     import jax.numpy as jnp
 
-    def residual(x):
-        return func(init.context.extensor(init.gatype, x)).kernel
+    def residual(kernel):
+        return func(init.context.extensor(init.gatype, kernel)).kernel
 
     jacobian = jax.jacfwd(residual)
 
-    def step(i, x):
-        return x - jnp.linalg.solve(jacobian(x), residual(x))
+    def newton_step(step_index, kernel):
+        return kernel - jnp.linalg.solve(jacobian(kernel), residual(kernel))
 
-    solved = jax.lax.fori_loop(0, N_NEWTON_STEPS, step, init.kernel)
-    return init.context.extensor(init.gatype, solved)
+    root_kernel = jax.lax.fori_loop(0, N_NEWTON_STEPS, newton_step, init.kernel)
+    return init.context.extensor(init.gatype, root_kernel)                           # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
 def inertia_from_points(points: Extensor) -> tuple[Extensor, Extensor]:
-    """The inertia of a point cloud of unit masses, and its inverse.
-
-    Each point contributes the rate-to-momentum extensor:
-        points.regressive(points.commutator(points.algebra.gatype.bivector()))
-    the map from motion rates to the point joined with its velocity.
-    """
-    inertia = points.regressive(points.commutator(points.algebra.gatype.bivector())).sum(axis=-1)
+    """Unit-mass points (`[..., n_points] Point-`) sum to a body's inertia map (`Antibivector- <- Bivector+`) and its inverse."""
+    Rate = points.algebra.gatype.bivector()
+    inertia = points.regressive(points.commutator(Rate)).sum(axis=-1)                # [...] Antibivector- <- Bivector+
     return inertia, inertia.inverse()
 
 
 def kinetic_energy(rate: Extensor, inertia: Extensor) -> Extensor:
-    """The rigid body's kinetic energy: `0.5 * (rate & inertia(rate))`."""
-    momentum = inertia(rate)
-    return (momentum & rate) * 0.5
+    """Pairing the body's momentum with its rate gives twice the kinetic energy (`Scalar+`)."""
+    momentum = inertia(rate)                                                         # [...] Antibivector-
+    return (rate & momentum) * 0.5                                                   # [...] Scalar+
 
 
 def free(motor: Extensor, rate: Extensor) -> Extensor:
-    """No external forque: a free body."""
-    return rate.dual() * 0.0
+    """Zero external forque (`Antibivector-`) models torque-free and force-free motion."""
+    return rate.dual() * 0                                                           # [...] Antibivector-
 
 
 def _net_forque(forque: Callable, inertia: Extensor, motor: Extensor, rate: Extensor) -> Extensor:
-    """External forque minus the gyroscopic term: `forque(motor, rate) - inertia(rate).commutator(rate)`."""
-    gyro = inertia(rate).commutator(rate)
-    return forque(motor, rate) - gyro
+    """Subtracting the Euler gyroscopic commutator from the external forque gives the net body-frame forque (`Antibivector-`)."""
+    gyroscopic_forque = inertia(rate).commutator(rate)                               # [...] Antibivector-
+    return forque(motor, rate) - gyroscopic_forque                                   # [...] Antibivector-
 
 
 def explicit_verlet(
     motor: Extensor, rate: Extensor, inertia: Extensor, inverse_inertia: Extensor, dt: float, forque: Callable,
 ) -> tuple[Extensor, Extensor]:
-    """Verlet pre- and post-integration step (unconstrained).
+    """An RK4 rate prediction steps the pose motor and recovers the updated rate from the relative motor logarithm."""
+    def rate_acceleration(candidate_rate: Extensor) -> Extensor:
+        return inverse_inertia(_net_forque(forque, inertia, motor, candidate_rate))  # [...] Bivector+
 
-    Steps rate via RK4, steps motor along the twist, and recovers the rate
-    from the relative motor displacement.
-    """
-    def dr(r: Extensor) -> Extensor:
-        return inverse_inertia(_net_forque(forque, inertia, motor, r))
-
-    rate_pred = RK4(dr, rate, dt)
-    motor_next = (motor * (rate_pred * (-dt / 2.0)).exp()).normalized()
-    rate_recovered = (~motor * motor_next).log() * (-2.0 / dt)
-    return motor_next, rate_recovered
+    predicted_rate = RK4(rate_acceleration, rate, dt)                                # [...] Bivector+
+    next_motor = (motor * (predicted_rate * (-dt / 2)).exp()).normalized()           # [...] Rotor+
+    recovered_rate = (~motor * next_motor).log() * (-2 / dt)                         # [...] Bivector+
+    return next_motor, recovered_rate
 
 
 def explicit_rk4(
     motor: Extensor, rate: Extensor, inertia: Extensor, inverse_inertia: Extensor, dt: float, forque: Callable,
 ) -> tuple[Extensor, Extensor]:
-    """Explicit RK4 on the rate, then a motor step with the stepped rate."""
-    def dr(r: Extensor) -> Extensor:
-        return inverse_inertia(_net_forque(forque, inertia, motor, r))
+    """Explicit fourth-order Runge-Kutta updates the body rate before stepping the motor by exponential map."""
+    def rate_acceleration(candidate_rate: Extensor) -> Extensor:
+        return inverse_inertia(_net_forque(forque, inertia, motor, candidate_rate))  # [...] Bivector+
 
-    rate_next = RK4(dr, rate, dt)
-    motor_next = motor * (rate_next * (-dt / 2.0)).exp()
-    return motor_next, rate_next
+    next_rate = RK4(rate_acceleration, rate, dt)                                     # [...] Bivector+
+    next_motor = motor * (next_rate * (-dt / 2)).exp()                               # [...] Rotor+
+    return next_motor, next_rate
 
 
 def explicit_rkmk4(
     motor: Extensor, rate: Extensor, inertia: Extensor, inverse_inertia: Extensor, dt: float, forque: Callable,
 ) -> tuple[Extensor, Extensor]:
-    """Explicit 4th-order Munthe-Kaas integration of Lie state.
+    """Fourth-order Munthe-Kaas integrates the local bivector generator and body rate together in the Lie algebra.
 
-    The motor step is `motor * h.exp()`, with the bivector h integrated in the Lie algebra by
-    classical RK4. The vector field for h is the body rate corrected by dexpinv, a polynomial in
-    the adjoint `h.commutator(bivector) * 2`, a linear map on bivectors. Nothing
-    here depends on the dimension: the same lines integrate rotors in any dimension.
+    Stepping `motor * step_bivector.exp()` pulls the kinematic velocity back to the Lie algebra through the fourth-order `dexpinv` polynomial in the commutator map `step_bivector.commutator(Rate) * 2`.
     """
-    def dr(m: Extensor, r: Extensor) -> Extensor:
-        return inverse_inertia(_net_forque(forque, inertia, m, r))
+    def rate_acceleration(pose_motor: Extensor, candidate_rate: Extensor) -> Extensor:
+        return inverse_inertia(_net_forque(forque, inertia, pose_motor, candidate_rate))  # [...] Bivector+
 
-    def dh(h: Extensor, r: Extensor) -> Extensor:
-        # The time derivative of `motor * h.exp()` must equal that motor times `r * -0.5`;
-        # inverting the derivative of the exponential gives the rate of h, `dexpinv(r * -0.5)`.
-        bivector = h.algebra.gatype.bivector()
-        ad = h.commutator(bivector) * 2.0
-        dexpinv = bivector + ad * 0.5 + ad(ad) * (1.0 / 12.0)
-        return dexpinv(r * -0.5)
+    def generator_rate(step_bivector: Extensor, candidate_rate: Extensor) -> Extensor:
+        # Inverting the derivative of `exp` maps `candidate_rate * -0.5` to the Lie-algebra rate of `step_bivector`.
+        Rate = step_bivector.algebra.gatype.bivector()
+        adjoint_map = step_bivector.commutator(Rate) * 2                             # [...] Bivector+ <- Bivector+
+        dexp_inverse = Rate + adjoint_map * 0.5 + adjoint_map(adjoint_map) * (1 / 12)  # [...] Bivector+ <- Bivector+
+        return dexp_inverse(candidate_rate * -0.5)                                   # [...] Bivector+
 
-    # The state (h, rate) is a pair of bivectors: stack them and let the plain RK4 step it.
-    def derivative(state: Extensor) -> Extensor:
-        h, r = state[0], state[1]
-        return stack([dh(h, r), dr(motor * h.exp(), r)])
+    # Stacking `(step_bivector, rate)` lets classical RK4 advance both bivectors together.
+    def state_rate(stacked_pair: Extensor) -> Extensor:
+        step_bivector, candidate_rate = stacked_pair[0], stacked_pair[1]             # [...] Bivector+, Bivector+
+        stage_motor = motor * step_bivector.exp()                                    # [...] Rotor+
+        return stack([generator_rate(step_bivector, candidate_rate), rate_acceleration(stage_motor, candidate_rate)])  # [2, ...] Bivector+
 
-    state = RK4(derivative, stack([rate * 0.0, rate]), dt)
-    h, rate_next = state[0], state[1]
-    motor_next = motor * h.exp()
-    return motor_next, rate_next
+    next_pair = RK4(state_rate, stack([rate * 0, rate]), dt)                         # [2, ...] Bivector+
+    step_bivector, next_rate = next_pair[0], next_pair[1]                            # [...] Bivector+, Bivector+
+    next_motor = motor * step_bivector.exp()                                         # [...] Rotor+
+    return next_motor, next_rate
 
 
 def explicit_lie_newmark(
     motor: Extensor, rate: Extensor, inertia: Extensor, inverse_inertia: Extensor, dt: float, forque: Callable,
 ) -> tuple[Extensor, Extensor]:
-    """Explicit Lie-Newmark symplectic integrator."""
-    def impulse(m: Extensor, r: Extensor) -> Extensor:
-        return _net_forque(forque, inertia, m, r) * (dt / 2.0)
+    """Symplectic Lie-Newmark advances the motor explicitly from the half-step rate and solves implicitly for the end-step rate."""
+    def half_impulse(pose_motor: Extensor, candidate_rate: Extensor) -> Extensor:
+        return _net_forque(forque, inertia, pose_motor, candidate_rate) * (dt / 2)   # [...] Antibivector-
 
-    half_rate_step = inverse_inertia(impulse(motor, rate))
-    rate_half = rate + half_rate_step
-    motor_new = (rate_half * (dt / 2.0)).exp() * motor
+    half_rate_increment = inverse_inertia(half_impulse(motor, rate))                 # [...] Bivector+
+    half_rate = rate + half_rate_increment                                           # [...] Bivector+
+    next_motor = (half_rate * (dt / 2)).exp() * motor                                # [...] Rotor+
 
-    def implicit(rn: Extensor) -> Extensor:
-        return -rn + rate_half + inverse_inertia(impulse(motor_new, rn))
+    def rate_residual(candidate_rate: Extensor) -> Extensor:
+        return -candidate_rate + half_rate + inverse_inertia(half_impulse(next_motor, candidate_rate))  # [...] Bivector+
 
-    rate_new = newton(implicit, rate_half + half_rate_step)
-    return motor_new, rate_new
+    next_rate = newton(rate_residual, half_rate + half_rate_increment)               # [...] Bivector+
+    return next_motor, next_rate
 
 
 def variational_lie_verlet(
     motor: Extensor, rate: Extensor, inertia: Extensor, inverse_inertia: Extensor, dt: float, forque: Callable,
 ) -> tuple[Extensor, Extensor]:
-    """Variational Lie-Verlet integrator."""
-    def energy(r: Extensor) -> Extensor:
-        p = inertia(r)
-        return (p.wedge(r) * r).restrict[2]
+    """Variational Lie-Verlet solves implicitly for the half-step rate before updating the pose motor and end-step rate."""
+    def cayley_correction(candidate_rate: Extensor) -> Extensor:
+        momentum = inertia(candidate_rate)                                           # [...] Antibivector-
+        return (momentum.wedge(candidate_rate) * candidate_rate).restrict[2]         # [...] Antibivector-
 
-    def net(m: Extensor, r: Extensor) -> Extensor:
-        return _net_forque(forque, inertia, m, r)
+    def net_forque(pose_motor: Extensor, candidate_rate: Extensor) -> Extensor:
+        return _net_forque(forque, inertia, pose_motor, candidate_rate)              # [...] Antibivector-
 
-    def implicit(rh: Extensor) -> Extensor:
-        return -rh + rate + inverse_inertia(net(motor, rh) - energy(rh)) * (dt / 2.0)
+    def half_rate_residual(candidate_half_rate: Extensor) -> Extensor:
+        total_forque = net_forque(motor, candidate_half_rate) - cayley_correction(candidate_half_rate)  # [...] Antibivector-
+        return -candidate_half_rate + rate + inverse_inertia(total_forque) * (dt / 2)  # [...] Bivector+
 
-    rate_half = newton(implicit, rate)
-    motor_new = motor * (rate_half * (-dt / 4.0)).exp()
-    rate_new = rate_half + inverse_inertia(net(motor_new, rate_half) + energy(rate_half)) * (dt / 2.0)
-    return motor_new, rate_new
+    half_rate = newton(half_rate_residual, rate)                                     # [...] Bivector+
+    next_motor = motor * (half_rate * (-dt / 4)).exp()                               # [...] Rotor+
+    end_forque = net_forque(next_motor, half_rate) + cayley_correction(half_rate)    # [...] Antibivector-
+    next_rate = half_rate + inverse_inertia(end_forque) * (dt / 2)                   # [...] Bivector+
+    return next_motor, next_rate

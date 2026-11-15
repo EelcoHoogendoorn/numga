@@ -1,4 +1,4 @@
-"""Two cylinders heated equally, latched and loaded: one slice of heat, and the first frame drawn."""
+"""Checks that constrained heating of the latched and loaded cylinders steps cleanly and renders a frame."""
 from examples.thermodynamics.state_space import render, scenarios
 
 

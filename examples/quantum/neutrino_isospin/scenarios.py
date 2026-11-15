@@ -1,5 +1,5 @@
-"""Scenes for neutrino flavor oscillations: coherent oscillation in vacuum, its fading as the wavepackets drift
-apart, and the adiabatic conversion of electron neutrinos leaving the Sun."""
+"""Scenes for neutrino flavor oscillations: coherent oscillation in vacuum, wavepacket decoherence over
+long baselines, and adiabatic MSW flavor conversion leaving the solar core."""
 
 from __future__ import annotations
 
@@ -7,73 +7,68 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import stack
 from examples.quantum.neutrino_isospin import core
 from examples.quantum.neutrino_isospin.core import Bivector, Isospin
 
-# The vacuum oscillation's rate and mixing angle in degrees, and the steps over two wavelengths.
-OMEGA = 1.0
-THETA_DEGREES = 30.0
-N_STEPS = 300
-# The decoherence: its dephasing rate per unit length, the distance followed, and its steps.
-GAMMA = 0.05
-DECOHERENCE_DISTANCE = 100.0
-N_DECOHERENCE_STEPS = 400
-# The Sun: the mixing angle in degrees, the distance followed, its steps, the potential at the centre over the
-# resonance's, and the scale on which the electrons' density falls.
-SOLAR_THETA_DEGREES = 10.0
-SOLAR_DISTANCE = 100.0
-N_SOLAR_STEPS = 600
-CORE_OVER_RESONANCE = 3.0
-DENSITY_SCALE = 25.0
-# The animation's frames, and the duration of each.
-N_FRAMES = 63
-DURATION_MS = 40
+omega = 1.0
+theta_degrees = 30.0
+n_steps = 300
+gamma = 0.05
+decoherence_distance = 100.0
+n_decoherence_steps = 400
+solar_theta_degrees = 10.0
+solar_distance = 100.0
+n_solar_steps = 600
+core_over_resonance = 3.0
+density_scale = 25.0
+n_frames = 63
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def vacuum_oscillations(theta_degrees: float, omega: float, n_steps: int) -> tuple[Iterator[Isospin], Bivector, np.ndarray]:
-    """Coherent oscillation in vacuum over two wavelengths: the isospin at each step, the plane it turns
-    in, and the distances."""
-    plane = core.vacuum_hamiltonian(omega, np.radians(theta_degrees))           # [] Bivector+
+def vacuum_oscillations(theta_degrees: float, omega: float, n_steps: int
+                        ) -> tuple[Iterator[Isospin], Bivector, np.ndarray]:
+    """Coherent vacuum propagation over two oscillation wavelengths yields the `n_steps` isospin stream,
+    Hamiltonian plane (`[] Bivector+`), and baseline distances."""
+    plane = core.vacuum_hamiltonian(omega, np.radians(theta_degrees))        # [] Bivector+
     wavelength = 4.0 * np.pi / omega
-    distances, dx = np.linspace(0.0, 2.0 * wavelength, n_steps, retstep=True)
-    rates = core.coherent_generator(plane)                                      # [] State- <- State-
-    transfer = core.evolution(rates, dx)                                        # [] State- <- State-
-    return core.evolve_channel(core.state(core.flavor_e), transfer, n_steps), plane, distances
+    distances, step_size = np.linspace(0.0, 2.0 * wavelength, n_steps, retstep=True)
+    rates = core.coherent_generator(plane)                                   # [] State- <- State-
+    transfer = core.step_evolution(rates, step_size)                         # [] State- <- State-
+    return core.channel_isospins(core.density_state(core.flavor_e), transfer, n_steps), plane, distances
 
 
 def wavepacket_decoherence(theta_degrees: float, omega: float, gamma: float, distance: float, n_steps: int
                            ) -> tuple[Iterator[Isospin], Bivector, np.ndarray, float]:
-    """The oscillation fading as the mass states' wavepackets drift apart: the isospin at each step, the
-    plane it turns in, the distances, and the electron flavor's probability it settles at."""
+    """Wavepacket separation at rate `gamma` in the mass plane damps the `n_steps` isospin stream toward the
+    incoherent survival probability `1 - 0.5 * sin(2 * theta)**2`."""
     theta = np.radians(theta_degrees)
-    plane = core.vacuum_hamiltonian(omega, theta)                                # [] Bivector+
-    # The mass states' plane, the phase plane turned by the mixing.
-    mixing = (core.mixing_plane * (-theta)).exp()                                # [] Rotor+
-    mass_plane = mixing >> core.phase_plane                                      # [] Bivector+
-    distances, dx = np.linspace(0.0, distance, n_steps, retstep=True)
-    turning = core.coherent_generator(plane)                                     # [] State- <- State-
-    dephasing = gamma * core.relaxation(mass_plane)                              # [] State- <- State-
-    transfer = core.evolution(turning + dephasing, dx)                           # [] State- <- State-
-    # The mixture it settles at: the electron flavor's average over the oscillation.
-    settled = float(1.0 - 0.5 * np.sin(2.0 * theta) ** 2)
-    return core.evolve_channel(core.state(core.flavor_e), transfer, n_steps), plane, distances, settled
+    plane = core.vacuum_hamiltonian(omega, theta)                            # [] Bivector+
+    mixing = (core.mixing_plane * (-theta)).exp()                            # [] Rotor+
+    mass_plane = mixing >> core.phase_plane                                  # [] Bivector+
+    distances, step_size = np.linspace(0.0, distance, n_steps, retstep=True)
+    turning = core.coherent_generator(plane)                                 # [] State- <- State-
+    dephasing = gamma * core.relaxation(mass_plane)                          # [] State- <- State-
+    transfer = core.step_evolution(turning + dephasing, step_size)           # [] State- <- State-
+    asymptotic_probability = float(1.0 - 0.5 * np.sin(2.0 * theta) ** 2)
+    return (core.channel_isospins(core.density_state(core.flavor_e), transfer, n_steps),
+            plane, distances, asymptotic_probability)
 
 
 def solar_adiabatic(theta_degrees: float, omega: float, distance: float, n_steps: int
-                    ) -> tuple[Iterator[tuple[Isospin, Bivector]], np.ndarray, np.ndarray]:
-    """An electron neutrino leaving the Sun through a density that falls off slowly: the isospin and the
-    plane at each step, the distances, and the matter potential along the way."""
+                    ) -> tuple[Iterator[tuple[Isospin, Bivector]], Bivector, Bivector, np.ndarray, np.ndarray]:
+    """Exponentially falling solar electron potential tilts the local Hamiltonian plane across `n_steps` steps
+    from above MSW resonance down toward vacuum."""
     theta = np.radians(theta_degrees)
-    vacuum = core.vacuum_hamiltonian(omega, theta)                               # [] Bivector+
-    # The resonance: the potential at which the matter's plane stands halfway between the phase plane and the vacuum's.
+    vacuum = core.vacuum_hamiltonian(omega, theta)                           # [] Bivector+
     resonance = omega * np.cos(2.0 * theta)
-    distances, dx = np.linspace(0.0, distance, n_steps, retstep=True)
-    potentials = CORE_OVER_RESONANCE * resonance * np.exp(-distances / DENSITY_SCALE)   # [steps]
-    # The electrons' potential shifts the vacuum's plane along the phase plane.
-    planes = vacuum + potentials * core.phase_plane                              # [steps] Bivector+
-    rates = core.coherent_generator(planes)                                      # [steps] State- <- State-
-    return core.adiabatic_channel(core.state(core.flavor_e), rates, planes, dx), distances, potentials
+    distances, step_size = np.linspace(0.0, distance, n_steps, retstep=True)
+    potentials = core_over_resonance * resonance * np.exp(-distances / density_scale)
+    planes = vacuum + potentials * core.phase_plane                          # [n_steps] Bivector+
+    rates = core.coherent_generator(planes)                                  # [n_steps] State- <- State-
+    stream = core.adiabatic_isospins(core.density_state(core.flavor_e), rates, planes, step_size)
+    return stream, planes[0], planes[-1], distances, potentials
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -81,14 +76,61 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.quantum.neutrino_isospin import render
 
-    states, plane, distances = vacuum_oscillations(THETA_DEGREES, OMEGA, N_STEPS)
-    save_figure(render.draw_precession(states, plane, distances), "neutrino_vacuum_oscillation")
-    states, plane, distances, settled = wavepacket_decoherence(THETA_DEGREES, OMEGA, GAMMA, DECOHERENCE_DISTANCE, N_DECOHERENCE_STEPS)
-    save_figure(render.draw_decoherence(states, plane, distances, settled), "neutrino_decoherence")
-    steps, distances, potentials = solar_adiabatic(SOLAR_THETA_DEGREES, OMEGA, SOLAR_DISTANCE, N_SOLAR_STEPS)
-    save_figure(render.draw_adiabatic(steps, distances, potentials), "neutrino_solar_msw")
-    states, plane, distances = vacuum_oscillations(THETA_DEGREES, OMEGA, N_STEPS)
-    save_animation(render.animate_precession(states, plane, distances, N_FRAMES), "neutrino_vacuum_precession", DURATION_MS)
+    def tap_stream(stream: Iterator) -> tuple[Iterator, list]:
+        items: list = []
+
+        def passing() -> Iterator:
+            for item in stream:
+                items.append(item)
+                yield item
+
+        return passing(), items
+
+    vacuum_stream, vacuum_plane, vacuum_distances = vacuum_oscillations(theta_degrees, omega, n_steps)
+    passing_vacuum, vacuum_history = tap_stream(vacuum_stream)
+    save_animation(render.precession_animation(vacuum_plane, vacuum_distances, n_frames, passing_vacuum),
+                   "neutrino_vacuum_precession", frame_duration_ms)
+    save_figure(render.precession_figure(vacuum_history, vacuum_plane, vacuum_distances),
+                "neutrino_vacuum_oscillation")
+
+    decoherence_stream, decoherence_plane, decoherence_distances, asymptotic_probability = wavepacket_decoherence(
+        theta_degrees, omega, gamma, decoherence_distance, n_decoherence_steps
+    )
+    passing_decoherence, decoherence_history = tap_stream(decoherence_stream)
+    save_animation(
+        render.decoherence_animation(decoherence_plane, decoherence_distances, asymptotic_probability,
+                                     n_frames, passing_decoherence),
+        "neutrino_decoherence", frame_duration_ms,
+    )
+    save_figure(
+        render.decoherence_figure(decoherence_history, decoherence_plane, decoherence_distances, asymptotic_probability),
+        "neutrino_decoherence",
+    )
+
+    solar_stream, start_plane, end_plane, solar_distances, potentials = solar_adiabatic(
+        solar_theta_degrees, omega, solar_distance, n_solar_steps
+    )
+    passing_solar, solar_history = tap_stream(solar_stream)
+    save_animation(
+        render.adiabatic_animation(solar_distances, potentials, start_plane, end_plane, n_frames, passing_solar),
+        "neutrino_solar_msw", frame_duration_ms,
+    )
+    save_figure(render.adiabatic_figure(solar_history, solar_distances, potentials), "neutrino_solar_msw")
+
+    # checks
+    vacuum_path = stack(vacuum_history)                                      # [n_steps] Isospin-
+    vacuum_electron, vacuum_muon = core.flavor_probabilities(vacuum_path)    # [n_steps] Scalar+, [n_steps] Scalar+
+    expected_vacuum = 1.0 - np.sin(2.0 * np.radians(theta_degrees)) ** 2 * np.sin(0.5 * omega * vacuum_distances) ** 2
+    assert ((vacuum_electron + vacuum_muon - 1).abs() < 1e-10).all()
+    assert ((vacuum_electron - expected_vacuum).abs() < 1e-4).all()
+
+    decoherence_path = stack(decoherence_history)                            # [n_decoherence_steps] Isospin-
+    decoherence_electron, _ = core.flavor_probabilities(decoherence_path)    # [n_decoherence_steps] Scalar+
+    assert ((decoherence_electron[-1] - asymptotic_probability).abs() < 2e-3).all()
+
+    solar_path = stack([spin for spin, _ in solar_history])                  # [n_solar_steps] Isospin-
+    solar_electron, _ = core.flavor_probabilities(solar_path)                # [n_solar_steps] Scalar+
+    assert (solar_electron[0] > 0.99).all() and (solar_electron[-1] < 0.05).all()
 
 
 if __name__ == "__main__":

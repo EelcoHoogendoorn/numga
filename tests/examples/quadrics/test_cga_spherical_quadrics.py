@@ -1,66 +1,65 @@
-"""Spherical quadrics in the conformal algebra Cl(3, 1), and the conformal flow that carries them."""
+"""Coverage tests for spherical quadrics in the conformal algebra of the sphere."""
 
 from __future__ import annotations
-
 
 import numpy as np
 
 from examples.quadrics.cga_spherical_quadrics import render, scenarios
 from examples.quadrics.cga_spherical_quadrics.core import (
-    mv,
     Quadric,
-    make_spherical_donut,
-    make_conical_donut,
-    make_pinched_horn,
-    point,
+    conical_donut,
+    mv,
+    pinched_horn,
+    sphere_points,
+    spherical_donut,
 )
-from examples.quadrics.elliptic_physics.render import axes, hemisphere
 
 
-def test_null_cone_pixels():
-    """Hemisphere pixels are null, their weight on the unit sphere minus one, the square of w."""
-    points, inside, rim = hemisphere(60)
-    assert inside.sum() > 0
-    pixels = point((axes & points[..., None]).to_array())
-    np.testing.assert_allclose((pixels | pixels).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose((mv.w & pixels).to_array(), -1.0, atol=1e-12)
+def test_null_cone_points():
+    """Unit directions lifted to conformal sphere points are null and pair with `w` to minus one."""
+    probes = sphere_points(np.array([[0.0, 0.0, 1.0], [0.6, 0.0, 0.8], [0.36, 0.48, 0.8]]))
+    assert ((probes | probes).abs() < 1e-12).all()
+    assert (((mv.w & probes) + 1).abs() < 1e-12).all()
 
 
 def test_conical_donut_topology():
-    """The conical donut is a map from points to planes, and its apex touches the north pole."""
-    conical = make_conical_donut(0.55, 0.22)
+    """The conical donut is a symmetric polarity map whose conical apex touches the north pole."""
+    conical = conical_donut(0.55, 0.22)
     assert conical.gatype == Quadric
-    apex = point(np.array([0, 0, 1]))
-    np.testing.assert_allclose((conical(apex) & apex).to_array(), 0.0, atol=1e-12)
+    apex = sphere_points(np.array([0.0, 0.0, 1.0]))
+    sample = sphere_points(np.array([0.6, 0.0, 0.8]))
+    assert (((conical.adjugate()(apex) & sample) - (conical(sample) & apex)).abs() < 1e-12).all()
+    assert ((conical(apex) & apex).abs() < 1e-12).all()
 
 
 def test_spherical_donut_topology():
-    """The donut's form is negative inside the ring and positive in the hole and outside."""
-    r_core = np.radians(40.0)
-    r_tube = np.radians(10.0)
-    donut = make_spherical_donut(r_core, r_tube)
-    # The pole in the hole, a point on the ring's core circle, and a point on the equator outside.
-    probes = point(np.array([[0, 0, 1], [np.sin(r_core), 0, np.cos(r_core)], [1, 0, 0]]))
+    """The spherical donut's quadratic form is negative inside the ring and positive in the hole and outside."""
+    r_core = np.radians(40)
+    r_tube = np.radians(10)
+    donut = spherical_donut(r_core, r_tube)
+    probes = sphere_points(np.array([[0.0, 0.0, 1.0], [np.sin(r_core), 0.0, np.cos(r_core)], [1.0, 0.0, 0.0]]))
     np.testing.assert_array_equal(donut(probes) & probes > 0, [True, False, True])
 
 
 def test_pinched_horn_cusp():
-    """The pinched horn cyclide's cusp sits on the pole, where its form vanishes."""
-    horn = make_pinched_horn(np.radians(60.0))
-    cusp = point(np.array([0, 0, 1]))
-    np.testing.assert_allclose((horn(cusp) & cusp).to_array(), 0.0, atol=1e-12)
+    """The pinched horn cyclide has a self-touching cusp at the north pole where its quadratic form vanishes."""
+    horn = pinched_horn(np.radians(60))
+    cusp = sphere_points(np.array([0.0, 0.0, 1.0]))
+    assert ((horn(cusp) & cusp).abs() < 1e-12).all()
 
 
 def test_circle_intersection_vortex():
-    """The 2-blade where two circles meet generates a conformal rotor, which keeps points of S² null."""
+    """Two intersecting circles meet in an elliptic 2-blade whose conformal rotor preserves the null sphere."""
     generator = scenarios.generator
-    np.testing.assert_allclose((generator.squared() + 1).kernel, 0.0, atol=1e-12)
+    assert ((generator.squared() + 1).scalar_norm_squared() < 1e-20).all()
 
     rotor = (generator * 0.4).exp()
-    carried = rotor >> point(np.array([0.5, 0.5, np.sqrt(0.5)]))
-    np.testing.assert_allclose(carried.squared().to_array(), 0.0, atol=1e-12)
+    carried = rotor >> sphere_points(np.array([0.5, 0.5, np.sqrt(0.5)]))
+    assert ((carried | carried).abs() < 1e-12).all()
 
 
 def test_one_frame_of_the_vortex_draws():
-    world, colors = scenarios.vortex(["trio"], 1)
-    next(render.vortex_frames(world, colors, 32))
+    """One streamed state of the three-shape vortex renders to an RGB frame."""
+    states, colors = scenarios.vortex_states(["trio"], 1)
+    frame = next(render.vortex_animation(colors, 32, states))
+    assert frame.shape == (32, 32, 3)

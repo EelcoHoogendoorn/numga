@@ -1,14 +1,27 @@
-"""PyTorch policy for the shared concrete Extensor runtime.
+"""Device-bound PyTorch execution stores coefficients as `torch.Tensor` buffers on a chosen CPU or
+accelerator `torch.device`, defaulting to `torch.float32` on `"cpu"` to match PyTorch conventions
+while reporting precision as a canonical `np.dtype`. Every contraction, slice, and linear-algebra
+primitive operates directly on `torch.Tensor` values so `torch.autograd` tracks gradients across
+`Extensor` operations.
 
-The library calls its array backend through a NumPy-shaped namespace (``context.xp``). Torch
-spells a number of those functions differently (``dim`` for ``axis``, ``permute`` for
-``transpose``, ``cat`` for ``concatenate``); ``TorchNamespace`` is that translation, and nothing
-more. Coefficients are torch tensors on the context's device, so autograd flows through every
-Extensor operation.
+Core `numga` executors and extensions call backend operations through a NumPy-shaped `context.xp`
+namespace. `TorchNamespace` translates parameter spellings and edge cases (`dim` vs. `axis`,
+`permute` vs. `transpose`, `cat` vs. `concatenate`, no-op reductions over `axis=()`, mixed scalar and
+tensor `clip` bounds, and `torch.linalg.LinAlgError` translation to `np.linalg.LinAlgError`). Caching
+one `TorchNamespace` per `torch.device` lets `ordered_binding` and `compile_sparse_bind` share
+compiled contraction plans across contexts on that device.
+
+Exact `SymbolicKernel` tables materialize once per `(kernel, torch_dtype, device)` into device
+tensors, avoiding repeated host-to-device uploads across calls. Out-of-place indexed updates
+(`functional_set`, `functional_add`) clone the underlying tensor, flattening multi-dimensional
+indices into `index_add_` so repeated scatter indices accumulate identically to `np.add.at` and
+`jax.Array.at[].add`. PyTorch namespace translation and device caching are summarized in
+`docs/internals.md` (section 4).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from fractions import Fraction
 from functools import lru_cache, wraps
 from numbers import Rational
@@ -35,24 +48,23 @@ _TORCH_DTYPES = {
 _NUMPY_DTYPES = {value: key for key, value in _TORCH_DTYPES.items()}
 
 
-def _numpy_dtype(value: object) -> np.dtype:
-    dtype = _NUMPY_DTYPES.get(value) if isinstance(value, torch.dtype) else np.dtype(value)
-    if dtype not in _TORCH_DTYPES:
+def _numpy_dtype(dtype: object) -> np.dtype:
+    resolved = _NUMPY_DTYPES.get(dtype) if isinstance(dtype, torch.dtype) else np.dtype(dtype)
+    if resolved not in _TORCH_DTYPES:
         raise TypeError("TorchContext requires a real or complex floating dtype")
-    return dtype
+    return resolved
 
 
-def _torch_dtype(value: object) -> torch.dtype | None:
-    """Translate a NumPy dtype argument; integer and boolean index dtypes included."""
-    if value is None or isinstance(value, torch.dtype):
-        return value
-    if value is int:
+def _torch_dtype(dtype: object) -> torch.dtype | None:
+    if dtype is None or isinstance(dtype, torch.dtype):
+        return dtype
+    # Index construction passes integer and boolean NumPy dtypes alongside floating context dtypes.
+    if dtype is int:
         return torch.int64
-    return torch.from_numpy(np.zeros((), dtype=value)).dtype
+    return torch.from_numpy(np.zeros((), dtype=dtype)).dtype
 
 
-def _numpy_errors(function: Any) -> Any:
-    """Raise NumPy's LinAlgError where torch raises its own, as for a singular matrix."""
+def _numpy_errors(function: Callable) -> Callable:
     @wraps(function)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
         try:
@@ -63,7 +75,8 @@ def _numpy_errors(function: Any) -> Any:
 
 
 class TorchNamespace:
-    """The NumPy-shaped array namespace the library executes through, over torch on one device."""
+    """Exposing a NumPy-compatible array and `linalg` namespace adapts `torch` operations on a
+    single `device` to `numga`'s executor interface."""
 
     def __init__(self, device: torch.device) -> None:
         self.device = device
@@ -134,7 +147,7 @@ class TorchNamespace:
         return torch.cat(tuple(values), dim=axis)
 
     def sum(self, value: torch.Tensor, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
-        # NumPy reduces nothing over axis=(); torch reduces everything over dim=().
+        # NumPy leaves the tensor unchanged over axis=(), whereas torch.sum reduces every axis over dim=().
         return value if axis == () else torch.sum(value, dim=axis, keepdim=keepdims)
 
     def cumsum(self, value: torch.Tensor, axis: int) -> torch.Tensor:
@@ -153,7 +166,7 @@ class TorchNamespace:
         return torch.argmin(value, dim=axis)
 
     def clip(self, value: torch.Tensor, minimum: Any, maximum: Any) -> torch.Tensor:
-        # Torch takes both bounds as numbers or both as tensors; NumPy takes any mix.
+        # Torch requires both bounds to share scalar or tensor form, whereas NumPy accepts mixed bounds.
         bound = lambda limit: None if limit is None else self.asarray(limit, value.dtype)
         return torch.clip(value, bound(minimum), bound(maximum))
 
@@ -169,12 +182,13 @@ def _materialize(kernel: SymbolicKernel, dtype: torch.dtype, device: torch.devic
 
 @lru_cache(maxsize=None)
 def _namespace(device: torch.device) -> TorchNamespace:
-    # One namespace per device, so plans compiled against it are shared across contexts.
+    # Caching one namespace per device shares compiled contraction plans across contexts.
     return TorchNamespace(device)
 
 
 class TorchContext(Context):
-    """Torch storage on one device with dense or sparse-exact execution, bound to one algebra."""
+    """Immutable device-bound policy stores coefficients as `torch.Tensor` buffers with dense or
+    sparse-exact execution."""
 
     __slots__ = ("_algebra", "_dtype", "_device")
 
@@ -225,8 +239,8 @@ class TorchContext(Context):
     def xp(self) -> TorchNamespace:
         return _namespace(self.device)
 
-    def prepare_kernel(self, value: object) -> torch.Tensor:
-        source = value if isinstance(value, torch.Tensor) else torch.as_tensor(np.asarray(value))
+    def prepare_kernel(self, coefficients: object) -> torch.Tensor:
+        source = coefficients if isinstance(coefficients, torch.Tensor) else torch.as_tensor(np.asarray(coefficients))
         if source.dtype.is_complex and not self.torch_dtype.is_complex:
             raise TypeError(
                 f"cannot represent coefficients of dtype {source.dtype} in "
@@ -259,8 +273,8 @@ class TorchContext(Context):
         return result
 
     def functional_add(self, kernel: torch.Tensor, index: object, value: object) -> torch.Tensor:
-        # The flat position of every indexed entry, repeated where the index repeats, so that
-        # index_add_ accumulates as NumPy's add.at and JAX's .at[].add do.
+        # Indexing a flat position grid preserves repeated index entries so index_add_ accumulates
+        # duplicates identically to np.add.at and jax.Array.at[].add.
         positions = torch.arange(kernel.numel(), device=kernel.device).reshape(kernel.shape)[index]
         values = torch.as_tensor(value, dtype=kernel.dtype, device=kernel.device).expand(positions.shape)
         result = kernel.contiguous().clone()

@@ -1,58 +1,67 @@
-"""XPBD's geometric constraint projections: a distance projection closes a joint, a velocity projection cancels
-its relative anchor velocity; and a chain of one link steps on NumPy and on JAX, and draws."""
+"""Coverage tests for XPBD distance and velocity constraint projections, NumPy/JAX stepping, and rendering."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import NumpyContext, stack
 from examples.mechanics.xpbd import core, render, scenarios
 
 context = NumpyContext(core.ga)
 mv = context.multivector
 
 
-def test_distance_projection_closes_a_joint():
-    """Repeated projection closes the gap between two displaced anchors."""
-    chain, partitions = scenarios.chain(context, 1, 0.1, scenarios.SEMI_AXES, 0.0, 0.0, 1e-3, 0.5)
-    joints = partitions[0]
-    assert core.joint_gaps(chain.motor, partitions).to_array().max() < 1e-12
+def test_position_projection_closes_displaced_joint():
+    motors, _, _, _, inverse_inertias, _, partitions = scenarios.curved_chain(
+        context, 1, 0.1, scenarios.semi_axes, 0.0, 0.5,
+    )
+    pairs, anchors = partitions[0]
+    assert (core.joint_separations(motors, partitions) < 1e-8).all()
 
-    # Displace link 1 by (2, -1, 3) mm.
-    shift = ((mv.xw * 0.001 - mv.yw * 0.0005 + mv.zw * 0.0015) * np.array([0.0, 1.0])).exp()
-    motor = chain.motor * shift
-    assert core.joint_gaps(motor, partitions).to_array().max() > 0.003
+    shift = ((mv.xw * 0.001 - mv.yw * 0.0005 + mv.zw * 0.0015) * np.array([0, 1])).exp()   # [2] Rotor+
+    displaced = motors * shift                                                  # [2] Rotor+
+    assert (core.joint_separations(displaced, partitions) > 0.003).all()
 
-    # The anchor does not respond parallel to the gap, so each projection removes a fraction of it.
-    pair = motor[joints.bodies]
+    pair_motors = displaced[pairs]                                              # [2, 1] Rotor+
     for _ in range(30):
-        pair = core.project_distance_constraint(
-            pair, joints.anchors, chain.inverse_inertia[joints.bodies], joints.compliance, 0.01
-        )
-    world_anchors = pair >> joints.anchors
-    assert (world_anchors[0] & world_anchors[1]).norm().to_array().max() < 0.0001
-    # The pin has infinite mass: only link 1 moved.
-    np.testing.assert_allclose(pair[0, 0].kernel, motor[0].kernel)
+        pair_motors = core.position_projection(pair_motors, anchors, inverse_inertias[pairs], 0.0, 0.01)
+    world_anchors = pair_motors >> anchors                                      # [2, 1] Point-
+    assert ((world_anchors[0] & world_anchors[1]).norm() < 1e-4).all()
+    np.testing.assert_allclose(pair_motors[0, 0].kernel, displaced[0].kernel)
 
 
 def test_velocity_projection_cancels_relative_anchor_velocity():
-    chain, partitions = scenarios.chain(context, 1, 0.1, scenarios.SEMI_AXES, 0.0, 1e-9, 1e-3, 0.5)
-    joints = partitions[0]
-    motors = chain.motor[joints.bodies]
-    rates = chain.rate[joints.bodies] + (mv.xw * 0.5 + mv.yz * 0.3) * np.array([[0.0], [1.0]])
+    motors, rates, _, _, inverse_inertias, _, partitions = scenarios.curved_chain(
+        context, 1, 0.1, scenarios.semi_axes, 0.0, 0.5,
+    )
+    pairs, anchors = partitions[0]
+    pair_motors = motors[pairs]                                                 # [2, 1] Rotor+
+    pair_rates = rates[pairs] + (mv.xw * 0.5 + mv.yz * 0.3) * np.array([[0], [1]])   # [2, 1] Rate+
 
-    anchor_velocity = joints.anchors.regressive(joints.anchors.commutator(core.Rate))
+    anchor_velocity = anchors.regressive(anchors.commutator(core.Rate))
 
-    def relative(rates):
-        velocities = motors >> anchor_velocity(rates)
-        return (velocities[0] - velocities[1]).norm().select[0].to_array().max()
+    def relative_speed(current_rates: core.Rate) -> core.Scalar:
+        velocities = pair_motors >> anchor_velocity(current_rates)              # [2, 1] Forque-
+        return (velocities[1] - velocities[0]).scalar_norm_squared().square_root()
 
-    assert relative(rates) > 0.01
-    resolved = core.project_velocity_constraint(motors, rates, joints.anchors, chain.inverse_inertia[joints.bodies])
-    assert relative(resolved) < 1e-6
+    assert (relative_speed(pair_rates) > 0.01).all()
+    resolved = core.velocity_projection(pair_motors, pair_rates, anchors, inverse_inertias[pairs])
+    assert (relative_speed(resolved) < 1e-6).all()
 
 
-def test_a_chain_of_one_link_steps_on_numpy_and_jax_and_draws():
-    motors, _ = scenarios.swinging_chain(1, 1, 1, scenarios.STEP)
-    scenarios.swinging_chain_jax(1, 1, 1, scenarios.STEP)
-    next(render.animate_chain(motors, scenarios.SEMI_AXES, scenarios.LINK_SPACING))
+def test_one_link_steps_on_numpy_and_jax_and_renders():
+    motors, rates, first_moments, inertias, inverse_inertias, gravity, partitions = scenarios.curved_chain(
+        context, 1, scenarios.spacing, scenarios.semi_axes, scenarios.curl, scenarios.gravity_acceleration,
+    )
+    numpy_motors = stack(
+        list(
+            core.swing_motors(
+                motors, rates, first_moments, inertias, inverse_inertias,
+                gravity, scenarios.compliance, scenarios.damping, partitions, 1, 1, scenarios.dt,
+            )
+        )
+    )
+    jax_motors = stack(list(scenarios.swinging_motors_jax(1, 1, 1, scenarios.dt)))
+    np.testing.assert_allclose(numpy_motors.kernel, jax_motors.kernel, atol=1e-6)
+    frame = next(render.animate_chain(scenarios.semi_axes, scenarios.spacing, numpy_motors))
+    assert frame.dtype == np.uint8 and frame.ndim == 3

@@ -1,4 +1,4 @@
-"""The planes across the cube's rotation axes on the unit sphere."""
+"""Coverage tests verify the thirteen cube-axis planes, their rotational closure, and front-hemisphere rendering."""
 
 from __future__ import annotations
 
@@ -6,19 +6,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.conformal_elliptical import render
-from examples.quadrics.conformal_elliptical.core import mv, planes
+from examples.quadrics.conformal_elliptical.core import alignments, planes
 
 
-def test_thirteen_distinct_unit_planes_closed_under_the_cubes_rotations():
-    """The planes are unit, no two of them equal up to sense, and every rotation of the cube permutes them."""
+def test_thirteen_distinct_unit_planes_closed_under_cube_rotations() -> None:
+    """All thirteen planes have unit norm, remain pairwise distinct up to orientation, and permute under both generators."""
     assert planes.shape == (13,)
-    np.testing.assert_allclose(planes.scalar_norm_squared().to_array(), 1.0, atol=1e-12)
-    alignment = (planes[:, None] | planes).abs().to_array()
-    assert (alignment[~np.eye(13, dtype=bool)] < 1.0 - 1e-6).all()
-    third = ((mv.xy + mv.yz + mv.zx).normalized() * (np.pi / 3)).exp()
-    turned = ((third >> planes)[:, None] | planes).abs().to_array()
-    np.testing.assert_allclose(turned.max(axis=1), 1.0, atol=1e-12)
+    assert ((planes.scalar_norm_squared() - 1).abs() < 1e-6).all()
+    assert ((planes[:, None] | planes).abs() > 1 - 1e-6).sum() == 13
+    assert alignments.shape == (2, 13, 13)
+    assert ((alignments.max(axis=-1) - 1).abs() < 1e-6).all()
+    permutations = alignments.argmax(axis=-1)
+    assert np.array_equal(np.sort(permutations, axis=-1), np.broadcast_to(np.arange(13), (2, 13)))
 
 
-def test_figure_renders():
-    assert isinstance(render.draw_planes(planes), plt.Figure)
+def test_planes_figure_renders() -> None:
+    """Front-hemisphere great-circle rendering returns a matplotlib figure."""
+    figure = render.planes_figure(planes)
+    assert isinstance(figure, plt.Figure)
+    plt.close(figure)

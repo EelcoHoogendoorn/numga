@@ -111,13 +111,13 @@ Because `energy` is quadratic, a single Newton step recovers `springs.solve(pull
 
 ## Sparse storage
 
-Across a simplicial topology or a lattice, most site pairs do not interact directly: a bead couples to its neighbours and a vertex to its incident edges. `SparseExtensor` stores only the nonzero couplings, each linking an input site (`columns[k]`) to an output site (`rows[k]`), and acts on the same fields as a dense field map:
+Across a simplicial topology or a lattice, most site pairs do not interact directly: a bead couples to its neighbours and a vertex to its incident edges. `Sparse` stores plain-number couplings (such as incidence signs on a topology, transposed via `.adjugate()`), while `SparseExtensor` stores typed `Extensor` cells, each linking an input site (`columns[k]`) to an output site (`rows[k]`), and acts on the same fields as a dense field map:
 
 ```python
-from numga.sparse import SparseExtensor, spdiag
+from numga.sparse import Sparse, SparseExtensor, spdiag
 
 # Three springs along the string, each taking the difference of its two beads.
-ends = SparseExtensor(np.array([-1, 1, -1, 1, -1, 1]),
+ends = SparseExtensor(mv.scalar([[-1], [1], [-1], [1], [-1], [1]]),
                       np.array([0, 0, 1, 1, 2, 2]), np.array([0, 1, 1, 2, 2, 3]), (3, 4))
 stretches = ends * positions                                        # Vector+[3]
 anchors = mv.scalar(np.ones((4, 1))).field()                        # Scalar+[4]
@@ -129,19 +129,20 @@ print((sparse_stiffness.solve(loads) - displacements).norm().batch().max() < 1e-
 True
 ```
 
-`cells` has shape `[..., couplings]`, with any leading axes indexing separate sparse maps that share one sparsity pattern (`S[..., None]`), and `shape` is `(output_sites, input_sites)`. Cells may be typed `Extensor` batches or plain NumPy number arrays (such as incidence signs on a topology); plain-number cells belong to no algebra until they meet a field, a `GAType` or a typed `SparseExtensor`, where they become scalars of that algebra. Adding a field or a site-free map/value to a square sparse map adds along the diagonal: `(Vector - S)(f) == f - S(f)` and `(~ends * ends + anchors) * f == ~ends * ends * f + anchors * f`.
+`cells` has shape `[..., couplings]`, with any leading axes indexing separate sparse maps that share one sparsity pattern (`S[..., None]`), and `shape` is `(output_sites, input_sites)`. Plain-number `Sparse` maps belong to no algebra until they meet a field, a `GAType` or a `SparseExtensor`, where their weights become `Scalar` cells of that algebra. Adding a field or a site-free map/value to a square sparse map adds along the diagonal: `(Vector - S)(f) == f - S(f)` and `(~ends * ends + anchors) * f == ~ends * ends * f + anchors * f`.
 
-A `SparseExtensor` of number or multivector cells couples sites through whichever product an expression writes: `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` multiply each cell with the element at its column and sum at the rows, while a field on the left (`stretches * ends`) pairs with the rows. Two sparse extensors multiply their cells along shared sites, and multiplying by a `GAType` (`(~ends * ends) * Vector`) produces map cells that apply (`sparse_stiffness(positions)`) and compose. Calling a field of maps `maps` (`Vector+[4] <- Vector+`) on a sparse map (`maps(sparse_stiffness)`) composes each site's map with that row's cells.
+A sparse map couples sites through whichever product an expression writes: `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` multiply each cell with the element at its column and sum at the rows, while a field on the left (`stretches * ends`) pairs with the rows. Two sparse maps multiply their cells along shared sites, and multiplying by a `GAType` (`(~ends * ends) * Vector`) produces map cells that apply (`sparse_stiffness(positions)`) and compose. Calling a field of maps `maps` (`Vector+[4] <- Vector+`) on a sparse map (`maps(sparse_stiffness)`) composes each site's map with that row's cells.
 
 Operations that reverse product order transpose the couplings from rows to columns; all other elementwise operations act cell by cell:
 
 | Cells | Couplings transposed | Cell by cell |
 | --- | --- | --- |
-| Numbers and multivectors | reverse (`~`), Clifford conjugate | involute, grade selection, scaling |
-| Maps | `adjoint`, `adjugate` | reverse and Clifford conjugate of outputs, involute, grade selection, scaling |
+| Plain numbers (`Sparse`) | `adjugate`, `adjoint` | scaling |
+| Multivectors (`SparseExtensor`) | reverse (`~`), Clifford conjugate | involute, grade selection, scaling |
+| Maps (`SparseExtensor`) | `adjoint`, `adjugate` | reverse and Clifford conjugate of outputs, involute, grade selection, scaling |
 
-Because `~(a * b) == ~b * ~a`, reversing a product swaps the coupled index (`~(ends * positions) == ~positions * ~ends`), so `~ends * ends` builds the string's graph Laplacian and `~d0 * spdiag(edge_weights) * d0` builds a weighted Laplacian from edge differences `d0` and per-edge weights. On map cells, `~` reverses each cell's output while keeping its row and column, whereas `.adjoint()` and `.adjugate()` reverse composition and transpose the couplings.
+Because `~(a * b) == ~b * ~a`, reversing a multivector-celled product swaps the coupled index (`~(ends * positions) == ~positions * ~ends`), so `~ends * ends` builds the string's graph Laplacian and `d0.adjugate() * spdiag(edge_weights) * d0` builds a weighted Laplacian from plain-number coboundary differences `d0` and per-edge weights. On map cells, `~` reverses each cell's output while keeping its row and column, whereas `.adjoint()` and `.adjugate()` reverse composition and transpose the couplings.
 
-`spdiag(field)` (alias for `SparseExtensor.from_diagonal(field)`) places each site's value or map on its own diagonal cell for products, solves or inverses (`spdiag(maps).solve(f)`), `.diagonal()` extracts the diagonal back as a field, `SparseExtensor.selection(context, index, size)` builds a sparse gather from an index array, and `.to_dense()` materializes the dense `Out[rows] <- In[cols]` extensor. Sparse `solve`, `lstsq` and `eigh` take map cells and multivector fields and dispatch through SciPy on the NumPy backend, with `eigh` returning modes as a batch of fields.
+`spdiag(field)` (alias for `SparseExtensor.from_diagonal(field)`, with `maps.on_diagonal()` on a field of maps) places each site's value or map on its own diagonal cell for products, solves or inverses (`maps.on_diagonal().solve(f)`), `.diagonal()` extracts the diagonal back as a field, `Sparse.selection(indices, size)` builds a plain-number sparse gather from an index array, and `.to_dense()` materializes the dense `Out[rows] <- In[cols]` extensor. Sparse `solve`, `lstsq` and `eigh` take map cells and multivector fields and dispatch through SciPy on the NumPy backend, with `eigh` returning modes as a batch of fields.
 
 In block-matrix notation a sparse extensor of multivector cells is a sparse matrix over the geometric algebra, and its reverse is the conjugate transpose with reversion as the conjugation.

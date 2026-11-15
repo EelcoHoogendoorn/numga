@@ -1,134 +1,162 @@
-"""This example computes the shapes of elastic rods loaded only at their ends, the elastica of Euler and
-Kirchhoff, in the projective geometric algebra of three-dimensional space.
+"""Static shapes and rigid-segment dynamics of elastic rods in three-dimensional projective geometric algebra.
 
-A rod is a chain of cross-sections, each a rigid slice of the rod with its own placement, a motor. With loads
-only at the ends, the part of the rod beyond any cross-section is held in balance by the end load and by the
-cross-section alone, so every cross-section carries the same load: one forque, fixed in space, a force along a line
-or a couple. Seen from a cross-section, `frame << load`, the load's moments about the section's own axes bend
-it, across and up, and twist it, along the rod, each in proportion over the rod's rigidity against that turn.
-A cross-section moves to the next by a shift along the rod and that turn, together a twist; its
-exponential over a short piece is the motor from one cross-section to the next, and their running product
-places the whole rod.
+A rod is modelled as a chain of rigid cross-sections placed by motors. Under loads applied only at the ends,
+every cross-section carries the same spatial forque, pulls that load into its own frame, and turns per unit
+length through its compliance before advancing to the next cross-section by a motor exponential.
 
-In motion, the rod is a chain of short rigid segments with mass, each joined to the next by an elastic joint
-whose rest placement is the rod's own shape. A joint's deviation from rest is a twist; its energy is a quadratic
-form of that line, and the load it puts on its two segments is the derivative of that energy, the stiffness
-applied to the deviation through the derivative of the exponential. Each segment moves under the loads of its
-two joints, its weight and some damping, by Euler's equations for a rigid body: its momentum, the inertia
-applied to its rate, changes by the forque on it less the gyroscopic turn of the momentum by the rate.
-
-In the notation of Kirchhoff's rod theory the cross-sections' turn per unit length is
-$\\boldsymbol{\\kappa} = B^{-1}\\mathbf{m}$, with $B$ the rigidities and $\\mathbf{m}$ the moment carried, and the
-frames solve $\\frac{d}{ds}(R, \\mathbf{r}) = (R\\,[\\boldsymbol{\\kappa}]_\\times, R\\,\\mathbf{e}_3)$.
+In motion, rigid segments with inertia connect across elastic joints whose rest step encodes the natural coil.
+Each joint maps its logarithmic twist deviation to a restoring forque through the right-trivialized exponential
+derivative, and each interior segment steps its momentum and placement under joint loads, gravity, and damping.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
+import jax
 import numpy as np
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
+from numga.backend.jax import JaxContext
 
 context = NumpyContext(ga)
 mv = context.multivector
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Twist = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
-Motor = ga.gatype.rotor()
-# How a cross-section turns per unit length under the load it carries.
+Point = ga.gatype.antivector()                             # Antivector-
+Twist = ga.gatype.bivector()                               # Bivector+
+Forque = ga.gatype.antibivector()                          # Antibivector-
+Motor = ga.gatype.rotor()                                  # Rotor+
 Compliance = ga.gatype((Twist, Forque))                    # Twist+ <- Forque-
-# The load a joint carries per unit of its deviation from rest, and a segment's momentum per unit of rate.
 Stiffness = ga.gatype((Forque, Twist))                     # Forque- <- Twist+
 Inertia = ga.gatype((Forque, Twist))                       # Forque- <- Twist+
 
-# The centre of the cross-section at the rod's start, the shift carrying a cross-section along the unbent rod
-# per unit length, and the axes of a cross-section through its centre: across, up and along the rod. A turn
-# about an axis is the axis as the meet of two planes, and the couple about it the turn's dual; a force along an
-# axis is the axis as the join of the centre with a direction, and the shift along it the force's dual.
-centre = mv.w.dual()                                       # [] Point-
-shift_along_rod = mv.z ^ mv.w                              # [] Twist+
-turn_axes = stack([mv.y ^ mv.z, mv.z ^ mv.x, mv.x ^ mv.y])                                # [3] Twist+
-force_axes = stack([centre & mv.x.dual(), centre & mv.y.dual(), centre & mv.z.dual()])    # [3] Forque-
+# Cross-section origin, unit axial shift, and local rotation and force axes (across, up, along).
+centre = mv.w.dual()                                                                   # [] Point-
+shift_along_rod = mv.zw                                                                # [] Twist+
+turn_axes = stack([mv.yz, mv.zx, mv.xy])                                               # [3] Twist+
+force_axes = stack([centre & mv.x.dual(), centre & mv.y.dual(), centre & mv.z.dual()])  # [3] Forque-
 
 
 # --- math -----------------------------------------------------------------------------
-def compliance(turning: np.ndarray, shifting: np.ndarray) -> Compliance:
-    """How a cross-section moves per unit length under a load: about each of its axes `[3]`, a turn by the
-    load's couple about the axis times the compliance to turning, and a shift by the load's force along the
-    axis times the compliance to shifting; zero to shifting for a rod that only bends and twists."""
-    shifts_along = force_axes.dual()                                    # [3] Twist+
-    turns = turn_axes * (turn_axes & Forque) * turning                 # [3] Twist+ <- Forque-
-    shifts = shifts_along * (shifts_along & Forque) * shifting         # [3] Twist+ <- Forque-
-    return (turns + shifts).sum(axis=0)                                 # [] Twist+ <- Forque-
+def compliance(turning_compliance: np.ndarray, shifting_compliance: np.ndarray) -> Compliance:
+    """A dyad sum over the three cross-section axes (`[3]`) maps a carried load to a twist per unit length (`[] Twist+ <- Forque-`)."""
+    shift_axes = force_axes.dual()                                                      # [3] Twist+
+    turn_terms = turn_axes * (turn_axes & Forque) * turning_compliance                  # [3] Twist+ <- Forque-
+    shift_terms = shift_axes * (shift_axes & Forque) * shifting_compliance              # [3] Twist+ <- Forque-
+    return (turn_terms + shift_terms).sum(axis=0)                                       # [] Twist+ <- Forque-
 
 
-def rod(loads: Forque, flex: Compliance, starts: Motor, length: float, pieces: int) -> Motor:
-    """The frame of each cross-section of rods of the given length `[..., pieces + 1]`, from the start
-    frames along, each rod carrying its load across every cross-section."""
-    step = length / pieces
-
-    def frames() -> Iterator[Motor]:
-        frame = starts.broadcast_to(np.broadcast_shapes(starts.shape, loads.shape))
-        yield frame
-        for _ in range(pieces):
-            # The load seen from a cross-section turns it, and with the shift moves it along the rod; the
-            # turn taken over each piece is the one seen from halfway along it.
-            halfway = frame * ((shift_along_rod + flex(frame << loads)) * (step / 4)).exp()   # [...] Motor+
-            frame = frame * ((shift_along_rod + flex(halfway << loads)) * (step / 2)).exp()
-            yield frame
-    return stack(list(frames()), axis=-1)                               # [..., pieces + 1] Motor+
+def rod_frames(loads: Forque, rod_compliance: Compliance, start_frames: Motor, length: float, n_pieces: int) -> Motor:
+    """Midpoint integration across `n_pieces` pieces integrates the carried load into cross-section placements (`[..., n_pieces + 1] Motor+`)."""
+    piece_length = length / n_pieces
+    frame = start_frames.broadcast_to(np.broadcast_shapes(start_frames.shape, loads.shape))  # [...] Motor+
+    frames = [frame]
+    for _ in range(n_pieces):
+        # Each piece advances along the rod and turns by the load seen halfway across the piece.
+        halfway_step = ((shift_along_rod + rod_compliance(frame << loads)) * (piece_length / 4)).exp()  # [...] Motor+
+        halfway = frame * halfway_step                                                                  # [...] Motor+
+        full_step = ((shift_along_rod + rod_compliance(halfway << loads)) * (piece_length / 2)).exp()   # [...] Motor+
+        frame = frame * full_step                                                                       # [...] Motor+
+        frames.append(frame)
+    return stack(frames, axis=-1)                                                       # [..., n_pieces + 1] Motor+
 
 
-def stiffness(turning: np.ndarray, shifting: np.ndarray) -> Stiffness:
-    """The load a joint carries per unit length of its deviation from rest: about each of the cross-section's
-    axes `[3]`, a couple for the turn about it times the rigidity against turning, and a force along it for the
-    shift along it times the rigidity against shifting."""
-    couples = turn_axes.dual()                                          # [3] Forque-
-    turns = couples * (couples & Twist) * turning                       # [3] Forque- <- Twist+
-    shifts = force_axes * (force_axes & Twist) * shifting               # [3] Forque- <- Twist+
-    return (turns + shifts).sum(axis=0)                                 # [] Forque- <- Twist+
+def stiffness(turning_rigidity: np.ndarray, shifting_rigidity: np.ndarray) -> Stiffness:
+    """A dyad sum over the cross-section couple and force axes (`[3]`) maps a twist per unit length to a restoring load (`[] Forque- <- Twist+`)."""
+    couple_axes = turn_axes.dual()                                                      # [3] Forque-
+    turn_terms = couple_axes * (Twist & couple_axes) * turning_rigidity                 # [3] Forque- <- Twist+
+    shift_terms = force_axes * (Twist & force_axes) * shifting_rigidity                 # [3] Forque- <- Twist+
+    return (turn_terms + shift_terms).sum(axis=0)                                       # [] Forque- <- Twist+
 
 
 def segment_inertia(mass: float, length: float, radius: float) -> Inertia:
-    """A segment's inertia, from its rate to its momentum: its mass spread over its two ends and a ring of the
-    given radius around its middle, each point's momentum its join with its own motion under the rate."""
-    spread = mv.point([[radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0],
-                       [0, 0, length / 2], [0, 0, -length / 2]])          # [6] Point-
-    return spread.regressive(spread.commutator(Twist)).sum(axis=0) * (mass / spread.shape[0])  # [] Forque- <- Twist+
+    """Six point masses across a segment's ends and mid-ring (`[6]`) define its rigid-body inertia (`[] Forque- <- Twist+`)."""
+    points = mv.point([
+        [radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0],
+        [0, 0, length / 2], [0, 0, -length / 2],
+    ])                                                                                  # [6] Point-
+    return ((mass / 6) * points).regressive(points.commutator(Twist)).sum(axis=0)       # [] Forque- <- Twist+
 
 
-def joint_loads(frames: Motor, rest: Motor, stiff: Stiffness, step: float) -> Forque:
-    """The load each joint between neighbouring frames `[..., segments]` puts on the frame after it, in the
-    world: its stiffness applied to its deviation from the rest placement, through the derivative of the
-    exponential, so that the load is exactly the derivative of the joint's energy."""
-    deviation = (rest.reverse() * frames[..., :-1].reverse() * frames[..., 1:]).log() * 2   # [..., joints] Twist+
-    load = stiff(deviation / step)
-    load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.commutator(load)) / 12
-    return frames[..., 1:] >> load                                      # [..., joints] Forque-
+def joint_loads(frames: Motor, rest_step: Motor, joint_stiffness: Stiffness, piece_length: float) -> Forque:
+    """Each joint maps its relative twist deviation from `rest_step` to the world-frame load on the following segment (`[...] Forque-`)."""
+    deviation = (rest_step.reverse() * frames[..., :-1].reverse() * frames[..., 1:]).log() * 2  # [...] Twist+
+    local_load = joint_stiffness(deviation / piece_length)                                      # [...] Forque-
+    # The right-trivialized exponential derivative keeps the joint load equal to the energy gradient.
+    restoring_load = (
+        local_load
+        - deviation.commutator(local_load) / 2
+        + deviation.commutator(deviation.commutator(local_load)) / 12
+    )                                                                                           # [...] Forque-
+    return frames[..., 1:] >> restoring_load                                                    # [...] Forque-
 
 
-def moving(frames: Motor, rates: Twist, rest: Motor, stiff: Stiffness, step: float, inertia: Inertia,
-           inverse: Inertia, weight: Point, damping: float, time_step: float) -> tuple[Motor, Twist]:
-    """One time step of the segments between the first and last frame, which are held: each rate changes by
-    the forque on its segment, the loads of its two joints, its weight and its damping, less the gyroscopic
-    turn of its momentum; each frame then moves by its rate."""
-    loads = joint_loads(frames, rest, stiff, step)                      # [joints] Forque-
-    segments = frames[1:-1]                                             # [segments] Motor+
-    momenta = inertia(rates)                                            # [segments] Forque-
-    # The weight is a line straight down through the segment's centre; the damping resists its rate.
-    forques = (segments << (loads[:-1] - loads[1:])) + (centre & (segments << weight)) - damping * momenta
-    rates = rates + inverse(forques - momenta.commutator(rates)) * time_step
-    segments = segments * (rates * (-time_step / 2)).exp()
-    return concatenate([frames[:1], segments, frames[-1:]]), rates
+def cord_step(
+    frames: Motor,
+    rates: Twist,
+    rest_step: Motor,
+    joint_stiffness: Stiffness,
+    piece_length: float,
+    inertia: Inertia,
+    weight: Point,
+    damping: float,
+    time_step: float,
+) -> tuple[Motor, Twist]:
+    """Euler–Poincaré integration advances the interior segments and body rates by `time_step` between held end frames."""
+    loads = joint_loads(frames, rest_step, joint_stiffness, piece_length)               # [...] Forque-
+    segments = frames[1:-1]                                                             # [...] Motor+
+    momenta = inertia(rates)                                                            # [...] Forque-
+    # Gravity acts along the vertical line through each segment's centre, while damping opposes its momentum.
+    forques = (segments << (loads[:-1] - loads[1:])) + (centre & (segments << weight)) - damping * momenta  # [...] Forque-
+    next_rates = rates + inertia.solve(forques - momenta.commutator(rates)) * time_step                     # [...] Twist+
+    step_motors = (next_rates * (-time_step / 2)).exp()                                                     # [...] Motor+
+    next_segments = segments * step_motors                                                                  # [...] Motor+
+    return concatenate([frames[:1], next_segments, frames[-1:]]), next_rates
 
 
-def between(frames: Motor, count: int) -> Motor:
-    """Frames between neighbouring frames `[..., segments]`, each pair joined by its relative motion in
-    `count` equal parts `[..., (segments - 1) * count + 1]`."""
-    relative = (frames[..., :-1].reverse() * frames[..., 1:]).log()     # [..., joints] Twist+
-    shares = np.arange(count) / count
-    parts = frames[..., :-1, None] * (relative[..., None] * shares).exp()   # [..., joints, count] Motor+
-    return concatenate([parts.reshape(parts.shape[:-2] + (-1,)), frames[..., -1:]], axis=-1)
+def cord_trajectory(
+    rest_frames: Motor,
+    rest_step: Motor,
+    coil_shift: Twist,
+    joint_stiffness: Stiffness,
+    piece_length: float,
+    inertia: Inertia,
+    weight: Point,
+    damping: float,
+    time_step: float,
+    reaches: np.ndarray,
+) -> Iterator[Motor]:
+    """Yields the segment frames (`[...] Motor+`) at each frame of the handset displacement schedule `reaches`."""
+    n_segments = len(rest_frames) - 2
+    jax_context = JaxContext(ga)
+
+    def scan_step(state: tuple[Motor, Twist], reach: jax.Array) -> tuple[tuple[Motor, Twist], None]:
+        frames, rates = state
+        # Shifting the handset along the coil axis updates the far boundary before stepping the interior segments.
+        handset_shift = (coil_shift * (reach / 2)).exp()                                # [] Motor+
+        handset_frame = handset_shift * rest_frames[-1]                                 # [] Motor+
+        next_frames = concatenate([frames[:-1], handset_frame[None]])                   # [...] Motor+
+        next_state = cord_step(
+            next_frames, rates, rest_step, joint_stiffness, piece_length,
+            inertia, weight, damping, time_step,
+        )
+        return next_state, None
+
+    advance_frame = jax.jit(lambda state, frame_reaches: jax.lax.scan(scan_step, state, frame_reaches)[0])
+    initial_rates = (0 * shift_along_rod).broadcast_to((n_segments,)).retyped(Twist)    # [n_segments] Twist+
+    state = (
+        rest_frames.retyped(Motor).materialize(jax_context),
+        initial_rates.materialize(jax_context),
+    )
+    for frame_reaches in reaches:
+        yield state[0].materialize(context)
+        state = advance_frame(state, frame_reaches)
+
+
+def dense_frames(frames: Motor, n_subdivisions: int) -> Motor:
+    """Logarithmic relative-twist interpolation inserts `n_subdivisions` equal steps across each joint (`[...] Motor+`)."""
+    relative_twists = (frames[..., :-1].reverse() * frames[..., 1:]).log()              # [...] Twist+
+    shares = np.arange(n_subdivisions) / n_subdivisions                                 # [n_subdivisions]
+    step_motors = (relative_twists[..., None] * shares).exp()                           # [..., n_subdivisions] Motor+
+    parts = frames[..., :-1, None] * step_motors                                        # [..., n_subdivisions] Motor+
+    return concatenate([parts.reshape(parts.shape[:-2] + (-1,)), frames[..., -1:]], axis=-1)  # [...] Motor+

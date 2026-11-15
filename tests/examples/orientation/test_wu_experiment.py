@@ -1,5 +1,4 @@
-"""Polarization moves electrons from one side to the other without changing how many; the mirrored
-apparatus does not reproduce the mirror image."""
+"""Tests for polarized cobalt-60 beta emission and parity violation in the Wu experiment."""
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,15 +6,15 @@ import numpy as np
 from examples.orientation.wu_experiment import render, scenarios
 
 
-def test_emission_and_its_mirror_image():
-    spins, directions, rates, _, _ = scenarios.experiment()
-    original, image, built = rates.to_array()
+def test_emission_and_mirror_image():
+    spins, directions, rates, _, _ = scenarios.wu_comparison()
+    original_rates, mirror_image_rates, mirrored_apparatus_rates = rates          # [n_directions] Scalar+
 
-    # Around the circle the rate averages to that of unpolarized nuclei; the mirror image runs round the other way.
-    np.testing.assert_allclose(original.mean(), 1, atol=1e-12)
-    np.testing.assert_allclose(image, original[-np.arange(scenarios.n_directions)], atol=1e-12)
-    assert np.abs(built - image).max() > 1
+    # Angular averaging around the meridian leaves total emission equal to the unpolarized unit rate.
+    assert ((original_rates.mean() - 1).abs() < 1e-12).all()
+    assert ((mirror_image_rates - original_rates[-np.arange(scenarios.n_directions)]).abs() < 1e-12).all()
+    assert ((mirrored_apparatus_rates - mirror_image_rates).abs().max() > 1).all()
 
-    figure = render.draw_experiment(spins, directions, rates)
+    figure = render.experiment_figure(spins, directions, rates)
     figure.canvas.draw()
     plt.close(figure)

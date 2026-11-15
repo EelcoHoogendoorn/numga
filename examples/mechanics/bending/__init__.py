@@ -1,1 +1,1 @@
-"""Unsymmetric bending: cantilevers whose cross-sections lack a mirror symmetry bend sideways."""
+"""Thin-walled cantilevers whose cross-sections lack mirror symmetry bend sideways and twist when loaded away from their principal axes and shear centre."""

@@ -1,89 +1,94 @@
-"""A jittered grid lifted onto the paraboloid, and the same grid with heights breathing about it."""
+"""Paraboloid lift and harmonic height oscillation on a jittered Delaunay triangulation."""
 
 from __future__ import annotations
 
 import numpy as np
 
+from numga import stack
+from numga.topology import Topology
 from examples.surfaces.reciprocal import core
 from examples.util import shapes
 
-# The grid: its vertices per side across the square from -1 to 1, how far its interior vertices are nudged,
-# and the seed of the nudges.
-N_SIDE = 5
-JITTER = 0.08
-GRID_SEED = 11
-# How far each height breathes about the paraboloid, the seed of the phases, the frames of one breath and
-# the duration of each.
-AMPLITUDE = 0.02
-PHASE_SEED = 3
-N_FRAMES = 96
-DURATION_MS = 40
+# Grid resolution across [-1, 1]^2, interior vertex jitter scale, and deterministic RNG seed.
+n_side = 5
+jitter = 0.08
+grid_seed = 11
+# Harmonic height amplitude around the paraboloid, phase seed, frame count, and frame duration.
+amplitude = 0.02
+phase_seed = 3
+n_frames = 96
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def grid() -> tuple[core.Topology, core.Point, core.Scalar]:
-    """The grid's mesh and points come with their heights on the paraboloid, half their squared distance from the
-    centre."""
-    across = np.linspace(-1, 1, N_SIDE)
-    coords = np.stack(np.meshgrid(across, across, indexing="ij"), axis=-1).reshape(-1, 2)   # [vertices, 2]
-    inside = (np.abs(coords) < 1).all(axis=-1)
-    coords[inside] += JITTER * np.random.default_rng(GRID_SEED).normal(size=(inside.sum(), 2))
-    topology, coords = shapes.delaunay(coords)
-    points = core.mv.vector(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).dual().field()   # Point-[vertices]
-    return topology, points, points.scalar_norm_squared() / 2  # Scalar+[vertices]
+def paraboloid_grid() -> tuple[Topology, core.Point, core.Scalar]:
+    """A jittered Delaunay triangulation over `[-1, 1]^2` pairs its planar vertices (`Point-[V]`) with paraboloid heights (`Scalar+[V]`) equal to half the squared radius."""
+    grid_axis = np.linspace(-1, 1, n_side)                                      # [n_side]
+    coordinates = np.stack(np.meshgrid(grid_axis, grid_axis, indexing="ij"), axis=-1).reshape(-1, 2)  # [n_side * n_side, 2]
+    is_interior = (np.abs(coordinates) < 1).all(axis=-1)                        # [n_side * n_side]
+    coordinates[is_interior] += jitter * np.random.default_rng(grid_seed).normal(size=(is_interior.sum(), 2))
+    topology, coordinates = shapes.delaunay(coordinates)
+    V, E, F = topology.n_elements
+    points = core.mv.vector(np.concatenate([coordinates, np.zeros((V, 1))], axis=-1)).dual().field()  # Point-[V]
+    return topology, points, points.scalar_norm_squared() / 2                   # Scalar+[V]
 
 
-def breathing(n_frames: int = N_FRAMES) -> tuple[core.Topology, core.Point, core.Scalar]:
-    """The grid's mesh and points come with their heights at every frame of one breath about the paraboloid, each
-    with its own phase."""
-    topology, points, heights = grid()
-    phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, topology.n_vertices)
-    times = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)[:, None]
-    swings = core.mv.scalar((AMPLITUDE * np.sin(times + phases))[..., None]).field()   # [frames] Scalar+[vertices]
-    return topology, points, heights + swings                                          # [frames] Scalar+[vertices]
+def vertex_phases(topology: Topology) -> np.ndarray:
+    """Deterministic uniform phases (`[V]`) give each vertex of `topology` an independent oscillation offset."""
+    V, E, F = topology.n_elements
+    return np.random.default_rng(phase_seed).uniform(0, 2 * np.pi, V)           # [V]
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
     from examples.surfaces.reciprocal import render
+    from examples.util.animation import save_animation, save_figure
 
-    topology, points, heights = grid()
-    save_figure(render.draw(topology, points, heights, core.stresses(topology, points, heights),
-                            (core.slopes(topology, points, heights) ^ core.mv.z) * core.mv.z), "reciprocal")
-    topology, points, breaths = breathing()
-    frames = ((breath, core.stresses(topology, points, breath), (core.slopes(topology, points, breath) ^ core.mv.z) * core.mv.z) for breath in breaths)
-    save_animation(render.animate(topology, points, frames), "reciprocal_breath", DURATION_MS)
+    topology, points, paraboloid = paraboloid_grid()
+    lifted_stresses = core.bar_stresses(topology, points, paraboloid)           # Scalar+[E_interior]
+    lifted_duals = (core.face_planes(topology, points, paraboloid) ^ core.mv.z) * core.mv.z  # Plane+[F]
+    figure = render.reciprocal_figure(topology, points, paraboloid, lifted_stresses, lifted_duals)
+    save_figure(figure, "reciprocal")
+    import matplotlib.pyplot as plt
+    plt.close(figure)
+
+    phases = vertex_phases(topology)                                            # [V]
+    recorded: list[tuple[core.Scalar, core.Scalar, core.Plane]] = []
+
+    def streaming():
+        for state in core.breathing_states(topology, points, paraboloid, phases, amplitude, n_frames):
+            recorded.append(state)
+            yield state
+
+    save_animation(render.breath_animation(topology, points, streaming()), "reciprocal_breath", frame_duration_ms)
 
     # checks
-    inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
-    stresses, folds = core.stresses(topology, points, breaths), core.folds(topology, points, breaths)  # [frames] Scalar+[inner], Scalar+[inner]
-    # Every bar is in tension exactly where the terrain bends convex, and some bars go into compression.
-    assert np.array_equal(stresses > 0, folds > 0) and (stresses < 0).any()
-    # Every reciprocal edge is perpendicular to its bar, and every interior vertex is in equilibrium.
-    duals = (core.slopes(topology, points, breaths) ^ core.mv.z) * core.mv.z                         # [frames] Plane+[faces]
-    bars = (inner * (topology.d[0] * points)).batch()                          # [inner] Point-
-    # The jump in slope, the faces' planes summed back onto their edges as each face runs along it, pairs to
-    # nothing with its bar: both planes agree along it.
-    assert np.abs(((inner * (~topology.d[1] * duals)).batch() & bars).to_array()).max() < 1e-10
-    # The bars meeting at a vertex each pull it along themselves by their stress, summed back onto their ends
-    # against the way each bar runs.
-    pulls = (bars * core.stresses(topology, points, breaths)).field()          # [frames] Point-[inner]
-    bar_ends = inner * topology.d[0]                                           # Scalar+[inner <- vertices]
-    net = -(~bar_ends * pulls)                                                 # [frames] Point-[vertices]
-    assert ((topology.reading(topology.interior[0], 0) * net).norm() < 1e-10).all()
-    # On the paraboloid the stresses are the cotangent weights and the reciprocal vertices the circumcentres.
-    edges = topology.boundary[2, 1] * (topology.d[0] * points)                 # [3] Point-[faces]
-    tails, heads = topology.corners[2, 1]
-    after, before = edges[tails], edges[heads]                                 # [3] Point-[faces], Point-[faces]
-    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
-    weights = (~topology.incidence[2, 1] * (cotangents / 2)).sum(axis=0)       # Scalar+[edges]
-    assert np.abs(core.stresses(topology, points, heights).to_array() - (inner * weights).to_array()).max() < 1e-10
-    centres = (core.slopes(topology, points, heights) ^ core.mv.z) * core.mv.z                       # Plane+[faces]
-    corners = topology.incidence[2, 0] * points                                # [3] Point-[faces]
-    # The slopes, read as points by the metric, lie as far from each of their face's corners.
-    squared_distances = [(centres.dual() - corner).scalar_norm_squared().to_array() for corner in corners]
-    assert np.abs(squared_distances[0] - squared_distances[1]).max() < 1e-10 and np.abs(squared_distances[0] - squared_distances[2]).max() < 1e-10
+    breaths = stack([state[0] for state in recorded])                           # [n_frames] Scalar+[V]
+    breath_stresses = stack([state[1] for state in recorded])                   # [n_frames] Scalar+[E_interior]
+    breath_duals = stack([state[2] for state in recorded])                      # [n_frames] Plane+[F]
+    folds = core.edge_folds(topology, points, breaths)                          # [n_frames] Scalar+[E_interior]
+    # Every bar carries tension exactly where the terrain crease bends convex, while concave creases enter compression.
+    assert np.array_equal(breath_stresses > 0, folds > 0) and (breath_stresses < 0).any()
+    # Every reciprocal edge is orthogonal to its primal bar because adjacent face planes agree along their shared edge.
+    interior = topology.reading(topology.interior[1], 1)                        # Scalar+[E_interior <- E]
+    bars = interior * (topology.d[0] * points)                                  # Point-[E_interior]
+    assert (((interior * (topology.d[1].adjugate() * breath_duals)) & bars).abs() < 1e-10).all()
+    # Summing axial bar forces onto vertices leaves every interior truss joint in static equilibrium.
+    pulls = bars * breath_stresses                                              # [n_frames] Point-[E_interior]
+    bar_ends = interior * topology.d[0]                                         # Scalar+[E_interior <- V]
+    net_forces = -(bar_ends.adjugate() * pulls)                                 # [n_frames] Point-[V]
+    assert ((topology.reading(topology.interior[0], 0) * net_forces).antinorm() < 1e-10).all()
+    # On the paraboloid lift, bar stresses equal the cotangent weights and reciprocal vertices lie at the triangle circumcentres.
+    directed_sides = topology.boundary[2, 1] * (topology.d[0] * points)         # [3] Point-[F]
+    first_sides, second_sides = topology.corners[2, 1]                          # [3], [3]
+    after, before = directed_sides[first_sides], directed_sides[second_sides]   # [3] Point-[F], [3] Point-[F]
+    cotangents = (after | before) / (after & before).antinorm()                 # [3] Scalar+[F]
+    cotangent_weights = (topology.incidence[2, 1].adjugate() * (cotangents / 2)).sum(axis=0)  # Scalar+[E]
+    assert ((lifted_stresses - interior * cotangent_weights).abs() < 1e-10).all()
+    corners = topology.incidence[2, 0] * points                                 # [3] Point-[F]
+    squared_distances = (lifted_duals.dual() - corners).scalar_norm_squared()   # [3] Scalar+[F]
+    assert ((squared_distances[0] - squared_distances[1]).abs() < 1e-10).all()
+    assert ((squared_distances[0] - squared_distances[2]).abs() < 1e-10).all()
 
 
 if __name__ == "__main__":

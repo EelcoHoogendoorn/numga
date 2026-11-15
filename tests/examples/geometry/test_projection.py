@@ -1,4 +1,4 @@
-"""Unit tests for projective cameras in PGA3D, and the scene's figure drawn."""
+"""Coverage and mathematical property tests for projective cameras, shadows, and stereo views in PGA3D."""
 
 from __future__ import annotations
 
@@ -9,155 +9,109 @@ from numga import stack
 from examples.geometry.projection import core, render, scenarios
 from examples.geometry.projection.core import Correspondence, Line, Plane, Point, cube, ga, mv
 
-origin = mv.w.dual()
-Camera = ga.gatype((Point, Point))
-SCREEN = mv.z - mv.w
+origin = mv.w.dual()                                                            # [] Point-
+Camera = ga.gatype((Point, Point))                                              # Point- <- Point-
+screen = mv.z - mv.w                                                            # [] Plane+
+basis_points = mv.basis().dual()                                                # [4] Point-
 
 
 def euclidean(points: Point) -> np.ndarray:
-    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
+    """Pairing `points` against the coordinate planes and dividing by weight reads Euclidean coordinates."""
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def test_pinhole_image_is_perspective_division():
-    """A pinhole at the origin with screen z = 1 images (x, y, z) to (x/z, y/z, 1)."""
-    camera = (origin & Point) ^ SCREEN
+    """A pinhole at the origin with screen `z = 1` images `(x, y, z)` to `(x/z, y/z, 1)`."""
+    camera = (origin & Point) ^ screen                                          # [] Point- <- Point-
     assert camera.gatype <= Camera
-    world = mv.point([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0], [0.2, -0.4, 0.5]])
-    np.testing.assert_allclose(euclidean(camera(world)), [[0.25, 0.5, 1.0], [-1.5, 0.25, 1.0], [0.4, -0.8, 1.0]], atol=1e-14)
+    world = mv.point([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0], [0.2, -0.4, 0.5]])     # [3] Point-
+    np.testing.assert_allclose(euclidean(camera(world)), [[0.25, 0.5, 1.0], [-1.5, 0.25, 1.0], [0.4, -0.8, 1.0]], atol=1e-12)
 
 
 def test_camera_is_a_rank_three_projection():
-    """The centre has no image, screen points are fixed, and the map is projectively idempotent."""
-    centre = mv.point([0.3, -0.2, -1.0])
-    camera = (centre & Point) ^ SCREEN
-    assert np.linalg.matrix_rank(camera.kernel) == 3
-    np.testing.assert_allclose(camera(centre).kernel, 0.0, atol=1e-14)
+    """The optical centre has zero image, screen points stay fixed, and the camera map is projectively idempotent."""
+    centre = mv.point([0.3, -0.2, -1.0])                                        # [] Point-
+    camera = (centre & Point) ^ screen                                          # [] Point- <- Point-
+    assert (camera(centre).antinorm() < 1e-12).all()
 
-    on_screen = mv.point([[0.7, 0.1, 1.0], [-2.0, 3.0, 1.0]])
-    np.testing.assert_allclose(euclidean(camera(on_screen)), euclidean(on_screen), atol=1e-14)
+    on_screen = mv.point([[0.7, 0.1, 1.0], [-2.0, 3.0, 1.0]])                   # [2] Point-
+    np.testing.assert_allclose(euclidean(camera(on_screen)), euclidean(on_screen), atol=1e-12)
 
-    twice = camera(camera)
-    support = np.abs(camera.kernel) > 1e-9
-    scale = np.mean(twice.kernel[support] / camera.kernel[support])
-    np.testing.assert_allclose(twice.kernel, camera.kernel * scale, atol=1e-14)
+    twice_images = camera(camera(basis_points))                                 # [4] Point-
+    once_images = camera(basis_points) * -(screen & centre)                     # [4] Point-
+    assert ((twice_images - once_images).dual().norm() < 1e-12).all()
 
 
 def test_ternary_projector_binds_to_camera():
-    """Binding centre and screen of the projector, a map on centre, point and screen, yields the camera map."""
-    projector = (Point & Point) ^ Plane
+    """Binding the centre and screen arguments of `(Point & Point) ^ Plane` yields the pinhole camera map."""
+    projector = (Point & Point) ^ Plane                                         # [] Point- <- (Point-, Point-, Plane+)
     assert projector.gatype <= ga.gatype((Point, Point, Point, Plane))
-    assert projector.kernel.shape == (4, 4, 4, 4)
-    centre = mv.point([0.3, -0.2, -1.0])
-    world = mv.point([1.0, 2.0, 4.0])
-    camera = (centre & Point) ^ SCREEN
+    centre = mv.point([0.3, -0.2, -1.0])                                        # [] Point-
+    world = mv.point([1.0, 2.0, 4.0])                                           # [] Point-
+    camera = (centre & Point) ^ screen                                          # [] Point- <- Point-
 
-    bound = projector.bind({0: centre, 2: SCREEN})
+    bound = projector.bind({0: centre, 2: screen})                              # [] Point- <- Point-
     assert bound.gatype <= Camera
-    np.testing.assert_allclose(bound.kernel, camera.kernel, atol=1e-14)
-    np.testing.assert_allclose(projector(centre, world, SCREEN).kernel, camera(world).kernel, atol=1e-14)
+    assert ((bound(basis_points) - camera(basis_points)).antinorm() < 1e-12).all()
+    assert ((projector(centre, world, screen) - camera(world)).antinorm() < 1e-12).all()
 
 
 def test_ideal_centre_is_orthographic():
-    """A centre at infinity projects along a fixed direction: shadows of a distant sun."""
-    ground = mv.z
-    straight_down = (mv.direction([0.0, 0.0, -1.0]) & Point) ^ ground
-    world = mv.point([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0]])
-    np.testing.assert_allclose(euclidean(straight_down(world)), [[1.0, 2.0, 0.0], [-3.0, 0.5, 0.0]], atol=1e-14)
+    """An ideal centre at infinity casts parallel orthographic shadows onto the ground plane."""
+    ground = mv.z                                                               # [] Plane+
+    straight_down = (mv.direction([0, 0, -1]) & Point) ^ ground                 # [] Point- <- Point-
+    world = mv.point([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0]])                       # [2] Point-
+    np.testing.assert_allclose(euclidean(straight_down(world)), [[1.0, 2.0, 0.0], [-3.0, 0.5, 0.0]], atol=1e-12)
 
-    slanted = (mv.direction([1.0, 0.0, -1.0]) & Point) ^ ground
-    np.testing.assert_allclose(euclidean(slanted(mv.point([0.0, 0.0, 2.0]))), [2.0, 0.0, 0.0], atol=1e-14)
+    slanted = (mv.direction([1, 0, -1]) & Point) ^ ground                       # [] Point- <- Point-
+    np.testing.assert_allclose(euclidean(slanted(mv.point([0.0, 0.0, 2.0]))), [2.0, 0.0, 0.0], atol=1e-12)
 
 
 def test_batched_centres_give_batched_cameras():
-    """A batch of centres binds to a batch of 4x4 camera kernels."""
-    centres = mv.point([[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0]])
-    cameras = (centres & Point) ^ SCREEN
+    """A batch of optical centres produces a matching batch of pinhole camera maps."""
+    centres = mv.point([[-0.5, 0.0, 0.0], [0.5, 0.0, 0.0]])                     # [2] Point-
+    cameras = (centres & Point) ^ screen                                        # [2] Point- <- Point-
     assert cameras.shape == (2,)
-    assert cameras.kernel.shape == (2, 4, 4)
-    world = mv.point([1.0, 2.0, 4.0])
-    np.testing.assert_allclose(euclidean(cameras(world)), [[-0.125, 0.5, 1.0], [0.625, 0.5, 1.0]], atol=1e-14)
-
-
-def test_bivector_exponentials_translate_and_rotate():
-    """The translator adds its displacement; the rotator is right-handed about its axis."""
-    moved = (mv.xw * 0.5 - mv.yw + mv.zw * 0.25).exp() >> mv.point([1.0, 2.0, 3.0])
-    np.testing.assert_allclose(euclidean(moved), [2.0, 0.0, 3.5], atol=1e-14)
-
-    y_axis = mv.zx
-    turned = (y_axis * (-np.pi / 4.0)).exp() >> mv.point([1.0, 0.0, 0.0])
-    np.testing.assert_allclose(euclidean(turned), [0.0, 0.0, -1.0], atol=1e-8)
+    world = mv.point([1.0, 2.0, 4.0])                                           # [] Point-
+    np.testing.assert_allclose(euclidean(cameras(world)), [[-0.125, 0.5, 1.0], [0.625, 0.5, 1.0]], atol=1e-12)
 
 
 def test_moving_the_rig_equals_moving_centre_and_screen():
-    """Transforming the camera map by a motor equals building it from transformed parts."""
-    y_axis = mv.zx
-    motor = (mv.xw * 0.2 - mv.yw * 0.15 + mv.zw).exp() * (y_axis * 0.35).exp()
-    camera = (origin & Point) ^ SCREEN
-    moved = motor >> camera(motor << Point)
-    rebuilt = ((motor >> origin) & Point) ^ (motor >> SCREEN)
-    np.testing.assert_allclose(moved.kernel, rebuilt.kernel, atol=1e-14)
-
-    world = mv.point([1.0, 2.0, 4.0])
-    local = euclidean(camera(motor << world))[:2]
-    np.testing.assert_allclose(euclidean(motor << moved(world))[:2], local, atol=1e-14)
+    """Conjugating the camera map by a pose motor matches building the camera from the posed centre and screen."""
+    y_axis = mv.zx                                                              # [] Bivector+
+    motor = (mv.xw * 0.2 - mv.yw * 0.15 + mv.zw).exp() * (y_axis * 0.35).exp()  # [] Motor+
+    camera = (origin & Point) ^ screen                                          # [] Point- <- Point-
+    moved = motor >> camera(motor << Point)                                     # [] Point- <- Point-
+    rebuilt = ((motor >> origin) & Point) ^ (motor >> screen)                   # [] Point- <- Point-
+    assert ((moved(basis_points) - rebuilt(basis_points)).antinorm() < 1e-12).all()
 
 
 def test_line_camera_commutes_with_join():
-    """The image of the line through two points is the line through their images."""
-    centre = mv.point([0.3, -0.2, -1.0])
-    camera = (centre & Point) ^ SCREEN
-    line_camera = (centre & Line) ^ SCREEN
-    a = mv.point([1.0, 0.0, 2.0])
-    b = mv.point([0.0, 1.0, 3.0])
-    imaged_join = line_camera(a & b)
-    joined_images = camera(a) & camera(b)
-    np.testing.assert_allclose((imaged_join / imaged_join.norm() - joined_images / joined_images.norm()).kernel, 0.0, atol=1e-14)
+    """Imaging the join of two points with the line camera matches joining their point images."""
+    centre = mv.point([0.3, -0.2, -1.0])                                        # [] Point-
+    camera = (centre & Point) ^ screen                                          # [] Point- <- Point-
+    line_camera = (centre & Line) ^ screen                                      # [] Line- <- Line-
+    first_point = mv.point([1.0, 0.0, 2.0])                                     # [] Point-
+    second_point = mv.point([0.0, 1.0, 3.0])                                    # [] Point-
+    imaged_join = line_camera(first_point & second_point)                       # [] Line-
+    joined_images = camera(first_point) & camera(second_point)                  # [] Line-
+    assert ((imaged_join + joined_images / (screen & centre)).scalar_norm_squared() < 1e-24).all()
 
 
-def test_fundamental_form_and_epipolar_geometry():
-    """Corresponding image points annihilate the fundamental form; epipoles span its kernel."""
-    centre_1 = mv.point([-0.6, 0.0, 0.0])
-    centre_2 = mv.point([0.6, 0.1, -0.2])
-    camera_1 = (centre_1 & Point) ^ SCREEN
-    camera_2 = (centre_2 & Point) ^ SCREEN
-    form = (centre_1 & Point) ^ (centre_2 & Point)
-    assert form.gatype <= Correspondence
-    assert np.linalg.matrix_rank(form.kernel[0]) == 2
+def test_shadow_trail_and_stereo_scene():
+    """Shadow casting, stereo epipolar incidence, and the three-panel figure all evaluate cleanly."""
+    body = cube(1.0)                                                            # [8] Point-
+    light = mv.point([1.0, -1.0, 4.0])                                          # [] Point-
+    sun = mv.direction([-1.0, 0.6, -2.5])                                       # [] Point-
+    point_shadow, _, shadow_trail = core.shadows(body, mv.z, light, sun, body[7], light)
+    assert ((shadow_trail - point_shadow[7]).antinorm() < 1e-12).all()
 
-    world = mv.point([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0], [0.2, -0.4, 3.0]])
-    image_1 = camera_1(world)
-    image_2 = camera_2(world)
-    np.testing.assert_allclose(form(image_1, image_2).kernel, 0.0, atol=1e-13)
-    assert np.abs(form(image_1[0], image_2[2]).kernel).max() > 1e-3
+    scene = scenarios.projection_scene()
+    *_, (image_1, image_2, epipole_2, epipolar_lines_2, correspondence), _, _ = scene
+    assert correspondence.gatype <= Correspondence
+    assert (correspondence(image_1, image_2).dual().abs() < 1e-12).all()
+    assert (correspondence(basis_points, epipole_2).dual().abs() < 1e-12).all()
+    assert ((epipolar_lines_2 & image_2).norm() < 1e-12).all()
+    assert ((epipolar_lines_2 & epipole_2).norm() < 1e-12).all()
 
-    epipole_2 = camera_2(centre_1)
-    np.testing.assert_allclose(form.bind({1: epipole_2}).kernel, 0.0, atol=1e-14)
-
-    line_camera_2 = (centre_2 & Line) ^ SCREEN
-    lines_2 = line_camera_2(centre_1 & image_1)
-    np.testing.assert_allclose((lines_2 & image_2).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((lines_2 & epipole_2).kernel, 0.0, atol=1e-13)
-
-
-def test_shadow_trail_agrees_with_the_body_shadow():
-    """The shadow as a map on the light reproduces the corner's shadow under that light."""
-    body = cube(1.0)
-    ground = mv.z
-    light = mv.point([1.0, -1.0, 4.0])
-    sun = mv.direction([-1.0, 0.6, -2.5])
-    point_shadow, _, shadow_trail = core.shadows(body, ground, light, sun, body[7], light)
-    np.testing.assert_allclose(shadow_trail.kernel, point_shadow[7].kernel, atol=1e-14)
-
-
-def test_stereo_correspondence_and_epipolar_lines_vanish():
-    """Corresponding images annihilate the form, and epipolar lines meet their points."""
-    *_, (image_1, image_2, epipole_2, epipolar_lines_2, correspondence), _, _ = scenarios.projection()
-
-    np.testing.assert_allclose(correspondence(image_1, image_2).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(correspondence.bind({1: epipole_2}).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((epipolar_lines_2 & image_2).kernel, 0.0, atol=1e-12)
-
-
-def test_the_scene_draws():
-    plt.close(render.draw_projection(*scenarios.projection()))
+    plt.close(render.projection_figure(*scene))

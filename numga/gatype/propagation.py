@@ -1,7 +1,25 @@
-"""Explicit mathematical laws and shared substitution for Extensor facts."""
+"""Algebraic operations propagate certified `Trait` facts from operand `GAType`s to result
+`GAType`s in two stages: symbolic map laws attached when an operator is constructed, and argument
+substitution when inputs bind to that operator.
+
+Operator laws (`geometric_product_laws`, `blade_laws`, `transform_laws`, `conjugation_laws`,
+`negation_laws`, `transpose_laws`, and `shared_laws`) record conditional `ProductRelation`s,
+`ClosureRelation`s (`VersorProduct`, `BladeProduct`), `Sandwich` markers, and `CoefficientOrthogonal`
+invariants directly on the operator's `GAType`. Grade transforms whose signs fix every blade on an
+operand's output subspace bypass general laws via `unless_identity` and retain all traits of their
+operand.
+
+During argument binding, `bind_subspaces` narrows output support before kernel construction whenever
+equal certified `Versor` operands occupy both outer slots (`0` and `2`) of a `Sandwich` expression,
+restricting the output to the passenger's grades. `bind_traits` then substitutes bound operand
+`GAType`s into each `ProductRelation` and `ClosureRelation`, reducing fully bound relations on
+nullary results to `ProductFact`, `Versor`, or `Blade` assertions and certifying
+`CoefficientOrthogonal` on Euclidean unit-versor actions.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -10,8 +28,8 @@ from .traits import (
     EMPTY_TRAITS,
     Blade,
     BladeProduct,
-    ClosureRelation,
     CliffordConjugateProduct,
+    ClosureRelation,
     CoefficientOrthogonal,
     GradeInvolutionProduct,
     Identity,
@@ -35,8 +53,7 @@ if TYPE_CHECKING:
 
 
 def multiply_product_results(left: ProductResult, right: ProductResult) -> ProductResult:
-    """Multiply scalar categories without assuming reality or positivity."""
-
+    """Scalar self-product categories multiply without assuming real or positive coefficients."""
     if left is ProductResult.ONE:
         return right
     if right is ProductResult.ONE:
@@ -48,15 +65,15 @@ def multiply_product_results(left: ProductResult, right: ProductResult) -> Produ
     return ProductResult.SCALAR
 
 
-def no_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """An operation with no known law attaches no traits."""
+def no_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Operations without certified trait laws attach `EMPTY_TRAITS`."""
     return EMPTY_TRAITS
 
 
-def geometric_product_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """The reverse and the Clifford conjugate satisfy T(ab) = T(b)T(a), so the geometric product
-    relates its result's self-products to its operands'; a product of versors is a versor. Being an
-    involution alone is not enough, and no other self-product registers this theorem."""
+def geometric_product_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Anti-automorphisms satisfying `T(a * b) == T(b) * T(a)` (`reverse` and `clifford_conjugate`)
+    factor the product's self-product across scalar-product operands, and multiplying versors yields
+    a versor."""
     return TraitSet((
         ProductRelation(ReverseProduct, ProductResult.ONE, (0, 1)),
         ProductRelation(CliffordConjugateProduct, ProductResult.ONE, (0, 1)),
@@ -64,21 +81,21 @@ def geometric_product_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace",
     ))
 
 
-def blade_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """An outer product of blades is a blade, and so is a regressive product of blades, the outer
-    product of their complements read back."""
+def blade_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Both the exterior product and the regressive product (the exterior product of complements
+    read back) carry blades to blades."""
     return TraitSet((BladeProduct((0, 1)),))
 
 
-def transform_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """A versor's action carries the sandwich laws, applied when the same versor binds both sides."""
+def transform_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Trilinear `L * P * ~R` expressions carry `Sandwich` so binding the same versor to both outer
+    slots triggers grade preservation and self-product scaling."""
     return TraitSet((Sandwich,))
 
 
-def negation_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """Negation and grade involution leave quadratic products unchanged; grade involution is an
-    automorphism commuting with these transforms and fixing scalars. Neither preserves arbitrary user
-    traits or the identity map."""
+def negation_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Negation and grade involution preserve quadratic self-products, versors, blades, closure
+    relations, and coefficient orthogonality while dropping `Identity` and uncertified user traits."""
     return TraitSet(
         trait for trait in operands[0].effective_traits
         if (
@@ -90,20 +107,19 @@ def negation_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) ->
     )
 
 
-def transpose_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """A transpose keeps coefficient orthogonality."""
+def transpose_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Transposing a square coefficient-orthogonal map preserves `CoefficientOrthogonal`."""
     return TraitSet((CoefficientOrthogonal,)) if operands[0].entails(CoefficientOrthogonal) else EMPTY_TRAITS
 
 
-def coefficient_orthogonality_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """A sign change of output coordinates keeps coefficient orthogonality."""
+def coefficient_orthogonality_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Sign changes on output blade coordinates preserve `CoefficientOrthogonal`."""
     return TraitSet((CoefficientOrthogonal,)) if operands[0].entails(CoefficientOrthogonal) else EMPTY_TRAITS
 
 
-def shared_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-    """Values set side by side each keep their facts, so the collection has the facts they share. Facts
-    about whole values survive a zero embedding; facts about maps, such as orthogonality, need their
-    original codomain."""
+def shared_laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+    """Stacked extensors retain the intersection of their entailed traits; positive-arity maps keep
+    traits only when no operand's codomain widens by zero-padding."""
     if operands[0].arity and any(gatype.output_subspace != axes[0] for gatype in operands):
         return EMPTY_TRAITS
     shared = set(operands[0].effective_traits.closure)
@@ -112,18 +128,14 @@ def shared_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> T
     return TraitSet(shared)
 
 
-def conjugation_laws(family: SelfProduct):
-    """The laws of the reverse or the Clifford conjugate, the transform of the self-product `family`.
+def conjugation_laws(family: SelfProduct) -> Callable:
+    """For `reverse` or `clifford_conjugate`, nonzero scalar self-products commute in finite
+    dimensions (`x * T(x) == T(x) * x`), while versors, blades, and coefficient orthogonality
+    survive coordinate sign flips."""
 
-    A one-sided scalar or zero self-product cannot in general be swapped; a nonzero scalar gives a
-    genuine inverse in finite dimensions. These transforms take products of vectors to products of
-    vectors, independently of self-product inference.
-    """
-
-    def laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    def laws(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
         operand = operands[0]
-        inferred: list[Trait] = []
-        # Any output-coordinate sign change preserves coefficient orthogonality.
+        inferred = []
         if operand.entails(CoefficientOrthogonal):
             inferred.append(CoefficientOrthogonal)
         for result in (ProductResult.ONE, ProductResult.NONZERO):
@@ -131,7 +143,6 @@ def conjugation_laws(family: SelfProduct):
             if operand.entails(fact):
                 inferred.append(fact)
                 break
-        # These transforms take a product of vectors to one, and an outer product of vectors to one.
         inferred.extend(fact for fact in (Versor, Blade) if operand.entails(fact))
         relation = operand.self_products.relation(family)
         if relation is not None and relation.factor in (ProductResult.ONE, ProductResult.NONZERO):
@@ -145,32 +156,29 @@ def conjugation_laws(family: SelfProduct):
     return laws
 
 
-def unless_identity(transform: str, laws):
-    """A grade transform's laws, except where the transform is the identity on its operand's grades:
-    there the result is the operand, with all its traits."""
+def unless_identity(transform_name: str, laws: Callable) -> Callable:
+    """When a grade transform fixes every blade on the operand's output subspace, all operand traits
+    carry through unchanged."""
 
-    def guarded(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
-        if operands[0].grade_transform_is_identity(transform):
+    def guarded(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> TraitSet:
+        if operands[0].grade_transform_is_identity(transform_name):
             return operands[0].traits
         return laws(operands, axes)
 
     return guarded
 
 
-
-def _transform_versor(plan: "BindingPlan") -> GAType | None:
-    """The same certified versor occurs on both sides of this binding."""
-
+def _transform_versor(plan: BindingPlan) -> GAType | None:
     if not plan.target_gatype.entails(Sandwich):
         return None
     if not any(0 in group and 2 in group for group in plan.equality_groups):
         return None
     operand = next(binding.operand_gatype for binding in plan.bindings if binding.axis == 0)
-    # The inferred self-product relations divide by the versor's reverse product.
+    # Self-product propagation through a sandwich requires an invertible versor.
     return operand if operand.entails(Versor) and operand.entails(ReverseProductNonzero) else None
 
 
-def _transform_passenger(plan: "BindingPlan") -> SubSpace:
+def _transform_passenger(plan: BindingPlan) -> SubSpace:
     return next(
         (binding.operand_gatype.output_subspace for binding in plan.bindings if binding.axis == 1),
         plan.target_gatype.input_subspaces[1],
@@ -178,9 +186,9 @@ def _transform_passenger(plan: "BindingPlan") -> SubSpace:
 
 
 @lru_cache(maxsize=None)
-def bind_subspaces(plan: "BindingPlan") -> tuple[SubSpace, ...]:
-    """Apply certified grade preservation before constructing the kernel."""
-
+def bind_subspaces(plan: BindingPlan) -> tuple[SubSpace, ...]:
+    """Binding the same certified `Versor` to both outer slots of a `Sandwich` expression restricts
+    the output blade support to the passenger's grades."""
     if not plan.target_gatype.entails(Sandwich):
         return plan.result_subspaces
     if not any(0 in group and 2 in group for group in plan.equality_groups):
@@ -201,22 +209,21 @@ def bind_subspaces(plan: "BindingPlan") -> tuple[SubSpace, ...]:
     return (output,) + plan.result_subspaces[1:]
 
 
-def bind_traits(plan: "BindingPlan") -> TraitSet:
-    """Specialize each declared relation independently through one binding."""
-
+def bind_traits(plan: BindingPlan) -> TraitSet:
+    """Substituting bound operand traits into an operator's relational laws infers the result's
+    `TraitSet`."""
     if plan.target_gatype.entails(Identity) and plan.bindings:
         operand = plan.bindings[0].operand_gatype
         if plan.result_subspaces[0].same_support(operand.output_subspace):
             return operand.traits
-        # Embedding changes the coefficient layout, not the output value.
-        # Do not copy layout-specific claims such as matrix orthogonality.
+        # Widening output layout preserves value traits while dropping layout-dependent matrix orthogonality.
         return TraitSet(
             trait for trait in operand.effective_traits
             if isinstance(trait, (ProductFact, ProductRelation, ClosureRelation))
             or trait in (Versor, Blade)
         )
 
-    inferred: list[Trait] = []
+    inferred = []
     for relation in plan.target_gatype.traits:
         if isinstance(relation, ProductRelation):
             result = _bind_self_product(plan, relation)
@@ -236,12 +243,10 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
             ProductResult.ONE if versor.entails(ReverseProductOne)
             else ProductResult.NONZERO
         )
-        # For y = m*x*reverse(m), y*reverse(y) =
-        # (m*reverse(m))**2 * (x*reverse(x)), whenever x's product is scalar.
+        # Sandwiching x by m scales x * ~x by (m * ~m)**2 whenever x * ~x is scalar.
         result = _bind_self_product(plan, ProductRelation(ReverseProduct, factor, (1,)))
         if result is not None:
             inferred.append(result)
-        # A versor's action takes a versor to a versor and a blade to a blade.
         for kind, fact in _CLOSURES.items():
             result = _bind_closure(plan, kind((1,)), fact)
             if result is not None:
@@ -257,8 +262,7 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
             and all(square == 1 for square in versor.algebra.signature)
             and not any(binding.axis == 1 for binding in plan.bindings)
         ):
-            # In a Euclidean algebra the reverse scalar product is exactly
-            # the coefficient dot product. This is not true of PGA/Lorentz.
+            # In Euclidean signatures the reverse scalar product equals the Euclidean dot product on blade coordinates.
             inferred.append(CoefficientOrthogonal)
 
     if plan.target_gatype.entails(CoefficientOrthogonal) and plan.bindings:
@@ -272,17 +276,14 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
     return TraitSet(inferred) if inferred else EMPTY_TRAITS
 
 
-def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait | None:
-    """Substitute a declared relation, without rediscovering its theorem."""
-
+def _bind_self_product(plan: BindingPlan, relation: ProductRelation) -> Trait | None:
     factor = relation.factor
     nonzero_inputs = relation.nonzero_inputs
-    output_axes: list[int] = []
+    output_axes = []
     bindings = {binding.axis: binding for binding in plan.bindings}
     splices = plan.result_input_splices
 
-    # A zero factor does not remove the scalar guard on other inputs. Every
-    # referenced input still needs a scalar self-product in THIS family.
+    # Every referenced input must carry a scalar self-product in this family even when another factor is zero.
     for axis in relation.axes:
         binding = bindings.get(axis)
         if binding is None:
@@ -311,16 +312,12 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
     if output_axes:
         return ProductRelation(relation.self_product, factor, output_axes, nonzero_inputs)
     if len(plan.result_subspaces) != 1:
-        # No current law becomes independent of remaining inputs.
         return None
     return ProductFact(relation.self_product, factor)
 
 
-def _bind_closure(plan: "BindingPlan", relation: ClosureRelation, fact: Trait) -> Trait | None:
-    """Substitute a family closed under the operation, versors or blades: the result has the family's
-    fact when every referenced input does, a value of the family or a map that carries it on."""
-
-    output_axes: list[int] = []
+def _bind_closure(plan: BindingPlan, relation: ClosureRelation, fact: Trait) -> Trait | None:
+    output_axes = []
     bindings = {binding.axis: binding for binding in plan.bindings}
     splices = plan.result_input_splices
     for axis in relation.axes:
@@ -345,5 +342,4 @@ def _bind_closure(plan: "BindingPlan", relation: ClosureRelation, fact: Trait) -
     return None
 
 
-# The families closed under an operation, each relation with the fact it carries.
 _CLOSURES = {VersorProduct: Versor, BladeProduct: Blade}

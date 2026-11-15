@@ -1,1 +1,1 @@
-"""Rayleigh-Bénard convection, on a mesh of triangles."""
+"""A layer of liquid heated from below turns over in Rayleigh-Bénard convection."""

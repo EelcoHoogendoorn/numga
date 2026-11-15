@@ -1,119 +1,151 @@
-"""The lens camera is shown in three still settings, and in motion as it zooms and refocuses.
-
-Every setting uses the same two-lens train on a grid of points at three depths; a setting
-places the rear lens, picks the point to focus on, tilts the sensor, and sets the aperture.
-"""
+"""Three still camera exposures (wide, telephoto, and Scheimpflug sensor tilt) and a continuous zoom-and-refocus animation."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 import numpy as np
 
+from examples.optics.lens_camera.core import (
+    Camera,
+    Motor,
+    Plane,
+    Point,
+    PointMap,
+    Quadric,
+    SensorPlane,
+    SensorPoint,
+    camera_exposure,
+    cone_section,
+    home,
+    mv,
+    origin,
+    scene_point,
+    unit_point,
+)
 from numga import stack
 
-from examples.optics.lens_camera.core import (
-    Camera, Motor, Plane, Point, PointMap, Quadric, SensorPlane, SensorPoint, expose, home, mv,
-    origin, point, section, unit,
-)
-
-# Focal lengths of the front and the rear lens. The front lens sits at x == 1; the rear lens moves to zoom.
+# Front and rear focal lengths; the front lens stands fixed at x == 1 while the rear lens translates to zoom.
 focal_lengths = np.array([1.0, 0.6])
 front_at = 1.0
-# A scene: a grid of points at three depths in front of the camera, and one subject on the far layer
-# whose rays through the aperture rim are traced, at the rim's top, its centre and its bottom, in aperture radii.
+# Three depth layers of scene points and one far-layer subject point with three traced aperture-rim heights.
 depths = np.array([-3.2, -2.2, -1.6])
+n_depths = len(depths)
 n_heights, n_widths = 5, 4
 half_height, half_width = 0.8, 0.5
-scene = point(np.stack(np.meshgrid(
-    depths, np.linspace(-half_height, half_height, n_heights), np.linspace(-half_width, half_width, n_widths), indexing="ij",
-), axis=-1))                                                                    # [depths, heights, widths] Point-
-subject = point(np.array([-3.2, 0.0, -1.0 / 6.0]))                              # [] Point-
+scene = scene_point(
+    np.stack(
+        np.meshgrid(
+            depths,
+            np.linspace(-half_height, half_height, n_heights),
+            np.linspace(-half_width, half_width, n_widths),
+            indexing="ij",
+        ),
+        axis=-1,
+    )
+)                                                                               # [n_depths, n_heights, n_widths] Point-
+subject = scene_point(np.array([-3.2, 0.0, -1.0 / 6.0]))                        # [] Point-
 rim_heights = np.array([1, 0, -1])
-# The stills: the rear lens wide and tele, the focus distance, the aperture radius, and the sensor's tilt.
+# Wide, telephoto, and tilted-sensor still settings.
 wide_at, tele_at = 1.4, 1.8
 focus_distance = 2.2
 aperture = 0.45
 sensor_tilt = np.radians(25)
-# The motion: the rear lens, the focus distance and the aperture radius, each about a middle and by a swing;
-# its frames, and the duration of a frame in milliseconds.
+# Zoom, focus, and aperture oscillation midpoints and swings across the animation loop.
 rear_middle, rear_swing = 1.6, 0.2
 focus_middle, focus_swing = 2.4, 0.8
 aperture_middle, aperture_swing = 0.3, 0.1
 n_frames = 108
 frame_duration_ms = 40
-# The samples traced around each blur section in the checks.
 n_section_samples = 48
 
 
 # --- math -----------------------------------------------------------------------------
-def setting(rear_at: float, focus_at: float, tilt: float, radius: float) -> tuple[PointMap, Camera, Motor, Quadric, Plane, Point]:
-    """The scene exposed with the rear lens at `rear_at`, focused on the axis at `focus_at`, the sensor tilted by
-    `tilt` radians, and an aperture of the given radius."""
-    placements = (mv.xw * (np.array([front_at, rear_at]) / 2)).exp()            # [lenses] Motor+
+def camera_setting(
+    rear_at: float, focus_at: float, tilt: float, radius: float,
+) -> tuple[PointMap, Camera, Motor, Quadric, Plane, Point]:
+    """Exposing `scene` with the rear lens at `rear_at`, focus target at `focus_at`, sensor tilt `tilt`, and aperture `radius` evaluates `camera_exposure`."""
+    placements = (mv.xw * (np.array([front_at, rear_at]) / 2)).exp()            # [2] Rotor+
     focus = origin + mv.x.dual() * focus_at                                     # [] Point-
-    turn = (mv.xy * (tilt / 2)).exp()                                           # [] Motor+
-    rim = origin + mv.y.dual() * (radius * rim_heights)                         # [rays] Point-
-    return expose(scene, subject, focal_lengths, placements, focus, turn, radius, rim)
+    turn = (mv.xy * (tilt / 2)).exp()                                           # [] Rotor+
+    rim = origin + mv.y.dual() * (radius * rim_heights)                         # [3] Point-
+    return camera_exposure(scene, subject, focal_lengths, placements, focus, turn, radius, rim)
 
 
-def stills() -> tuple[tuple, tuple, tuple]:
-    """Wide and tele at one focus and aperture, and tele with the sensor tilted."""
-    wide = setting(wide_at, -focus_distance, 0.0, aperture)
-    tele = setting(tele_at, -focus_distance, 0.0, aperture)
-    tilted = setting(tele_at, -focus_distance, sensor_tilt, aperture)
+def still_exposures() -> tuple[tuple, tuple, tuple]:
+    """Wide, telephoto, and tilted-sensor exposures form the three comparison stills."""
+    wide = camera_setting(wide_at, -focus_distance, 0.0, aperture)
+    tele = camera_setting(tele_at, -focus_distance, 0.0, aperture)
+    tilted = camera_setting(tele_at, -focus_distance, sensor_tilt, aperture)
     return wide, tele, tilted
 
 
-def motion(n_frames: int) -> Iterator[tuple]:
-    """The rear lens swings to zoom while the focus and the aperture change.
-
-    Yields per frame the rear lens position, the focus distance, the aperture radius and the exposure.
-    """
+def zoom_states(n_frames: int) -> Iterator[tuple]:
+    """Yields `(rear_at, focus_at, radius, exposure)` across `n_frames` phases as the camera zooms, refocuses, and stops down."""
     for phase in np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False):
         rear_at = rear_middle + rear_swing * np.sin(phase)
         focus_at = focus_middle - focus_swing * np.cos(phase)
         radius = aperture_middle + aperture_swing * np.sin(2 * phase)
-        yield rear_at, focus_at, radius, setting(rear_at, -focus_at, 0.0, radius)
+        yield rear_at, focus_at, radius, camera_setting(rear_at, -focus_at, 0.0, radius)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def main() -> None:
-    from examples.util.animation import save_animation, save_figure
-    from examples.optics.lens_camera import render
+def save_states(
+    states: Iterable, animate: Callable[..., Iterable[np.ndarray]], *arguments, name: str, duration_ms: int,
+) -> list:
+    """Streams `states` once through `animate(*arguments, states)` into `save_animation` and returns the collected states."""
+    from examples.util.animation import save_animation
 
-    wide, tele, tilted = stills()
-    save_figure(render.draw_stills((wide, tele, tilted)), "lens_camera")
-    save_animation(render.animate_camera(motion(n_frames), scene), "lens_camera", frame_duration_ms)
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms)
+    return kept
+
+
+def main() -> None:
+    """Saves the three-still sensor comparison and zoom animation, then checks collineation incidence and blur conics."""
+    from examples.optics.lens_camera import render
+    from examples.util.animation import save_figure
+
+    wide, tele, tilted = still_exposures()
+    save_figure(render.stills_figure((wide, tele, tilted)), "lens_camera")
+    recorded = save_states(zoom_states(n_frames), render.camera_animation, scene, name="lens_camera", duration_ms=frame_duration_ms)
 
     # checks
-    # The train on lines is the join of the collineation's images: the lens is a collineation. The image
-    # cone's vertex is the collineation's image of each scene point. The sensor's section of an image cone,
-    # traced from the chief-ray hit, lies on the conic obtained the short way: the aperture disc, a flat
-    # dual quadric, pushed through the pupil-to-sensor collineation of the same point. A point at the focus
-    # depth images to a point: its section collapses onto the chief-ray hit.
-    collineation, camera, frame, cones, planes, _ = tilted
-    place_front = (mv.xw * (front_at / 2)).exp()                                # [] Motor+
+    # The lens train's line map agrees with the join of its point collineation images, every image cone has its
+    # vertex at the collineated scene point, the sensor section of an image cone lies on the pushed-forward
+    # aperture dual conic, and a point on the focal plane collapses its blur section to a single point.
+    collineation, camera, frame, cones, _, _ = tilted
+    place_front = (mv.xw * (front_at / 2)).exp()                                # [] Rotor+
     sensor, centre = frame >> home, place_front >> origin                       # [] Plane+, Point-
     pupil_directions = stack((mv.y.dual(), mv.z.dual()))                        # [2] Point-
-    aperture_disc = (pupil_directions * (pupil_directions & Plane)).sum(-1) * aperture**2 - origin * (origin & Plane)
+    aperture_disc = (pupil_directions * (Plane & pupil_directions)).sum(-1) * aperture**2 - origin * (Plane & origin)  # [] Point- <- Plane+
     pupil = place_front >> aperture_disc(place_front << Plane)                  # [] Point- <- Plane+
-    other = point(np.array([[-1.0, 0.3, 0.1], [-1.5, 0.2, -0.4], [-2.0, -0.5, 0.6]]))
-    np.testing.assert_allclose(camera(Point, other)(scene[0, 0, 0]).kernel,
-                               ((collineation(scene[0, 0, 0]) & collineation(other)) ^ sensor).kernel, atol=1e-12)
-    np.testing.assert_allclose((collineation(scene) & cones(collineation(scene))).kernel, 0.0, atol=1e-9)
+    other = scene_point(np.array([[-1.0, 0.3, 0.1], [-1.5, 0.2, -0.4], [-2.0, -0.5, 0.6]]))  # [3] Point-
+    camera_hits = unit_point(camera(Point, other)(scene[0, 0, 0]))              # [3] Point-
+    joined_hits = unit_point((collineation(scene[0, 0, 0]) & collineation(other)) ^ sensor)  # [3] Point-
+    assert bool(((camera_hits & joined_hits).norm() < 1e-11).all())
+    assert bool(((cones(collineation(scene)) & collineation(scene)).abs() < 1e-9).all())
+
     for index in ((0, 0, 0), (2, 4, 3)):
-        start = (collineation(scene[index]) & collineation(centre)) ^ sensor
-        boundary = section(cones[index], start, frame, n_section_samples)
-        pupil_to_sensor = camera(scene[index])
-        blur_disc = pupil_to_sensor(pupil(pupil_to_sensor.adjugate()))
-        home_blur_disc = (frame << blur_disc(frame >> SensorPlane)).cast(SensorPoint)
-        hits = (frame << boundary).cast(SensorPoint)
-        np.testing.assert_allclose((hits & home_blur_disc.solve(hits)).kernel, 0.0, atol=1e-10)
-    collineation, camera, frame, cones, planes, _ = wide
-    start = (collineation(scene[1, 2, 1]) & collineation(centre)) ^ (frame >> home)
-    np.testing.assert_allclose(unit(section(cones[1, 2, 1], start, frame, n_section_samples)).kernel,
-                               unit(start).broadcast_to((n_section_samples,)).kernel, atol=1e-6)
+        start = (collineation(scene[index]) & collineation(centre)) ^ sensor    # [] Point-
+        boundary = cone_section(cones[index], start, frame, n_section_samples)  # [n_section_samples] Point-
+        pupil_to_sensor = camera(scene[index])                                  # [] Point- <- Point-
+        blur_disc = pupil_to_sensor(pupil(pupil_to_sensor.adjugate()))          # [] Point- <- Plane+
+        home_blur_disc = (frame << blur_disc(frame >> SensorPlane)).cast(SensorPoint)  # [] Point- <- Plane+
+        hits = (frame << boundary).cast(SensorPoint)                            # [n_section_samples] Point-
+        assert bool(((home_blur_disc.solve(hits) & hits).abs() < 1e-9).all())
+
+    wide_collineation, _, wide_frame, wide_cones, _, _ = wide
+    focused_hit = (wide_collineation(scene[1, 2, 1]) & wide_collineation(centre)) ^ (wide_frame >> home)  # [] Point-
+    focused_section = unit_point(cone_section(wide_cones[1, 2, 1], focused_hit, wide_frame, n_section_samples))  # [n_section_samples] Point-
+    assert bool(((focused_section & unit_point(focused_hit)).norm() < 1e-6).all())
+    assert len(recorded) == n_frames
 
 
 if __name__ == "__main__":

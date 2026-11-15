@@ -1,1 +1,1 @@
-"""Tetrahedral Whitney forms, topological magnetic helicity, and force-free Beltrami fields."""
+"""Tetrahedral Whitney forms carry topological magnetic helicity and force-free Beltrami fields in a toroidal cavity."""

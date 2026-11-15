@@ -1,46 +1,46 @@
-"""A stretched, moved point cloud and the Gaussian fitted to it."""
+"""A displaced and rotated normal cloud tests homogeneous Gaussian fitting."""
 
 from __future__ import annotations
 
-import numpy as np
-
 from functools import partial
 
-from examples.quadrics.gaussian.core import density, fit_gaussian, mv
+import numpy as np
 
-# The cloud: its size, its spread along x and y before it is moved, and the seed of its samples.
-N_POINTS = 400
-SPREAD = np.array([1.5, 0.5])
-SEED = 4
-# How it is moved: a translation along x and against y, then a turn, as generator coefficients.
-SHIFT = (0.6, 0.3)
-TURN = 0.3
+from examples.quadrics.gaussian.core import Point, gaussian_density, gaussian_fit, mv
+
+n_points = 400
+spread = np.array([1.5, 0.5])
+seed = 4
+shift = (0.6, 0.3)
+turn = 0.3
 
 
 # --- math -----------------------------------------------------------------------------
-def gaussian():
-    """A Gaussian fits a stretched cloud, moved as a batch: the cloud, its precision and its 1σ ellipsoid."""
-    rng = np.random.default_rng(SEED)
-    placement = (mv.xw * SHIFT[0] - mv.yw * SHIFT[1]).exp() * (mv.xy * TURN).exp()   # [] Motor+
-    points = placement >> mv.point(rng.normal(size=(N_POINTS, 2)) * SPREAD)    # [points] Point-
-    precision, ellipsoid = fit_gaussian(points)                                # [] Plane+ <- Point-, Plane+ <- Point-
-    return points, precision, ellipsoid
+def point_cloud() -> Point:
+    """An anisotropic normal sample placed by a rigid motor forms the test cloud (`[n_points] Point-`)."""
+    rng = np.random.default_rng(seed)
+    rest_points = mv.point(rng.normal(size=(n_points, 2)) * spread)            # [n_points] Point-
+    placement = (mv.xw * shift[0] - mv.yw * shift[1]).exp() * (mv.xy * turn).exp()  # [] Motor+
+    return placement >> rest_points
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_figure
+    """Fits the displaced point cloud, writes the figure, and checks quadric and density identities."""
     from examples.quadrics.gaussian import render
+    from examples.util.animation import save_figure
 
-    points, precision, ellipsoid = gaussian()
-    save_figure(render.draw_gaussian(points, partial(density, precision), ellipsoid), "gaussian")
+    points = point_cloud()                                                     # [n_points] Point-
+    precision, ellipsoid = gaussian_fit(points)                                # [] Plane+ <- Point-, Plane+ <- Point-
+    save_figure(render.gaussian_figure(points, partial(gaussian_density, precision), ellipsoid), "gaussian")
 
     # checks
-    # On unit-weight points the level is the squared Mahalanobis distance less one and the density
-    # `(-0.5 * squared_distance).exp()`: the 1σ quadric is exactly the contour where the density falls to
-    # `np.exp(-0.5)`.
-    level = ellipsoid(points) & points                                         # [points] Scalar+
-    np.testing.assert_allclose(level.to_array(), -2.0 * np.log(density(precision, points).to_array()) - 1.0, atol=1e-8)
+    mean = points.mean(axis=0)                                                 # [] Point-
+    levels = ellipsoid(points) & points                                        # [n_points] Scalar+
+    assert (gaussian_density(precision, mean) - 1).abs() < 1e-8
+    assert ((ellipsoid(mean) & mean) + 1).abs() < 1e-8
+    assert (levels.mean(axis=0) - 1).abs() < 1e-8
+    assert ((levels + 2 * gaussian_density(precision, points).log() + 1).abs() < 1e-8).all()
 
 
 if __name__ == "__main__":

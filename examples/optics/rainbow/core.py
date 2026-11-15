@@ -1,28 +1,8 @@
-"""The rainbow: sunlight refracted into a raindrop, reflected inside it once or twice, and refracted
-out again, in the geometric algebra of three-dimensional space.
+"""Sunlight refracted into a spherical raindrop, reflected internally once or twice, and refracted out again forms the primary and secondary rainbows in planar spacetime.
 
-Sunlight entering a spherical raindrop is bent at its surface, reflected from the back of the drop and
-bent again on the way out, and comes back towards the sun turned by an angle that depends on how far
-from the drop's centre it entered. That angle has an extreme: light entering near one particular
-distance from the centre all leaves at nearly the same angle, and piles up there into a bright edge,
-the bow, about 42 degrees from the point straight opposite the sun. Light reflected twice inside has
-its own extreme near 51 degrees, the fainter secondary bow, and no light reflected once or twice leaves
-between the two: Alexander's dark band. Water bends blue light slightly more than red, so each colour
-has its bow at a slightly different angle.
+Sunlight entering a spherical raindrop bends at its front surface, reflects off the back of the drop, and bends again on the way out, returning toward the sun at a viewing angle determined by its impact offset from the drop's centre. That deflection reaches a stationary extreme near 42 degrees from the antisolar point for one internal reflection, concentrating rays into the primary bow, and a second extreme near 51 degrees for two internal reflections, leaving Alexander's dark band between the two bows while dispersion separates violet from red.
 
-Directions are modelled as antivectors, and so are the points of the drop's surface, as directions from
-its centre. Half a turn about the surface's normal, `normal >> direction`, reverses the part of a
-direction along the surface: `-(normal >> direction)` is the reflected direction, and the part along
-the surface is half the difference. Snell's law keeps that part times the refractive index, which
-holds both the law of sines and the light's staying in its plane of incidence; unit length fixes the
-rest. Inside a sphere every chord meets the surface at the same angle at both ends, so each point
-where the light meets the surface, and each chord, is the last one turned about the centre by the same
-rotor: the light's path inside the drop is the powers of one turn, `turn >> vertex`.
-
-In the vector notation of geometric optics, Snell's law reads as $n_1 \\sin\\theta_1 = n_2 \\sin\\theta_2$
-with the rays and the normal in one plane, and the deflection of light entering at incidence $i$ and
-refracted to $r$, after $k$ reflections inside, as $D = 2(i - r) + k(\\pi - 2r)$, stationary where
-$\\cos^2 i = \\frac{n^2 - 1}{k(k + 2)}$.
+Planar spacetime models wavevectors and interface normals as extrinsic vectors, while spatial displacements, ray directions, and the drop's rest-frame time direction are intrinsic antivectors. Reflecting an incident wavevector across a unit interface normal plane via `face >> wavevector` isolates its continuous tangential-and-temporal part `(wavevector + (face >> wavevector)) / 2`, and enforcing the medium dispersion relation fixes the transmitted normal wavenumber directly without angles. Because every chord of a circle meets the rim at equal angles at both ends, reflecting an entry point across the chord plane gives the next bounce point and one fixed spatial rotor `turn` steps every vertex and wavevector around the drop, while the normal wavenumbers `(wavevector | face)` give both Fresnel reflectances directly.
 """
 
 from __future__ import annotations
@@ -31,67 +11,116 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext
-from numga.algebras import VGA3D as ga
+from numga import Algebra, NumpyContext, stack
 
+# Planar spacetime `x+y+t-` through the drop's cross-section, space positive and time negative.
+ga = Algebra("x+y+t-")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
-# Directions, and the points of the drop's surface as directions from its centre, are antivectors,
-# intrinsic; unit ones square to minus one.
-Direction = ga.gatype.antivector()                                            # Antivector-
+Wavevector = ga.gatype.vector()                                               # Vector+
+Plane = Wavevector.derive.within(Algebra("x+y+"))                             # Vector+
+Event = ga.gatype.antivector()                                                # Antivector-
+# Spatial displacements from the drop centre and ray directions in the drop rest frame.
+Direction = Plane.derive.dual                                                 # Antivector-
 Rotor = ga.gatype.rotor()                                                     # Rotor+
+
+# Drop rest-frame time direction pairing to +1 with unit-frequency sunlight, and spatial axes.
+time = -mv.t.dual()                                                           # [] Event-
+forward, up = mv.x.dual(), mv.y.dual()                                        # [] Direction-, Direction-
+sunlight_wave = mv.x - mv.t                                                   # [] Wavevector+
 
 
 # --- math -----------------------------------------------------------------------------
-def refract(direction: Direction, normal: Direction, ratio: np.ndarray) -> Direction:
-    """The direction of light crossing a surface with unit `normal`, pointing into the medium it
-    enters, which is `ratio` times as refractive as the one it leaves."""
-    # Half a turn about the normal reverses the part of the direction along the surface; Snell's law
-    # keeps that part times the refractive index.
-    surface_part = (direction - (normal >> direction)) / (2 * ratio)          # [...] Direction-
-    # Unit length fixes the part along the normal.
-    return surface_part + normal * (1 - surface_part.scalar_norm_squared()).square_root()   # [...] Direction-
+def refracted_wavevector(wavevector: Wavevector, face: Plane, index: np.ndarray) -> Wavevector:
+    """Crossing a unit interface `face` (`[...] Plane+`) into a medium of refractive `index` preserves the
+    tangential-and-temporal wavevector part and sets the normal wavenumber from dispersion (`[...] Wavevector+`)."""
+    # `face >> wavevector` reverses the normal component while keeping the tangential spatial and temporal parts.
+    tangential = (wavevector + (face >> wavevector)) / 2                      # [...] Wavevector+
+    frequency = wavevector & time                                             # [...] Scalar+
+    normal_wavenumber = ((index**2 - 1) * frequency.squared() - tangential.squared()).square_root()   # [...] Scalar+
+    return tangential + face * normal_wavenumber                              # [...] Wavevector+
 
 
-def entry(sunlight: Direction, offsets: Direction) -> Direction:
-    """Where light along `sunlight`, passing the centre of the unit drop at each offset square to it,
-    meets the drop: the point on its sunlit side, as a direction from the centre."""
-    return offsets - sunlight * (1 - offsets.scalar_norm_squared()).square_root()   # [...] Direction-
+def entry_point(sunlight: Direction, offsets: Direction) -> Direction:
+    """Rays travelling along unit `sunlight` (`[] Direction-`) at transverse `offsets` (`[...] Direction-`)
+    meet the sunlit hemisphere of the unit drop at `entry_point` (`[...] Direction-`)."""
+    return offsets - sunlight * (1 - offsets.antinorm().squared()).square_root()   # [...] Direction-
 
 
-def bounce(vertex: Direction, chord: Direction) -> Rotor:
-    """The turn about the drop's centre carrying a point where light meets the surface from inside, and
-    the chord arriving there, to the next point and the next chord."""
-    # The next point is this one reflected across the plane through the centre square to the chord.
-    next_vertex = -(chord >> vertex)                                          # [...] Direction-
-    # The rotor taking one unit direction to another, in their plane.
-    return (-(next_vertex * vertex)).square_root()                            # [...] Rotor+
+def bounce_rotor(vertex: Direction, wavevector: Wavevector) -> Rotor:
+    """Reflecting `vertex` (`[...] Direction-`) across the spatial chord along `wavevector` (`[...] Wavevector+`)
+    defines the drop-centre rotor (`[...] Rotor+`) stepping each internal bounce to the next."""
+    spatial = wavevector.cast(Plane)                                          # [...] Plane+
+    chord_plane = spatial / spatial.norm()                                    # [...] Plane+
+    # `chord_plane >> vertex` reverses the chordwise component and keeps the perpendicular offset from the centre.
+    next_vertex = chord_plane >> vertex                                       # [...] Direction-
+    return (next_vertex * vertex).square_root()                               # [...] Rotor+
 
 
-def reflectances(offsets: Direction, index: np.ndarray) -> tuple[Scalar, Scalar]:
-    """The fraction of light the surface reflects, polarized across and along the plane of incidence:
-    Fresnel's coefficients, the same where the light enters as wherever it meets the surface again."""
-    # The cosines of the angles of incidence and refraction; the offset is the sine of incidence.
-    incidence = (1 - offsets.scalar_norm_squared()).square_root()             # [...] Scalar+
-    refraction = (1 - offsets.scalar_norm_squared() / index**2).square_root() # [...] Scalar+
-    reflectance_across = ((incidence - index * refraction) / (incidence + index * refraction)).squared()   # [...] Scalar+
-    reflectance_along = ((refraction - index * incidence) / (refraction + index * incidence)).squared()   # [...] Scalar+
+def fresnel_reflectances(
+    incident: Wavevector, refracted: Wavevector, face: Plane, index: np.ndarray,
+) -> tuple[Scalar, Scalar]:
+    """Normal wavenumbers of `incident` and `refracted` (`[...] Wavevector+`) across `face` (`[...] Plane+`)
+    into refractive `index` determine the perpendicular and in-plane Fresnel reflectances (`[...] Scalar+` each)."""
+    incident_normal = incident | face                                         # [...] Scalar+
+    refracted_normal = refracted | face                                       # [...] Scalar+
+    reflectance_across = ((incident_normal - refracted_normal) / (incident_normal + refracted_normal)).squared()   # [...] Scalar+
+    reflectance_along = (
+        (index**2 * incident_normal - refracted_normal) / (index**2 * incident_normal + refracted_normal)
+    ).squared()                                                               # [...] Scalar+
     return reflectance_across, reflectance_along
 
 
-def paths(sunlight: Direction, offsets: Direction, index: np.ndarray, n_reflections: int) -> Iterator[tuple[Direction, Direction, Scalar]]:
-    """Per number of reflections inside the drop, from none up to `n_reflections`: the point where the
-    light leaves, the direction it leaves in, and the fraction of unpolarized sunlight leaving there."""
-    vertex = entry(sunlight, offsets)                                         # [...] Direction-
-    chord = refract(sunlight, -vertex, index)                                 # [...] Direction-
-    # Every chord of a sphere meets it at the same angle at both ends: each point and chord inside is
-    # the last one turned by the same rotor.
-    turn = bounce(vertex, chord)                                              # [...] Rotor+
-    reflectance_across, reflectance_along = reflectances(offsets, index)      # [...] Scalar+, Scalar+
-    # The light transmitted into the drop and out of it again, in each polarization.
-    passed_across, passed_along = (1 - reflectance_across).squared(), (1 - reflectance_along).squared()
+def drop_paths(
+    offsets: Direction, index: np.ndarray, n_reflections: int,
+) -> Iterator[tuple[Direction, Direction, Scalar]]:
+    """Yields `(vertex, exit_direction, transmittance)` (`[...] Direction-`, `[...] Direction-`, `[...] Scalar+`)
+    for zero up to `n_reflections` internal reflections of unit-frequency sunlight at impact `offsets`."""
+    vertex = entry_point(forward, offsets)                                    # [...] Direction-
+    inward_face = (-vertex).dual_inverse()                                    # [...] Plane+
+    inside_wave = refracted_wavevector(sunlight_wave, inward_face, index)     # [...] Wavevector+
+    # Equal chord angles around the circle let a single rotor step every internal bounce and wavevector.
+    turn = bounce_rotor(vertex, inside_wave)                                  # [...] Rotor+
+    reflectance_across, reflectance_along = fresnel_reflectances(sunlight_wave, inside_wave, inward_face, index)   # [...] Scalar+, Scalar+
+    passed_across = (1 - reflectance_across).squared()                        # [...] Scalar+
+    passed_along = (1 - reflectance_along).squared()                          # [...] Scalar+
     for _ in range(n_reflections + 1):
         vertex = turn >> vertex                                               # [...] Direction-
-        yield vertex, refract(chord, vertex, 1 / index), (passed_across + passed_along) / 2
-        chord = turn >> chord                                                 # [...] Direction-
-        passed_across, passed_along = passed_across * reflectance_across, passed_along * reflectance_along
+        exit_wave = refracted_wavevector(inside_wave, vertex.dual_inverse(), np.array(1.0))   # [...] Wavevector+
+        exit_direction = exit_wave.cast(Plane).dual()                         # [...] Direction-
+        yield vertex, exit_direction, (passed_across + passed_along) / 2
+        inside_wave = turn >> inside_wave                                     # [...] Wavevector+
+        passed_across = passed_across * reflectance_across                    # [...] Scalar+
+        passed_along = passed_along * reflectance_along                       # [...] Scalar+
+
+
+def sky_bows(
+    offsets: Direction, indices: np.ndarray, n_reflections: int,
+) -> tuple[Scalar, Scalar]:
+    """Tracing `offsets` (`[n_rays] Direction-`) across `indices` (`[n_colours, 1]`) for `1 .. n_reflections`
+    internal reflections gives the antisolar viewing cosines and ring-weighted fluxes (`[n_reflections, n_colours, n_rays] Scalar+` each)."""
+    _, *bows = drop_paths(offsets, indices, n_reflections)
+    # Looking back against `exit_direction` measures the angle from the antisolar direction `forward`.
+    sight_cosines = stack([-(mv.x & exit_direction) for _, exit_direction, _ in bows])   # [..., ...] Scalar+
+    ring_sizes = offsets.antinorm()                                           # [...] Scalar+
+    return sight_cosines, stack([passed * ring_sizes for _, _, passed in bows])   # [..., ...] Scalar+
+
+
+def ray_bundle(
+    offsets: Direction, index: np.ndarray, n_reflections: int,
+) -> tuple[Direction, Direction, Direction]:
+    """Entry points, bounce vertices, and exit directions (`[...] Direction-`, `[n_reflections + 1, ...] Direction-`,
+    `[n_reflections + 1, ...] Direction-`) form the ray fan across `offsets`."""
+    vertices, exits, _ = zip(*drop_paths(offsets, index, n_reflections))
+    return entry_point(forward, offsets), stack(list(vertices)), stack(list(exits))
+
+
+def swept_ray_states(
+    offsets: Direction, index: np.ndarray, n_reflections: int,
+) -> Iterator[tuple[Direction, Direction, Direction, Scalar]]:
+    """Yields `(entry, vertices, exits, sight_cosines)` (`[] Direction-`, `[n_reflections + 1] Direction-`,
+    `[n_reflections + 1] Direction-`, `[n_reflections + 1] Scalar+`) as a single ray steps across `offsets`."""
+    for offset in offsets:
+        entered, vertices, exits = ray_bundle(offset, index, n_reflections)
+        yield entered, vertices, exits, -(mv.x & exits)
+

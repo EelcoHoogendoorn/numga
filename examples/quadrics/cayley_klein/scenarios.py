@@ -1,63 +1,84 @@
-"""The hyperbolic space built from its absolute: a triangle, a perpendicular and spheres."""
+"""Beltrami-Klein hyperbolic triangle, perpendicular reflection, and concentric spheres."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
 from examples.quadrics.cayley_klein.core import (
-    Point, Polarity, spheres, invariant, mv, perpendicular, triangle,
+    Line,
+    Plane,
+    Point,
+    Polarity,
+    Scalar,
+    concentric_spheres,
+    mv,
+    normalized_pairing,
+    perpendicular_reflection,
+    triangle_metrics,
 )
+from numga import stack
+from numga.topology import Topology
 
-# The triangle's vertices, the point a perpendicular is dropped from, and the spheres' centres and radii.
-VERTICES = [[0, 0], [0.65, 0], [0.2, 0.55]]
-PROBE = [-0.15, 0.15]
-CENTRES = [[0, 0], [0.45, 0.25]]
-RADII = np.array([0.25, 0.55, 0.9, 1.3])
-# The signs of the coordinate planes x, y and w in the absolute, the quadric x**2 + y**2 - w**2 == 0: the unit sphere.
-SIGNS = np.array([1.0, 1.0, -1.0])
+triangle_simplices = np.array([[0, 1, 2]])                                 # [1, 3]
+vertex_coordinates = [[0, 0], [0.65, 0], [0.2, 0.55]]
+probe_coordinates = [-0.15, 0.15]
+centre_coordinates = [[0, 0], [0.45, 0.25]]
+sphere_radii = np.array([0.25, 0.55, 0.9, 1.3])
+# Signs of x, y, and w in the unit-circle absolute x^2 + y^2 - w^2 == 0.
+absolute_signs = np.array([1, 1, -1])
 
 
 # --- math -----------------------------------------------------------------------------
-def hyperbolic_space():
-    """The hyperbolic space built from its absolute, and in it a triangle, a perpendicular and spheres: the absolute,
-    the triangle's vertices, sides and angles, the probe point, the foot of its perpendicular to the second side,
-    the perpendicular, the point reflected, the side's pole, the spheres and their centres."""
-    # A plane paired with a point is a rank-one map from points to planes. Summing the three coordinate planes
-    # with signs gives the polarity of the quadric, the absolute. The pole map is the inverse polarity.
-    coordinate_planes = stack([mv.x, mv.y, mv.w])                              # [3] Plane+
-    absolute = (coordinate_planes * (coordinate_planes & Point) * SIGNS).sum(axis=0)   # [] Plane+ <- Point-
+def hyperbolic_scene() -> tuple[
+    Polarity, Point, Plane, Scalar, Scalar, Point, Point, Line, Point, Point, Polarity, Point,
+]:
+    """Beltrami-Klein absolute, triangle geometry, perpendicular reflection across the hypotenuse, and
+    two concentric sphere families."""
+    coordinate_planes = stack([mv.x, mv.y, mv.w])                          # [3] Plane+
+    absolute = (coordinate_planes * (coordinate_planes & Point) * absolute_signs).sum(axis=0)  # [] Plane+ <- Point-
 
-    vertices = mv.point(VERTICES)                                              # [3] Point-
-    sides, angles, _, _ = triangle(absolute, vertices)
+    topology = Topology(len(vertex_coordinates), triangle_simplices)
+    vertices = mv.point(vertex_coordinates).field()                        # Point-[V]
+    sides, angles, _, area = triangle_metrics(topology, absolute, vertices)
 
-    probe = mv.point(PROBE)                                                    # [] Point-
-    pole, normal, foot, reflected = perpendicular(absolute, sides[1], probe)
+    probe = mv.point(probe_coordinates)                                    # [] Point-
+    pole, normal, foot, reflected_point = perpendicular_reflection(absolute, sides[0], probe)
 
-    centres = mv.point(CENTRES)                                                # [centres] Point-
-    rings = spheres(absolute, centres, RADII)                                  # [centres, radii] Plane+ <- Point-
-    return absolute, vertices, sides, angles, probe, foot, normal, reflected, pole, rings, centres
+    n_centres = len(centre_coordinates)
+    n_radii = len(sphere_radii)
+    centres = mv.point(centre_coordinates)                                 # [n_centres] Point-
+    sphere_quadrics = concentric_spheres(absolute, centres, sphere_radii)  # [n_centres, n_radii] Plane+ <- Point-
+    return (
+        absolute, vertices, sides, angles, area, probe, foot, normal, reflected_point, pole, sphere_quadrics, centres,
+    )
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_figure
     from examples.quadrics.cayley_klein import render
+    from examples.util.animation import save_figure
 
-    scene = hyperbolic_space()
-    save_figure(render.draw_hyperbolic_space(*scene), "cayley_klein")
+    (
+        absolute, vertices, sides, angles, area, probe, foot, normal, reflected_point, pole, sphere_quadrics, centres,
+    ) = hyperbolic_scene()
+    save_figure(
+        render.hyperbolic_figure(
+            absolute, vertices, sides, angles, probe, foot, normal, reflected_point, pole, sphere_quadrics, centres,
+        ),
+        "cayley_klein",
+    )
 
     # checks
-    # A hyperbolic angle defect, a perpendicular, and a reflection that is an isometry: the perpendicular's
-    # pole, the meet of the polars of the two points it joins, lies on the side, and the point and its
-    # reflection are equally far from the foot.
-    absolute, vertices, sides, _, probe, foot, _, reflected, pole, _, _ = scene
-    _, _, _, area = triangle(absolute, vertices)
-    distance_pairing = -(Point & absolute(Point))
-    assert area > 0.0
-    np.testing.assert_allclose(((absolute(probe) ^ absolute(pole)) & sides[1]).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose(invariant(distance_pairing, probe, foot).to_array(),
-                               invariant(distance_pairing, reflected, foot).to_array(), atol=1e-12)
+    # Hyperbolic triangles have positive angle defect, the pole of the perpendicular lies on the side,
+    # and harmonic reflection across the side preserves hyperbolic distance to the foot.
+    distance_pairing = -(absolute(Point) & Point)                          # [] Scalar+ <- (Point-, Point-)
+    assert (area > 0).all()
+    assert ((sides[0] & (absolute(probe) ^ absolute(pole))).abs() < 1e-12).all()
+    distance_difference = (
+        normalized_pairing(distance_pairing, probe, foot)
+        - normalized_pairing(distance_pairing, reflected_point, foot)
+    )
+    assert (distance_difference.abs() < 1e-12).all()
 
 
 if __name__ == "__main__":

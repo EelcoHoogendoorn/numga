@@ -1,2 +1,1 @@
-"""Galvanomagnetic and thermomagnetic effects of electrons and holes in a Hall bar and a Corbino ring, on meshes of
-triangles."""
+"""Two-carrier galvanomagnetic and thermomagnetic transport couples charge and heat across a triangulated Hall bar and Corbino ring."""

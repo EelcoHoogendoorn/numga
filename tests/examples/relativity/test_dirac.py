@@ -1,5 +1,5 @@
-"""The Dirac electron: a spinor's map on spacetime and on bivectors, the plane waves' energies, and
-the trembling path over two times, drawn."""
+"""Coverage tests verify Dirac spinor frame action, bivector duality, plane-wave energies, and
+Zitterbewegung rendering."""
 
 from __future__ import annotations
 
@@ -9,32 +9,46 @@ import numpy as np
 from examples.relativity.dirac import core, render, scenarios
 
 
-def test_a_spinor_is_rho_times_a_lorentz_map_and_beta_acts_only_on_bivectors():
-    """`psi >> v == density * (rotor >> v)` for vectors; on bivectors the spinor's sandwich is its
-    frame's extension times `(core.pseudoscalar * beta).exp() / density`."""
+def test_spinor_vector_frame_and_bivector_duality():
+    """Sandwiching vectors scales the Lorentz frame by the density, while `bivector_duality` isolates
+    `(pseudoscalar * beta).exp() / density` on bivectors."""
     mv = core.mv
-    rotor = ((mv.tx * 0.4 + mv.xy * 0.9 + mv.yz * -0.3) * 0.5).exp()
-    psi = core.spinor(2.0, 0.7, rotor)
-    v = mv.vector(np.array([0.3, -1.2, 0.5, 2.0]))
-    np.testing.assert_allclose(core.frame(psi)(v).kernel, (2.0 * (rotor >> v)).kernel, atol=1e-12)
-    B = mv.bivector(np.array([0.2, -0.4, 1.1, 0.3, -0.7, 0.5]))
-    np.testing.assert_allclose(core.duality(psi)(B).kernel, ((core.pseudoscalar * 0.7).exp() / 2.0 * B).kernel, atol=1e-9)
+    density, beta = 2.0, 0.7
+    rotor = ((mv.tx * 0.4 + mv.xy * 0.9 + mv.yz * -0.3) * 0.5).exp()            # [] Spinor+
+    psi = core.dirac_spinor(density, beta, rotor)                               # [] Spinor+
+    vector = mv.vector([0.3, -1.2, 0.5, 2.0])                                   # [] Vector+
+    frame_diff = (psi >> vector) - density * (rotor >> vector)                  # [] Vector+
+    vector_norm = frame_diff.scalar_product(mv.t * frame_diff.reverse() * mv.t)
+    assert (vector_norm.abs() < 1e-12).all()
+
+    plane = mv.bivector([0.2, -0.4, 1.1, 0.3, -0.7, 0.5])                       # [] Bivector+
+    expected = ((core.pseudoscalar * beta).exp() / density) * plane             # [] Bivector+
+    duality_diff = core.bivector_duality(psi)(plane) - expected                 # [] Bivector+
+    bivector_norm = duality_diff.scalar_product(mv.t * duality_diff.reverse() * mv.t.inverse())
+    assert (bivector_norm.abs() < 1e-12).all()
 
 
-def test_plane_wave_energies_are_fourfold_with_beta_telling_their_sign():
-    """Each momentum has the energies minus and plus E, each fourfold; the positive-energy states have
-    beta zero and the negative-energy states beta a half turn, where the invariants' scalar part is negative."""
-    along = np.linspace(-1.0, 1.0, 5)
-    px, py = np.meshgrid(along, along)
+def test_plane_wave_energies_and_beta_signs():
+    """Plane-wave Hamiltonians have fourfold `-E` and `+E` eigenvalues whose scalar reverse norms
+    carry negative and positive signs."""
+    grid = np.linspace(-1.0, 1.0, 3)
+    px, py = np.meshgrid(grid, grid)
     momenta = core.mv(core.Spatial, np.stack([px, py, np.zeros_like(px)], axis=-1))
-    values, states = core.hamiltonian(momenta, scenarios.mass).eigh()
-    energy = core.energy(momenta, scenarios.mass).to_array()[..., None]
-    np.testing.assert_allclose(values.to_array(), np.concatenate([-energy.repeat(4, -1), energy.repeat(4, -1)], -1), atol=1e-12)
-    scalar = core.invariants(states).select[0].to_array()
-    np.testing.assert_allclose(np.sign(scalar), np.concatenate([-np.ones(4), np.ones(4)]) * np.ones_like(scalar))
+    values, states = core.plane_wave_hamiltonian(momenta, scenarios.mass).eigh()
+    energy = core.plane_wave_energy(momenta, scenarios.mass)                    # [3, 3] Scalar+
+    assert ((values[..., :4] + energy[..., None]).abs() < 1e-12).all()
+    assert ((values[..., 4:] - energy[..., None]).abs() < 1e-12).all()
+    signs = states.scalar_norm_squared()                                        # [3, 3, 8] Scalar+
+    assert (signs[..., :4] < 0).all()
+    assert (signs[..., 4:] > 0).all()
 
 
-def test_the_trembling_path_runs_and_draws():
-    times, spinors, paths, _ = scenarios.trembling(core.mv(core.Spatial, scenarios.momentum), 1.0, 2)
-    plt.close(render.draw_paths(times, spinors, paths, scenarios.mixtures))
-    assert len(list(render.animate_paths(times, spinors, paths, scenarios.mixtures, 2))) == 1
+def test_trembling_trajectory_figure_and_animation():
+    """Single-frame Zitterbewegung states render cleanly through both `paths_figure` and
+    `paths_animation`."""
+    momentum = core.mv(core.Spatial, scenarios.drift_coordinates)               # [] Vector+
+    initial = core.mixed_spinors(momentum, scenarios.mass, scenarios.mixtures)  # [3] Spinor+
+    states = list(core.trembling_states(momentum, scenarios.mass, initial, 0.1, 1, 2))
+    plt.close(render.paths_figure(states))
+    frame = next(render.paths_animation(states))
+    assert frame.ndim == 3 and frame.shape[-1] == 3

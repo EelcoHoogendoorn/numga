@@ -1,1 +1,1 @@
-"""Electrokinetic transport through charged channels, on a mesh of triangles."""
+"""Pressure drops and electric fields drive coupled fluid flow, ion currents, and dye transport through triangulated charged channels."""

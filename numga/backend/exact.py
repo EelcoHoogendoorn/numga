@@ -1,10 +1,23 @@
-"""Exact coefficient and execution context for algebra-owned Extensors."""
+"""Every `Algebra` constructs its basis blades, identity maps, and bilinear product tables inside a
+dedicated `ExactContext` backed by `SymbolicKernel`. Operator tables start in `int8` and stay integer
+under composition, transposition, halving, and unimodular inversion (promoting to floating point only
+when scaled by non-integer real numbers), while `dtype` reports `object` to distinguish unbatched
+symbolic storage from fixed-width numeric array contexts.
+
+Purely exact bindings contract in reverse axis order directly on `SymbolicKernel` instances,
+splicing higher-arity operand input axes into the resulting structural layout. When an exact
+operator meets a concrete array `Extensor`, `binding_context` selects the array context and
+materializes the exact kernel into backend storage rather than executing in `ExactContext`; mutating
+batch updates (`functional_set`, `functional_add`) are rejected because exact extensors have no
+batch dimensions. Exact context semantics and cached table materialization are described in
+`docs/internals.md` (section 4).
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from numbers import Real
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import numpy as np
 
@@ -21,13 +34,7 @@ if TYPE_CHECKING:
 
 
 class ExactContext(Context):
-    """Immutable exact-rational execution policy owned by one algebra.
-
-    This is the construction-time context for multiplication tables and other
-    value-free expressions.  It has no batch dimensions; binding with a
-    backend Extensor promotes the complete expression into that backend before
-    contraction.
-    """
+    """Algebra-owned execution policy evaluates unbatched `SymbolicKernel` expressions in exact arithmetic."""
 
     __slots__ = ("_algebra",)
 
@@ -58,13 +65,13 @@ class ExactContext(Context):
     def is_exact(self) -> bool:
         return True
 
-    def prepare_kernel(self, value: object) -> SymbolicKernel:
-        return value if isinstance(value, SymbolicKernel) else SymbolicKernel(value)
+    def prepare_kernel(self, coefficients: object) -> SymbolicKernel:
+        return coefficients if isinstance(coefficients, SymbolicKernel) else SymbolicKernel(coefficients)
 
     def reciprocal(self, kernel: SymbolicKernel) -> SymbolicKernel:
         return kernel.reciprocal()
 
-    def scalar_kernel(self, scalar: float) -> SymbolicKernel:
+    def scalar_kernel(self, scalar: Any) -> SymbolicKernel:
         return SymbolicKernel((scalar,))
 
     def matrix_inverse(self, kernel: SymbolicKernel) -> SymbolicKernel:
@@ -150,11 +157,10 @@ def _contract(
     target_axis: int,
     operand: SymbolicKernel,
 ) -> SymbolicKernel:
-    """Contract one output-first operand and splice its inputs in place."""
-
     contracted = target.tensordot(operand, axes=(target_axis, 0))
     target_remaining = target.ndim - 1
     operand_inputs = operand.ndim - 1
+    # Tensordot appends remaining operand input axes at the end; permute splices them into target_axis.
     permutation = (
         tuple(range(target_axis))
         + tuple(range(target_remaining, target_remaining + operand_inputs))

@@ -1,45 +1,32 @@
-"""Ellipsoids as plane-to-point maps in PGA3D.
+"""Ellipsoids as plane-to-point maps in 3D projective geometric algebra.
 
-A dual quadric maps each tangent plane to its contact point. Its inverse maps
-the contact point back to the tangent plane. Moving the whole ellipsoid means
-pulling planes into its body frame and pushing the resulting points back out.
+A dual quadric maps each tangent plane to its contact point, and solving the map against a contact point recovers the tangent plane. Carrying the ellipsoid by a motor pulls planes into the body frame and pushes the resulting points back out.
 """
 
 from __future__ import annotations
 
 from numga import NumpyContext
-from numga.algebras import PGA3D
+from numga.algebras import PGA3D as ga
 
-ga = PGA3D
-ctx = NumpyContext(ga)
-mv = ctx.multivector
+mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()                      # Antivector-
 Plane = ga.gatype.vector()                          # Vector+
-Motor = ga.gatype.rotor()
-DualQuadric = ga.gatype((Point, Plane))
+Motor = ga.gatype.rotor()                           # Rotor+
+DualQuadric = ga.gatype((Point, Plane))             # Point- <- Plane+
 
 
-# --- math ------------------------------------------------------------------
 def ellipsoid(semi_axes: Point, center: Point) -> DualQuadric:
-    """The ellipsoid with the given semi-axes, as ideal points, about the given center, is a sum of their dyads less
-    the center's."""
-    # Ideal points encode the semi-axes. Their dyads give the directional shape;
-    # subtracting the center dyad makes a closed envelope of tangent planes.
-    return (semi_axes * (Plane & semi_axes)).sum(axis=0) - center * (Plane & center)
+    """Sums the dyads of the ideal `semi_axes` (`[3] Point-`) less the dyad of `center` (`[] Point-`) into a dual quadric (`[] Point- <- Plane+`)."""
+    # Ideal points give the directional shape; subtracting the center dyad closes the envelope of tangent planes.
+    return (semi_axes * (Plane & semi_axes)).sum(axis=0) - center * (Plane & center)   # [] Point- <- Plane+
 
 
-def support_plane(quadric: DualQuadric, normal: Plane, infinity: Plane) -> Plane:
-    """An ellipsoid's tangent plane faces a given normal.
-
-    quadric maps planes to points; infinity selects the affine chart.
-    The normal's offset is discarded, retaining only its orientation.
-    """
-    normal = normal.normalized()
-    # The pole of the plane at infinity.
-    center = quadric(infinity)
-    through_center = normal - infinity * ((normal & center) / (infinity & center))
-
-    # Shift the plane until it contains its own pole: tangent & quadric(tangent) == 0.
-    # Dividing by the center's weight makes the distance independent of the quadric's scale.
-    radius = (-(through_center & quadric(through_center)) / (infinity & center)).square_root()
-    return through_center - infinity * radius
+def support_plane(quadric: DualQuadric, facing: Plane) -> Plane:
+    """Slides the plane facing `facing` (`[...] Plane+`) out from the pole of infinity until it contains its own image under `quadric` (`[...] Plane+`)."""
+    normal = facing.normalized()                                                       # [...] Plane+
+    # The center of the ellipsoid is the image of the plane at infinity.
+    center = quadric(mv.w)                                                             # [] Point-
+    through_center = normal - mv.w * ((normal & center) / (mv.w & center))             # [...] Plane+
+    # Dividing by the center's weight makes the offset independent of the quadric's overall scale.
+    offset = (-(through_center & quadric(through_center)) / (mv.w & center)).square_root()   # [...] Scalar+
+    return through_center - mv.w * offset                                              # [...] Plane+

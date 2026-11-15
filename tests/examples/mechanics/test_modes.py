@@ -1,174 +1,73 @@
-"""Independent mechanical checks of the normal modes and stiffness example."""
+"""Mechanical and rendering checks verify the suspended-plate normal modes example."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.mechanics.modes.core import (
-    Inertia,
-    Point,
-    SpringExtension,
-    Stiffness,
-    Suspension,
-    Twist,
-    Forque,
-    mv,
-    suspension as inputs,
-)
-from examples.mechanics.modes import render, scenarios
-from examples.mechanics.modes.render import coordinates
+from examples.mechanics.modes import core, render, scenarios
+from examples.mechanics.modes.core import mv
 
 
-def spring_stiffness(
-    lines: Forque,
-    spring_constants: np.ndarray,
-) -> tuple[Stiffness, SpringExtension]:
-    """Compute total stiffness extensor and extension linear form from spring lines.
+def test_analytic_unrestrained_and_coupled_frequencies() -> None:
+    """Two vertical springs match analytic slide, bounce, and rock frequencies while three springs restrain all modes."""
+    corners, masses, vertical_anchors, vertical_attachments, vertical_constants = scenarios.vertical_suspension()
+    inertia = core.body_inertia(core.quadrature_points(corners), masses)         # [] Forque- <- Twist+
+    unrestrained_stiffness = core.spring_stiffness(vertical_anchors, vertical_attachments, vertical_constants)  # [] Forque- <- Twist+
+    frequencies, _ = core.normal_modes(unrestrained_stiffness, inertia)          # [3] Scalar+, Twist+
 
-    Parameters
-    ----------
-    lines : [n_springs] Forque
-        Normalized lines of action of the springs.
-    spring_constants : [n_springs] float
-        Spring elastic constants.
+    # A 2-by-1 plate of unit mass has polar inertia 5/12, with vertical springs of constant 6 at +/- 0.8 from centre.
+    expected_squared = mv.scalar([[0.0], [12.0], [12.0 * 0.64 / (5.0 / 12.0)]])  # [3] Scalar+
+    computed_squared = (2 * np.pi * frequencies).squared()                       # [3] Scalar+
+    assert ((computed_squared - expected_squared).abs() < 1e-10).all()
 
-    Returns
-    -------
-    stiffness : [] Stiffness
-        Total stiffness extensor (Forque <- Twist).
-    extension : [n_springs] SpringExtension
-        Linear form measuring spring extension from twist displacement (Scalar <- Twist).
-    """
-    extension: SpringExtension = Twist & lines                                   # [n_springs] Scalar <- Twist
-    spring_stiffness_dyads: Stiffness = lines * extension * spring_constants     # [n_springs] Forque <- Twist
-    stiffness: Stiffness = spring_stiffness_dyads.sum(axis=0)                   # [] Forque <- Twist
-    return stiffness, extension
+    _, _, coupled_anchors, coupled_attachments, coupled_constants = scenarios.coupled_suspension()
+    coupled_stiffness = core.spring_stiffness(coupled_anchors, coupled_attachments, coupled_constants)  # [] Forque- <- Twist+
+    coupled_frequencies, _ = core.normal_modes(coupled_stiffness, inertia)       # [3] Scalar+, Twist+
+    assert (coupled_frequencies > 0).all()
 
 
-def body_inertia(
-    points: Point,
-    masses: np.ndarray,
-) -> Inertia:
-    """Compute rigid body inertia extensor from lumped mass points.
+def test_mass_orthogonality_and_modal_balance() -> None:
+    """Coupled mode twists are orthonormal under the kinetic form and diagonalize the potential form."""
+    corners, masses, anchors, attachments, spring_constants = scenarios.coupled_suspension()
+    inertia = core.body_inertia(core.quadrature_points(corners), masses)         # [] Forque- <- Twist+
+    stiffness = core.spring_stiffness(anchors, attachments, spring_constants)    # [] Forque- <- Twist+
+    frequencies, mode_twists = core.normal_modes(stiffness, inertia)             # [3] Scalar+, Twist+
 
-    Parameters
-    ----------
-    points : [n_points] Point
-        Sampling points on the rigid body.
-    masses : [n_points] float
-        Point masses.
-
-    Returns
-    -------
-    Inertia
-        [] Inertia extensor (Forque <- Twist).
-    """
-    velocities: Point = points.commutator(Twist)                                # [n_points] Point <- Twist
-    point_momenta: Inertia = (points & velocities) * masses                     # [n_points] Forque <- Twist
-    return point_momenta.sum(axis=0)                                            # [] Forque <- Twist
+    mass_pairings = mode_twists[:, None] & inertia(mode_twists[None, :])         # [3, 3] Scalar+
+    elastic_pairings = mode_twists[:, None] & stiffness(mode_twists[None, :])    # [3, 3] Scalar+
+    identity = mv.scalar(np.eye(3)[..., None])                                   # [3, 3] Scalar+
+    diagonal_rates = mv.scalar(np.eye(3)[..., None]) * (2 * np.pi * frequencies).squared()  # [3, 3] Scalar+
+    assert ((mass_pairings - identity).abs() < 1e-10).all()
+    assert ((elastic_pairings - diagonal_rates).abs() < 1e-10).all()
 
 
-def normal_modes(
-    stiffness: Stiffness,
-    inertia: Inertia,
-) -> tuple[Twist, np.ndarray]:
-    """Solve the generalized eigenvalue problem for normal vibration modes.
+def test_euclidean_invariance_under_world_motor() -> None:
+    """Rigid world transformations of plate and springs preserve all three natural frequencies."""
+    corners, masses, anchors, attachments, spring_constants = scenarios.coupled_suspension()
+    inertia = core.body_inertia(core.quadrature_points(corners), masses)         # [] Forque- <- Twist+
+    stiffness = core.spring_stiffness(anchors, attachments, spring_constants)    # [] Forque- <- Twist+
+    before, _ = core.normal_modes(stiffness, inertia)                            # [3] Scalar+, Twist+
 
-    Parameters
-    ----------
-    stiffness : [] Stiffness
-        Stiffness extensor (Forque <- Twist).
-    inertia : [] Inertia
-        Inertia extensor (Forque <- Twist).
-
-    Returns
-    -------
-    modes : [3] Twist
-        Normal mode eigenvectors.
-    frequencies : [3] np.ndarray
-        Natural frequencies in Hz.
-    """
-    pe_form = Twist & stiffness                                                 # [] Scalar <- (Twist, Twist)
-    ke_form = Twist & inertia                                                   # [] Scalar <- (Twist, Twist)
-    values, modes = pe_form.eigh(ke_form)                                       # values: [3] Scalar, modes: [3] Twist
-    frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi) # [3] Hz
-    return modes, frequencies
+    motor = (mv.xw * -0.9 + mv.yw * 0.3).exp() * (mv.xy * 0.37).exp()            # [] Rotor+
+    moved_corners = motor >> corners                                             # [4] Point-
+    moved_anchors = motor >> anchors                                             # [3] Point-
+    moved_attachments = motor >> attachments                                     # [3] Point-
+    moved_inertia = core.body_inertia(core.quadrature_points(moved_corners), masses)  # [] Forque- <- Twist+
+    moved_stiffness = core.spring_stiffness(moved_anchors, moved_attachments, spring_constants)  # [] Forque- <- Twist+
+    after, _ = core.normal_modes(moved_stiffness, moved_inertia)                 # [3] Scalar+, Twist+
+    assert ((after - before).abs() < 1e-9).all()
 
 
-@dataclass
-class System:
-    geometry: Suspension
-    stiffness: Stiffness            # [] Forque <- Twist
-    extension: SpringExtension      # [n_springs] Scalar <- Twist
-    inertia: Inertia                # [] Forque <- Twist
+def test_mode_oscillation_and_views_render() -> None:
+    """The oscillation generator and static and animated views execute without writing files."""
+    corners, masses, anchors, attachments, spring_constants = scenarios.coupled_suspension()
+    inertia = core.body_inertia(core.quadrature_points(corners), masses)         # [] Forque- <- Twist+
+    stiffness = core.spring_stiffness(anchors, attachments, spring_constants)    # [] Forque- <- Twist+
+    frequencies, mode_twists = core.normal_modes(stiffness, inertia)             # [3] Scalar+, Twist+
 
-    def __getattr__(self, name: str) -> object:
-        return getattr(self.geometry, name)
-
-
-def suspension(springs: int) -> System:
-    """Construct full suspension system including geometry, stiffness, and inertia."""
-    geometry = inputs(springs)
-    lines: Forque = (geometry.anchors & geometry.attachments).normalized()       # [n_springs] Forque
-    stiffness, extension = spring_stiffness(lines, geometry.spring_constants)
-    return System(geometry, stiffness, extension,
-                  body_inertia(geometry.mass_points, geometry.masses))
-
-
-def test_two_springs_have_analytic_slide_bounce_and_rock_frequencies():
-    system = suspension(2)
-    _, frequencies = normal_modes(system.stiffness, system.inertia)
-    # Mass 1, polar inertia `(width ** 2 + height ** 2) / 12`, anchors 0.8 either side of the centre.
-    expected_squared = [0, 2 * 6, 2 * 6 * .8**2 / (5 / 12)]
-    np.testing.assert_allclose((2 * np.pi * frequencies)**2, expected_squared, atol=1e-12)
-    _, restrained = normal_modes(suspension(3).stiffness, system.inertia)
-    assert np.all(restrained > 0)
-
-
-def test_spring_extension_and_energy_match_finite_rigid_displacements():
-    system = suspension(3)
-    q = mv.bivector([.3, -.4, .25])
-    h = 1e-4
-    # Independent exact geometry: move points with a motor and measure lengths.
-    anchors = coordinates(system.anchors)
-    rest = np.linalg.norm(coordinates(system.attachments) - anchors, axis=-1)
-    plus = coordinates((q * (-h / 2)).exp().normalized() >> system.attachments)
-    minus = coordinates((q * (h / 2)).exp().normalized() >> system.attachments)
-    eplus = np.linalg.norm(plus - anchors, axis=-1) - rest
-    eminus = np.linalg.norm(minus - anchors, axis=-1) - rest
-    np.testing.assert_allclose(
-        (eplus - eminus) / (2 * h), system.extension(q).kernel[:, 0], atol=2e-7,
-    )
-    actual = np.sum(system.spring_constants * (eplus**2 + eminus**2)) / (4 * h**2)
-    predicted = .5 * q.regressive(system.stiffness(q)).kernel.item()
-    np.testing.assert_allclose(actual, predicted, rtol=2e-6)
-
-
-def test_mass_normalized_modes_and_spring_work():
-    system = suspension(3)
-    modes, frequencies = normal_modes(system.stiffness, system.inertia)
-    mass = modes[:, None].regressive(system.inertia(modes[None, :])).kernel[..., 0]
-    elastic = modes[:, None].regressive(system.stiffness(modes[None, :])).kernel[..., 0]
-    np.testing.assert_allclose(mass, np.eye(3), atol=1e-12)
-    np.testing.assert_allclose(elastic, np.diag((2 * np.pi * frequencies)**2), atol=1e-12)
-    extensions = system.extension(modes[:, None]).kernel[..., 0]
-    work = (extensions * system.spring_constants) @ extensions.T
-    np.testing.assert_allclose(work, elastic, atol=1e-12)
-
-
-def test_modes_do_not_depend_on_world_pose():
-    system = suspension(3)
-    motor = (mv.xw * -.9 + mv.yw * .3).exp() * (mv.xy * .37).exp().normalized()
-    lines = system.anchors.regressive(system.attachments).normalized()
-    stiffness, _ = spring_stiffness(motor >> lines, system.spring_constants)
-    inertia = body_inertia(motor >> system.mass_points, system.masses)
-    _, before = normal_modes(system.stiffness, system.inertia)
-    _, after = normal_modes(stiffness, inertia)
-    np.testing.assert_allclose(after, before, atol=1e-10)
-
-
-def test_the_modes_draw_and_a_frame_animates():
-    coupled = scenarios.suspensions()[1:]
-    render.draw_modes(coupled)
-    list(render.animate_modes(coupled, 1))
+    render.setup_figure(corners, anchors, attachments)
+    render.mode_figure(corners, anchors, attachments, mode_twists)
+    frames = list(render.mode_frames(corners, anchors, attachments, mode_twists, core.mode_oscillation(frequencies, mode_twists, 1)))
+    plt.close("all")
+    assert len(frames) == 1

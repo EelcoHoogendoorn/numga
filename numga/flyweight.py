@@ -1,8 +1,7 @@
-"""Small, explicit strong-pool flyweight support.
-
-Factories own their pools.  Value classes remain unaware of allocation policy
-and retain structural equality as their correctness contract.
-"""
+"""Per-factory strong flyweight pools intern canonical structural objects by key without coupling
+value classes to allocation policy. Each factory owns its dictionary pool over the lifetime of its
+parent `Algebra`, while the pooled classes (`SubSpace` and `GAType`) retain structural equality and
+hashing when constructed directly."""
 
 from __future__ import annotations
 
@@ -14,7 +13,8 @@ Value = TypeVar("Value")
 
 
 class FlyweightFactory(Generic[Value]):
-    """Base class for a factory-scoped, strong flyweight pool."""
+    """Subclasses cache constructed instances strongly by hashable key for the lifetime of the
+    factory."""
 
     __slots__ = ("_flyweight_pool",)
 
@@ -24,8 +24,9 @@ class FlyweightFactory(Generic[Value]):
     def factory_construct(
         self,
         key: Hashable,
-        construct: Callable[[], Value],
+        construct: Callable,
     ) -> Value:
+        """Repeated lookups of `key` return the first instance produced by `construct()`."""
         try:
             return self._flyweight_pool[key]
         except KeyError:

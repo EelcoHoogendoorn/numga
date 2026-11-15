@@ -1,66 +1,80 @@
-"""Rotate two identical half-wave plates between fixed crossed polarizers."""
+"""Rotating half-wave plate states between fixed crossed polarizers across two identical stacks."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
+from numga import stack
 from examples.optics.black_sandwich.core import (
-    Direction, Field, OpticalMap, field_along, mv, polarizer, through_pair, time,
+    Direction, Field, OpticalMap, field_along, mv, polarizer, stack_stage_fields, time,
 )
 
-# The duration of a frame, and the gallery's sandwich: its dots per inch.
-duration_ms = 40
+# Frame duration in milliseconds, swing frame count, and gallery rendering DPI.
+frame_duration_ms = 40
+n_frames = 108
 gallery_dpi = 720 / 9.2
 
+# Crossed entrance (`x`) and exit (`y`) polarizer axes.
+input_axis = mv.x.dual()                                                       # [] Direction-
+output_axis = mv.y.dual()                                                      # [] Direction-
 
-# --- math
-def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap]:
-    """The field through both stacks, the plates' fast axes, the crossed polarizers' axes, and one
-    stack's map, over a swing of the plates from the entrance axis to 90 degrees."""
-    n_frames = 108
-    # The plates' swing out; the animation plays it forward and back.
-    cycle = np.linspace(0, np.pi, n_frames // 2 + 1)
+
+# --- math -----------------------------------------------------------------------------
+def plate_swing_states(n_half_frames: int) -> Iterator[tuple[Field, Direction, OpticalMap]]:
+    """Yields `(stage_fields, plate_axis, sandwich)` (`[7] Field+`, `[] Direction-`, `[] Field+ <- Field+`)
+    across `n_half_frames` angles as both half-wave plates swing smoothly from `0` to `90` degrees."""
+    cycle = np.linspace(0, np.pi, n_half_frames)
     plate_angles = (1 - np.cos(cycle)) * np.pi / 4
-    input_axis = mv.x.dual()                                                  # [] Direction-
-    output_axis = mv.y.dual()                                                 # [] Direction-
+    entrance = polarizer(input_axis, input_axis)                               # [] Field+ <- Field+
+    exit_polarizer = polarizer(output_axis, output_axis)                       # [] Field+ <- Field+
+    incident_field = field_along(input_axis)                                   # [] Field+
 
-    plate_turns = (mv.xy * (-plate_angles / 2)).exp()                         # [frames] Rotor+
-    plate_axes = plate_turns >> input_axis                                    # [frames] Direction-
-    entrance = polarizer(input_axis, input_axis)                              # [] Field+ <- Field+
-    # The half-wave plate keeps the field along its fast axis and reverses the field across it.
-    plate = 2 * polarizer(plate_axes, plate_axes) - Field                     # [frames] Field+ <- Field+
-    exit = polarizer(output_axis, output_axis)                                # [] Field+ <- Field+
-    sandwich = exit(plate(entrance))                                          # [frames] Field+ <- Field+
-    incident = field_along(input_axis) * np.ones(len(cycle))                  # [frames] Field+
-    fields = through_pair(entrance, plate, exit, incident)                    # [frames, stages] Field+
-    return fields, plate_axes, input_axis, output_axis, sandwich
+    for plate_angle in plate_angles:
+        plate_rotor = (mv.xy * (-plate_angle / 2)).exp()                       # [] Rotor+
+        plate_axis = plate_rotor >> input_axis                                 # [] Direction-
+        # A half-wave plate preserves the fast-axis component and reverses the orthogonal transverse component.
+        plate = 2 * polarizer(plate_axis, plate_axis) - Field                  # [] Field+ <- Field+
+        sandwich = exit_polarizer(plate(entrance))                             # [] Field+ <- Field+
+        stage_fields = stack_stage_fields(entrance, plate, exit_polarizer, incident_field)  # [7] Field+
+        yield stage_fields, plate_axis, sandwich
 
 
-# --- plumbing
+# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.optics.black_sandwich import render
 
-    fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
-    save_animation(render.frames(fields, plate_axes, input_axis, output_axis), "black_sandwich", duration_ms,
-                   forward_then_back=True)
+    recorded: list[tuple[Field, Direction, OpticalMap]] = []
+
+    def recording() -> Iterator[tuple[Field, Direction, OpticalMap]]:
+        for state in plate_swing_states(n_frames // 2 + 1):
+            recorded.append(state)
+            yield state
+
+    save_animation(render.sandwich_animation(input_axis, output_axis, recording()), "black_sandwich",
+                   frame_duration_ms)
 
     # checks
-    # One stack passes the whole field at some plate angle, yet two in succession pass none.
-    passed = (fields[:, 3] & (output_axis & time)).to_array()                 # [frames]
-    np.testing.assert_allclose(passed.max(), 1, atol=1e-12)
-    np.testing.assert_allclose(sandwich(sandwich).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose(fields[:, 4:].kernel, 0, atol=1e-12)
+    # One stack transmits the full amplitude at 45 degrees, whereas two identical stacks extinguish every angle.
+    fields = stack([state[0] for state in recorded])                           # [n_half_frames, 7] Field+
+    sandwiches = stack([state[2] for state in recorded])                       # [n_half_frames] Field+ <- Field+
+    basis_fields = stack((mv.xy, mv.xz, mv.yz, mv.xt, mv.yt, mv.zt))           # [6] Field+
+    transmitted = fields[:, 3] & (output_axis & time)                          # [n_half_frames] Scalar+
+    assert ((transmitted.max() - 1).abs() < 1e-12).all()
+    assert ((sandwiches(sandwiches)(basis_fields[:, None])[..., None] & basis_fields.dual()).abs() < 1e-12).all()
+    assert ((fields[:, 4:, None] & basis_fields.dual()).abs() < 1e-12).all()
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the plates turning between crossed polarizers, for the gallery."""
+    """Regenerates the gallery GIF `plots/sandwich.gif` of the turning half-wave plates between crossed polarizers."""
     from examples.util.animation import pin_animation
     from examples.optics.black_sandwich import render
 
-    fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
-    pin_animation(render.sized_frames(fields, plate_axes, input_axis, output_axis, gallery_dpi), "sandwich",
-                  duration_ms, forward_then_back=True)
+    pin_animation(render.sized_sandwich_animation(input_axis, output_axis, gallery_dpi,
+                                                  plate_swing_states(n_frames // 2 + 1)),
+                  "sandwich", frame_duration_ms)
 
 
 if __name__ == "__main__":

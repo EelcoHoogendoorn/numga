@@ -1,11 +1,11 @@
-"""Superfluid helium's sounds and a heat pulse in a cavity divided by a wall of powder.
+"""This module tabulates saturated superfluid helium properties and runs sound-speed, heat-pulse, and fountain-effect scenarios across a cavity divided by a porous powder wall.
 
-The liquid's properties at saturated vapour pressure are the recommended values of Donnelly and Barenghi (1998): the
-density (their table 1.2), the normal fluid's density (2.3), the first, second and fourth sound speeds (3.3, 4.3 and
-6.3), the heat capacity (7.4) and the entropy from it (8.5).
+Thermodynamic and two-fluid properties at saturated vapour pressure follow the reference tables of Donnelly and Barenghi (1998), covering total density (table 1.2), normal-fluid density (table 2.3), first, second, and fourth sound speeds (tables 3.3, 4.3, and 6.3), molar heat capacity (table 7.4), and specific entropy (table 8.5).
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -13,9 +13,7 @@ from numga import stack
 
 from examples.fluids.superfluid import core
 
-# The temperatures in kelvin; the liquid's density and its normal fluid's in kilograms per cubic metre; its first sound in
-# metres per second; its heat capacity in joules per mole and kelvin, and helium's molar mass in kilograms per mole; its
-# entropy in joules per kilogram and kelvin; the measured second and fourth sounds in metres per second.
+# Saturated liquid helium properties from 1.2 K to 1.9 K in SI units (K, kg/m^3, m/s, J/(mol K), kg/mol, J/(kg K)).
 temperatures = np.array([1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9])
 densities = np.array([145.1151, 145.1215, 145.1373, 145.1646, 145.2071, 145.2686, 145.3538, 145.4684])
 normal_densities = np.array([3.75, 6.52, 10.57, 16.17, 23.58, 33.21, 45.54, 61.03])
@@ -26,151 +24,232 @@ entropies = np.array([52.04, 85.21, 132.3, 196.5, 282.4, 395.0, 539.9, 725.5])
 second_sounds = np.array([18.51, 19.00, 19.56, 20.03, 20.33, 20.33, 19.90, 18.83])
 fourth_sounds = np.array([234.5, 231.8, 227.8, 222.2, 214.7, 205.1, 192.6, 175.7])
 heat_capacities = molar_heat_capacities / molar_mass
+n_temperatures = len(temperatures)
 
-# The cavity, in millimetres: its width and height, its vertices across and up, the middle and the half thickness of the
-# wall of powder across it, where the heater sits, and the pulse's width; the temperature the cavity is held at, as an
-# index into the temperatures; the pulse's rise of temperature at its middle, in kelvin.
+# Cavity geometry in millimetres, operating index (1.8 K), and millikelvin Gaussian pulse amplitude.
 width, height = 16.0, 8.0
 n_columns, n_rows = 65, 33
 wall_middle, wall_half_thickness = 9.0, 0.75
-heater = np.array([4.0, 4.5])
+heater_position = np.array([4.0, 4.5])
 pulse_width = 0.5
-at = 6
+cavity_index = 6
 pulse_rise = 1e-3
-# The time step in milliseconds, a share of the time first sound takes across a triangle's shorter side; the steps and
-# the steps between frames; the frames' duration in milliseconds; the shares of the pulse's rise of temperature, and of
-# the fountain pressure of that rise, at which the pulse's colours saturate.
+# Half-Courant time-step factor, step and frame stride counts, 40 ms frame duration, and colour-saturation fractions.
 courant = 0.5
 n_steps, stride = 1400, 14
 frame_duration_ms = 40
-# The colours of the gallery's heat pulse.
 n_pinned_colours = 32
 pulse_temperature_share, pulse_pressure_share = 0.2, 0.1
-# The steady heater's warming of its chamber on average, in kelvin per millisecond, and the multiple of the chamber's
-# last warming, and of its fountain pressure, at which the heater's colours saturate.
 warming_rate = 1e-3
 heater_share = 1.5
 
 
-def components(at: int | slice) -> tuple[core.Point, np.ndarray]:
-    """Per unit volume, the parcels of the two components, the superfluid's mass alone and the normal fluid's mass with
-    all the entropy, `[..., components] Amount-`, and their masses `[..., components]`."""
-    masses = np.stack([densities[at] - normal_densities[at], normal_densities[at]], axis=-1)
-    held_entropy = np.stack([0 * entropies[at], densities[at] * entropies[at]], axis=-1)
-    return masses * core.mass + held_entropy * core.entropy, masses
+def fluid_components() -> tuple[core.State, np.ndarray]:
+    """Tabulated densities and specific entropies define the superfluid and normal-fluid parcels per unit volume (`[n_temperatures, 2] State-`) and component densities (`[n_temperatures, 2]`)."""
+    masses = np.stack([densities - normal_densities, normal_densities], axis=-1)  # [n_temperatures, 2]
+    held_entropies = np.stack([0 * entropies, densities * entropies], axis=-1)    # [n_temperatures, 2]
+    return masses * core.mass + held_entropies * core.entropy, masses
 
 
-def stiffness(at: int | slice):
-    """The liquid's thermodynamic stiffness at these temperatures `[...] Potential+ <- Amount-`."""
-    return core.stiffness_of(densities[at], first_sounds[at], temperatures[at], entropies[at], heat_capacities[at])
+def liquid_stiffnesses() -> core.Extensor:
+    """Tabulated densities, first-sound speeds, temperatures, entropies, and heat capacities determine the liquid's thermodynamic stiffness (`[n_temperatures] Potential+ <- State-`)."""
+    return core.thermodynamic_stiffness(densities, first_sounds, temperatures, entropies, heat_capacities)
 
 
-def sounds() -> tuple[core.Scalar, core.Scalar]:
-    """The squared speeds of sound at every temperature, of the liquid and of the liquid with its normal fluid held still,
-    `[temperatures, 2] Scalar+` each."""
-    parcels, masses = components(slice(None))
-    return core.sound_speeds(stiffness(slice(None)), parcels, masses), core.sound_speeds(
-        stiffness(slice(None)), parcels[..., :1], masses[..., :1])
+def sound_curves() -> tuple[core.Scalar, core.Scalar]:
+    """Two-fluid eigenmodes give the squared sound speeds (`[n_temperatures, 2] Scalar+`) in open liquid and with the normal fluid clamped."""
+    parcels, masses = fluid_components()
+    stiffnesses = liquid_stiffnesses()
+    return (
+        core.sound_speeds(stiffnesses, parcels, masses),
+        core.sound_speeds(stiffnesses, parcels[:, :1], masses[:, :1]),
+    )
 
 
-def scene(n_columns: int = n_columns, n_rows: int = n_rows) -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray]:
-    """The cavity, `n_columns` vertices across and `n_rows` up: its topology, its vertices' places across and up
-    `[vertices, 2]`, whether each triangle lies in the powder `[faces]`, and the heater's pulse of temperature at each
-    vertex `[vertices]`."""
+def cavity_scene(n_columns: int, n_rows: int) -> tuple[core.Topology, np.ndarray, np.ndarray, np.ndarray]:
+    """An `n_columns` by `n_rows` cavity grid defines the triangulation, vertex coordinates (`[V, 2]`), porous-wall triangle mask (`[F]`), and Gaussian temperature-pulse profile (`[V]`)."""
     topology, coordinates = core.cavity(n_columns, n_rows, width, height)
-    centroids_across = coordinates[topology.elements[2], 0].mean(axis=-1)
-    distances_squared = ((coordinates - heater) ** 2).sum(axis=-1)
-    return (topology, coordinates, np.abs(centroids_across - wall_middle) < wall_half_thickness,
-            pulse_rise * np.exp(-distances_squared / (2 * pulse_width ** 2)))
+    triangle_centres_x = coordinates[topology.elements[2], 0].mean(axis=-1)
+    distances_squared = ((coordinates - heater_position) ** 2).sum(axis=-1)
+    powder_triangles = np.abs(triangle_centres_x - wall_middle) < wall_half_thickness
+    pulse_profile = pulse_rise * np.exp(-distances_squared / (2 * pulse_width ** 2))
+    return topology, coordinates, powder_triangles, pulse_profile
 
 
-def pulse(topology: core.Topology, vertices: core.Point, in_powder: np.ndarray, rise: np.ndarray):
-    """The cavity's mass and entropy per volume over time `Point-[vertices]`, from the heater's pulse of temperature,
-    entropy added at constant density, with the normal fluid held still in the powder."""
-    parcels, masses = components(at)
-    # The entropy that raises the temperature by the pulse at constant density.
-    added = rise * densities[at] * heat_capacities[at] / temperatures[at]   # [vertices]
-    dt = courant * (width / (n_columns - 1)) / first_sounds[at]
-    return core.stepped(topology, vertices, stiffness(at), parcels, masses, core.mv.scalar(in_powder[:, None] * 1.0).field(),
-                        (0 * core.mass + core.entropy * added).field(), (0 * core.mass + 0 * core.entropy * added).field(),
-                        dt, n_steps, stride)
+def heat_pulse(
+    topology: core.Topology,
+    vertices: core.Point,
+    powder_triangles: np.ndarray,
+    pulse_profile: np.ndarray,
+) -> Iterator[core.State]:
+    """Yields the cavity states (`State-[V]`) evolving from an isochoric Gaussian entropy pulse with the normal fluid clamped inside the porous wall."""
+    parcels, masses = fluid_components()
+    stiffness = liquid_stiffnesses()[cavity_index]
+    # Entropy per unit volume that raises the initial temperature by pulse_profile at fixed density.
+    pulse_entropy = pulse_profile * densities[cavity_index] * heat_capacities[cavity_index] / temperatures[cavity_index]  # [V]
+    dt = courant * (width / (n_columns - 1)) / first_sounds[cavity_index]
+    normal_clamp = core.mv.scalar(powder_triangles[:, None] * 1.0).field()    # Scalar+[F]
+    initial_state = (0 * core.mass + core.entropy * pulse_entropy).field()    # State-[V]
+    zero_supply = (0 * core.mass + 0 * core.entropy * pulse_entropy).field()  # State-[V]
+    return core.cavity_states(
+        topology,
+        vertices,
+        stiffness,
+        parcels[cavity_index],
+        masses[cavity_index],
+        normal_clamp,
+        initial_state,
+        zero_supply,
+        dt,
+        n_steps,
+        stride,
+    )
 
 
-def steady_heater(topology: core.Topology, vertices: core.Point, in_powder: np.ndarray, rise: np.ndarray):
-    """The cavity's mass and entropy per volume over time `Point-[vertices]`, from rest, with the heater adding entropy
-    at constant density at a steady rate shaped like the pulse, warming its chamber on average by `warming_rate`."""
-    parcels, masses = components(at)
-    # The entropy per time that warms the heater's chamber at the warming rate on average, spread like the pulse.
+def steady_heater(
+    topology: core.Topology,
+    vertices: core.Point,
+    powder_triangles: np.ndarray,
+    pulse_profile: np.ndarray,
+) -> Iterator[core.State]:
+    """Yields the cavity states (`State-[V]`) from rest under a steady isochoric entropy supply warming the heated chamber at `warming_rate` on average."""
+    parcels, masses = fluid_components()
+    stiffness = liquid_stiffnesses()[cavity_index]
+    # Steady entropy supply per unit volume and time shaped like the Gaussian pulse.
     chamber_area = (wall_middle - wall_half_thickness) * height
-    rate = rise / (rise.sum() * (width / (n_columns - 1)) * (height / (n_rows - 1))) * warming_rate * chamber_area
-    added = rate * densities[at] * heat_capacities[at] / temperatures[at]   # [vertices]
-    dt = courant * (width / (n_columns - 1)) / first_sounds[at]
-    return core.stepped(topology, vertices, stiffness(at), parcels, masses, core.mv.scalar(in_powder[:, None] * 1.0).field(),
-                        (0 * core.mass + 0 * core.entropy * added).field(), (0 * core.mass + core.entropy * added).field(),
-                        dt, n_steps, stride)
+    cell_area = (width / (n_columns - 1)) * (height / (n_rows - 1))
+    heating_rate = pulse_profile / (pulse_profile.sum() * cell_area) * warming_rate * chamber_area  # [V]
+    entropy_supply = heating_rate * densities[cavity_index] * heat_capacities[cavity_index] / temperatures[cavity_index]  # [V]
+    dt = courant * (width / (n_columns - 1)) / first_sounds[cavity_index]
+    normal_clamp = core.mv.scalar(powder_triangles[:, None] * 1.0).field()    # Scalar+[F]
+    initial_state = (0 * core.mass + 0 * core.entropy * entropy_supply).field()  # State-[V]
+    supply = (0 * core.mass + core.entropy * entropy_supply).field()          # State-[V]
+    return core.cavity_states(
+        topology,
+        vertices,
+        stiffness,
+        parcels[cavity_index],
+        masses[cavity_index],
+        normal_clamp,
+        initial_state,
+        supply,
+        dt,
+        n_steps,
+        stride,
+    )
 
 
-def chambers(coordinates: np.ndarray, cells: core.Scalar) -> core.Scalar:
-    """The reading of the difference between the mean of a field over the chamber the heater is in and over the other,
-    each vertex weighed by its share of the area, `Scalar+[vertices]`."""
-    hot = coordinates[:, 0] < wall_middle - wall_half_thickness
-    cold = coordinates[:, 0] > wall_middle + wall_half_thickness
-    hot_cells, cold_cells = (cells * core.mv.scalar(chamber[:, None] * 1.0).field() for chamber in (hot, cold))
-    return hot_cells / hot_cells.sites.sum() - cold_cells / cold_cells.sites.sum()
+def chamber_weights(coordinates: np.ndarray, dual_areas: core.Scalar) -> core.Scalar:
+    """Area-weighted vertex masks form the linear functional (`Scalar+[V]`) measuring the mean difference between the heated chamber and the far chamber."""
+    hot_mask = coordinates[:, 0] < wall_middle - wall_half_thickness
+    cold_mask = coordinates[:, 0] > wall_middle + wall_half_thickness
+    hot_areas = dual_areas * core.mv.scalar(hot_mask[:, None] * 1.0).field()   # Scalar+[V]
+    cold_areas = dual_areas * core.mv.scalar(cold_mask[:, None] * 1.0).field() # Scalar+[V]
+    return hot_areas / hot_areas.sites.sum() - cold_areas / cold_areas.sites.sum()
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: a pulse of heat travelling out as a wave of temperature, second sound, for
-    the gallery."""
-    from examples.util.animation import pin_animation
+    """Writes the gallery animation of a heat pulse propagating as second sound and driving pressure across the porous wall."""
     from examples.fluids.superfluid import render
+    from examples.util.animation import pin_animation
 
-    topology, coordinates, in_powder, rise = scene()
-    vertices = (core.mass + core.axis * coordinates[:, 0] + core.across * coordinates[:, 1]).field()
-    liquid = stiffness(at)
-    parcels, _ = components(at)
-    fountain_per_kelvin = densities[at] * entropies[at]
-    readings = ((liquid(amounts) & core.entropy, liquid(amounts) & parcels.sum(axis=-1))
-                for amounts in pulse(topology, vertices, in_powder, rise))
-    pin_animation(render.animate(topology, vertices, in_powder, readings, pulse_temperature_share * pulse_rise,
-                                 pulse_pressure_share * fountain_per_kelvin * pulse_rise),
-                  "superfluid", frame_duration_ms, colors=n_pinned_colours)
+    topology, coordinates, powder_triangles, pulse_profile = cavity_scene(n_columns, n_rows)
+    vertices = (core.origin + core.mv(core.Upright, coordinates).dual()).field()  # Point-[V]
+    stiffness = liquid_stiffnesses()[cavity_index]
+    parcels, masses = fluid_components()
+    thermometer = stiffness(core.entropy)                                     # [] Potential+
+    barometer = stiffness(parcels[cavity_index].sum(axis=-1))                 # [] Potential+
+    fountain_per_kelvin = densities[cavity_index] * entropies[cavity_index]
+    states = heat_pulse(topology, vertices, powder_triangles, pulse_profile)
+    pin_animation(
+        render.cavity_animation(
+            topology,
+            vertices,
+            powder_triangles,
+            thermometer,
+            barometer,
+            pulse_temperature_share * pulse_rise,
+            pulse_pressure_share * fountain_per_kelvin * pulse_rise,
+            render.n_bands,
+            states,
+        ),
+        "superfluid",
+        frame_duration_ms,
+        colors=n_pinned_colours,
+    )
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    """Writes the sound-speed comparison, cavity triangulation, heat-pulse animation, steady-heater animation, and fountain-pressure chart."""
     from examples.fluids.superfluid import render
+    from examples.util.animation import save_animation, save_figure
 
-    free, held = sounds()
-    save_figure(render.draw_sounds(temperatures, free, held, first_sounds, second_sounds, fourth_sounds),
-                "superfluid_sounds")
-    topology, coordinates, in_powder, rise = scene()
-    vertices = (core.mass + core.axis * coordinates[:, 0] + core.across * coordinates[:, 1]).field()
-    save_figure(render.draw_cavity(topology, vertices, in_powder), "superfluid_cavity")
-    liquid = stiffness(at)
-    parcels, _ = components(at)
-    _, _, cells = core.triangles(topology, vertices)
-    # The fountain pressure of a rise of temperature: the density times the entropy per mass times the rise.
-    fountain_per_kelvin = densities[at] * entropies[at]
-    # Each frame's rise of temperature and of pressure: its potentials read by a unit of entropy, and by the whole
-    # liquid's parcel, the Gibbs-Duhem relation.
-    readings = ((liquid(amounts) & core.entropy, liquid(amounts) & parcels.sum(axis=-1))
-                for amounts in pulse(topology, vertices, in_powder, rise))
-    save_animation(render.animate(topology, vertices, in_powder, readings, pulse_temperature_share * pulse_rise,
-                                  pulse_pressure_share * fountain_per_kelvin * pulse_rise),
-                   "superfluid_pulse", frame_duration_ms)
-    # The heater left on, and the chambers' difference of pressure against the fountain pressure of their difference of
-    # temperature.
-    readings = [(liquid(amounts) & core.entropy, liquid(amounts) & parcels.sum(axis=-1))
-                for amounts in steady_heater(topology, vertices, in_powder, rise)]
-    times = np.arange(len(readings)) * stride * courant * (width / (n_columns - 1)) / first_sounds[at]
-    warmest = heater_share * warming_rate * times[-1]
-    save_animation(render.animate(topology, vertices, in_powder, readings, warmest, fountain_per_kelvin * warmest),
-                   "superfluid_heater", frame_duration_ms)
-    difference = chambers(coordinates, cells)
-    pressures = stack([(difference * pressure).sites.sum() for _, pressure in readings])
-    fountain = fountain_per_kelvin * stack([(difference * warmth).sites.sum() for warmth, _ in readings])
-    save_figure(render.draw_fountain(times, pressures, fountain), "superfluid_fountain")
+    bulk_sounds, powder_sounds = sound_curves()
+    save_figure(
+        render.sounds_figure(temperatures, bulk_sounds, powder_sounds, first_sounds, second_sounds, fourth_sounds),
+        "superfluid_sounds",
+    )
+    topology, coordinates, powder_triangles, pulse_profile = cavity_scene(n_columns, n_rows)
+    vertices = (core.origin + core.mv(core.Upright, coordinates).dual()).field()  # Point-[V]
+    save_figure(render.cavity_figure(topology, vertices, powder_triangles), "superfluid_cavity")
+    stiffness = liquid_stiffnesses()[cavity_index]
+    parcels, masses = fluid_components()
+    areas, gradients, dual_areas = core.triangle_geometry(topology, vertices)
+    # Maxwell symmetry lets stiffness applied to unit entropy or the total liquid parcel read temperature or Gibbs-Duhem pressure by pairing.
+    thermometer = stiffness(core.entropy)                                     # [] Potential+
+    barometer = stiffness(parcels[cavity_index].sum(axis=-1))                 # [] Potential+
+    fountain_per_kelvin = densities[cavity_index] * entropies[cavity_index]
+    pulse_states = list(heat_pulse(topology, vertices, powder_triangles, pulse_profile))
+    save_animation(
+        render.cavity_animation(
+            topology,
+            vertices,
+            powder_triangles,
+            thermometer,
+            barometer,
+            pulse_temperature_share * pulse_rise,
+            pulse_pressure_share * fountain_per_kelvin * pulse_rise,
+            render.n_bands,
+            pulse_states,
+        ),
+        "superfluid_pulse",
+        frame_duration_ms,
+    )
+    heater_states = list(steady_heater(topology, vertices, powder_triangles, pulse_profile))
+    n_frames = len(heater_states)
+    times = np.arange(n_frames) * stride * courant * (width / (n_columns - 1)) / first_sounds[cavity_index]
+    temperature_scale = heater_share * warming_rate * times[-1]
+    save_animation(
+        render.cavity_animation(
+            topology,
+            vertices,
+            powder_triangles,
+            thermometer,
+            barometer,
+            temperature_scale,
+            fountain_per_kelvin * temperature_scale,
+            None,
+            heater_states,
+        ),
+        "superfluid_heater",
+        frame_duration_ms,
+    )
+    difference = chamber_weights(coordinates, dual_areas)
+    pressures = stack([(difference * (barometer & state)).sites.sum() for state in heater_states])   # [n_frames] Scalar+
+    fountain = fountain_per_kelvin * stack(
+        [(difference * (thermometer & state)).sites.sum() for state in heater_states]
+    )                                                                         # [n_frames] Scalar+
+    save_figure(render.fountain_figure(times, pressures, fountain), "superfluid_fountain")
+
+    # checks
+    assert ((bulk_sounds[:, 1] - first_sounds ** 2).abs() < 1e-8 * first_sounds ** 2).all()
+    assert ((bulk_sounds[:, 0] - second_sounds ** 2).abs() < 0.12 * second_sounds ** 2).all()
+    assert ((powder_sounds[:, 1] - fourth_sounds ** 2).abs() < 0.02 * fourth_sounds ** 2).all()
+    initial_total = (dual_areas * pulse_states[0]).sites.sum()
+    final_total = (dual_areas * pulse_states[-1]).sites.sum()
+    assert ((stack((core.mv.m, core.mv.s)) & (final_total - initial_total)).abs() < 1e-10).all()
+    half_frame = n_frames // 2
+    assert ((pressures[half_frame:].mean() - fountain[half_frame:].mean()).abs() < 0.15 * fountain[half_frame:].mean()).all()
 
 
 if __name__ == "__main__":

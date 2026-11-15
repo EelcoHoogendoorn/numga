@@ -1,26 +1,29 @@
-"""Immutable descriptions of finite-dimensional diagonal-metric algebras."""
+"""An orthogonal geometric algebra is defined by an ordered tuple of unique generator names and a
+matching tuple of diagonal metric squares in `(+1, -1, 0)`. `AlgebraDescription` validates and
+stores that pair independently of bit-mask encoding or array backends, reserving `"1"` for the unit
+scalar blade and forming orthogonal direct sums under `left * right` whenever generator names are
+disjoint.
+
+A compact string such as `"x+y+z+w0"` writes each generator name directly before its metric
+character (`+`, `-`, or `0`), and `to_compact_string` recovers that notation whenever no generator
+name contains `+`, `-`, or `0`. `AlgebraDescription`, `from_signature`, and `from_pqr` take
+generator names and metric signs separately, supplying `a..z` defaults when names are omitted.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from operator import index
-from typing import Iterable, Sequence
+from types import NotImplementedType
 
 
 _CHAR_TO_SIGN = {"+": 1, "-": -1, "0": 0}
 _SIGN_TO_CHAR = {value: key for key, value in _CHAR_TO_SIGN.items()}
 
 
-def _metric_signs(signature: str | Iterable[int]) -> tuple[int, ...]:
-    if isinstance(signature, str):
-        try:
-            return tuple(_CHAR_TO_SIGN[character] for character in signature)
-        except KeyError as error:
-            raise ValueError(
-                "a metric signature string may contain only '+', '-', and '0'"
-            ) from error
-
-    result: list[int] = []
+def _metric_signs(signature: Iterable[int]) -> tuple[int, ...]:
+    result = []
     for value in signature:
         try:
             sign = index(value)
@@ -33,10 +36,9 @@ def _metric_signs(signature: str | Iterable[int]) -> tuple[int, ...]:
 
 
 def _default_basis_names(dimension: int) -> tuple[str, ...]:
-    """Return deterministic compact names: a..z, aa..az, ba..."""
-
+    # Bijective base-26 naming produces a..z, aa..az, ba...
     def name(number: int) -> str:
-        characters: list[str] = []
+        characters = []
         while True:
             number, remainder = divmod(number, 26)
             characters.append(chr(ord("a") + remainder))
@@ -47,21 +49,16 @@ def _default_basis_names(dimension: int) -> tuple[str, ...]:
     return tuple(name(i) for i in range(dimension))
 
 
-def parse_description(specification: str) -> tuple[tuple[str, ...], tuple[int, ...]]:
-    """Parse compact interleaved notation such as ``"x+y+z+w0"``.
-
-    The three metric characters delimit generator names. Structured construction
-    via :class:`AlgebraDescription` remains available for names containing one
-    of those characters.
-    """
-
+def parse_description(specification: str) -> tuple:
+    """Parsing a compact string such as `"x+y+z+w0"` separates each generator name from its
+    trailing `+`, `-`, or `0` metric square."""
     if not isinstance(specification, str):
         raise TypeError("an algebra description must be a string")
     if not specification:
         return (), ()
 
-    names: list[str] = []
-    signs: list[int] = []
+    names = []
+    signs = []
     start = 0
     for position, character in enumerate(specification):
         if character not in _CHAR_TO_SIGN:
@@ -83,7 +80,8 @@ def parse_description(specification: str) -> tuple[tuple[str, ...], tuple[int, .
 
 @dataclass(frozen=True, slots=True)
 class AlgebraDescription:
-    """The named orthogonal generators and diagonal metric of an algebra."""
+    """Ordered generator names and diagonal metric squares in `(+1, -1, 0)` specify an orthogonal
+    geometric algebra."""
 
     basis_names: tuple[str, ...]
     signature: tuple[int, ...]
@@ -104,15 +102,17 @@ class AlgebraDescription:
             raise ValueError("'1' is reserved as the scalar blade name")
 
     @classmethod
-    def parse(cls, specification: str) -> "AlgebraDescription":
+    def parse(cls, specification: str) -> AlgebraDescription:
         return cls(*parse_description(specification))
 
     @classmethod
     def from_signature(
         cls,
-        signature: str | Iterable[int],
-        basis_names: Sequence[str] | None = None,
-    ) -> "AlgebraDescription":
+        signature: Iterable[int],
+        basis_names: Iterable[str] | None = None,
+    ) -> AlgebraDescription:
+        """Per-generator metric squares in `(-1, 0, +1)` pair with explicit generator names or
+        deterministic `a..z` defaults."""
         signs = _metric_signs(signature)
         names = (
             _default_basis_names(len(signs))
@@ -127,9 +127,10 @@ class AlgebraDescription:
         p: int,
         q: int,
         r: int,
-        basis_names: Sequence[str] | None = None,
-    ) -> "AlgebraDescription":
-        counts: list[int] = []
+        basis_names: Iterable[str] | None = None,
+    ) -> AlgebraDescription:
+        """Signature counts `(p, q, r)` order `+1` generators first, `-1` second, and `0` last."""
+        counts = []
         for value in (p, q, r):
             try:
                 count = index(value)
@@ -138,9 +139,8 @@ class AlgebraDescription:
             if count < 0:
                 raise ValueError("p, q, and r must be non-negative")
             counts.append(count)
-        positive, negative, null = counts
         return cls.from_signature(
-            (1,) * positive + (-1,) * negative + (0,) * null,
+            (1,) * counts[0] + (-1,) * counts[1] + (0,) * counts[2],
             basis_names=basis_names,
         )
 
@@ -161,8 +161,8 @@ class AlgebraDescription:
         return "".join(_SIGN_TO_CHAR[sign] for sign in self.signature)
 
     def to_compact_string(self) -> str:
-        """Return compact notation when all names fit that notation."""
-
+        """Concatenating each generator name with its metric character produces compact notation
+        such as `"x+y+z+w0"` whenever no generator name contains `+`, `-`, or `0`."""
         if any(
             any(character in _CHAR_TO_SIGN for character in name)
             for name in self.basis_names
@@ -175,7 +175,9 @@ class AlgebraDescription:
             for name, sign in zip(self.basis_names, self.signature)
         )
 
-    def __mul__(self, other: object) -> "AlgebraDescription":
+    def __mul__(self, other: object) -> AlgebraDescription | NotImplementedType:
+        """Multiplying two descriptions with disjoint generator names concatenates their generators
+        and diagonal metrics into the orthogonal direct-sum description."""
         if not isinstance(other, AlgebraDescription):
             return NotImplemented
         overlap = set(self.basis_names).intersection(other.basis_names)

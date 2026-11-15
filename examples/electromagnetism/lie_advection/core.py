@@ -1,6 +1,6 @@
-"""Lie advection carries magnetic flux across a fixed mesh, in the spacetime of the plane, `x+y+t-`.
+"""Magnetic circulation cochains evolve across a fixed planar triangulation in 2+1D spacetime.
 
-An edge's circulation reading changes at the rate the field reads on the world sheet the edge sweeps through spacetime, `edge_motions & sides`, each motion `time + velocity`. The magnetic field is the plane `xy` of space and reads only the sheet's spatial part; an electric field is a plane through time. Ideal Ohm's law is the field vanishing on the world sheets of edges that move with the conductor, so a fixed edge's reading changes by the magnetic flux through the patch between its own world sheet and the comoving one. Endpoint contributions cancel around a closed boundary. A prescribed flow gives one evolution map on edge readings; resistivity dissipates the field through the curl's adjugate.
+Each moving edge sweeps a world sheet `(time + velocity) & edge` through spacetime, and pairing the electromagnetic bivector field with that sheet gives the rate of change of the edge's circulation reading. Under ideal Ohm's law the field vanishes on comoving world sheets, so a fixed edge's reading changes by the magnetic flux across the spatial patch between its fixed and comoving sheets, while interior edge resistance dissipates magnetic energy through the curl's adjugate.
 """
 
 from __future__ import annotations
@@ -12,130 +12,143 @@ import numpy as np
 from numga import Algebra, NumpyContext
 from numga.algebras import STA2D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
-Bivector = ga.gatype.bivector()                                              # Bivector+
-# The magnetic field, a plane of space.
-Magnetic = Bivector.derive.within(Algebra("x+y+"))                           # Bivector+
+Upright = Plane.derive.within(Algebra("x+y+"))                               # Vector+
+Field = ga.gatype.bivector()                                                 # Bivector+
+# The magnetic field, a spatial bivector plane.
+Magnetic = Field.derive.within(Algebra("x+y+"))                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
 Patch = ga.gatype.antibivector()                                             # Antibivector-
-Amount = ga.gatype.antiscalar()                                              # Antiscalar-
-Evolution = ga.gatype((Scalar, Scalar))
+Antiscalar = ga.gatype.antiscalar()                                          # Antiscalar-
+ScalarMap = ga.gatype((Scalar, Scalar))                                      # Scalar+ <- Scalar+
+CurlMap = ga.gatype((Magnetic, Scalar))                                      # Magnetic+ <- Scalar+
+StiffnessMap = ga.gatype((Antiscalar, Scalar))                               # Antiscalar- <- Scalar+
 triangle = Topology(3, [[0, 1, 2]])
 
-# The direction in time of an observer at rest with the mesh, which pairs to one with `mv.t`.
+# The unit future direction of an observer at rest in the spatial frame, pairing to 1 with `mv.t`.
 time = -mv.t.dual()                                                          # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def cartan_decomposition(corners: Point, corner_forms: Plane, corner_velocities: Point
-                         ) -> tuple[Scalar, Scalar, Patch, Bivector]:
-    """The endpoint potential differences, world-sheet magnetic fluxes, edge world sheets,
-    and exterior-derivative 2-form for a linear 1-form on a moving triangle."""
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
-    patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
-    # Each hat is constant in time: its gradient is the plane through the opposite side and time,
-    # over twice the prism the triangle sweeps in a unit of time.
-    gradients = (time & sides) / (2 * (time & patch))                        # [corners] Plane+
-    # Wedging each corner hat gradient with its corner 1-form sums to the constant 2-form curl on the face.
-    face_bivector = (gradients ^ corner_forms).sum(axis=0)                   # [] Bivector+
-    # Each corner advances through spacetime along its world line, `time + velocity` per unit time.
-    corner_motions = time + corner_velocities                                            # [corners] Point-
-    interior_readings = corner_forms & corner_motions                        # [corners] Scalar+
-    endpoint_differences = (triangle.boundary[2, 1] * (triangle.d[0] * interior_readings.field())).batch()[:, 0]  # [corners] Scalar+
-    edge_motions = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corner_motions.field())).batch()[:, 0]  # [corners] Point-
-    world_sheets = edge_motions & sides                                      # [corners] Patch-
-    # Pairing the 2-form curl with each edge's world sheet gives the magnetic flux crossing the moving edge.
-    swept_fluxes = face_bivector & world_sheets                              # [corners] Scalar+
-    return endpoint_differences, swept_fluxes, world_sheets, face_bivector
-
-
-class Operators:
-    """Topological exterior derivatives, Whitney reconstruction maps, and curl-curl operators on a triangle mesh."""
-
-    def __init__(self, topology: Topology, vertices: Point):
-        self.topology, self.vertices = topology, vertices
-        self.d1 = topology.d[1] * Scalar                                     # (Scalar+ <- Scalar+)[faces <- edges]
-        self.edges = topology.d[0] * vertices                                # Point-[edges]
-        self.edge_midpoints = topology.incidence[1, 0].mean(axis=0) * vertices  # Point-[edges]
-        self.sides = topology.boundary[2, 1] * self.edges                    # [corners] Point-[faces]
-        self.patches = (self.sides[0] & self.sides[1]) / 2                   # Patch-[faces]
-        # The prism each face sweeps in a unit of time; its size is the face's area.
-        self.prisms = time & self.patches                                    # Scalar-[faces]
-        self.areas = self.prisms.norm()                                      # Scalar+[faces]
-        self.flux_density = spdiag(1 / self.areas) * self.d1                 # (Scalar+ <- Scalar+)[faces <- edges]
-        self.normals = self.patches / self.areas                             # Patch-[faces]
-
-        # Each corner hat's gradient is constant across its face; assembling by corner maps
-        # vertex streamfunctions to piecewise-constant face gradients without any metric.
-        self.corner_gradients = (time & self.sides) / (2 * self.prisms)      # [corners] Plane+[faces]
-        self.gradient = (spdiag(self.corner_gradients * Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[faces <- vertices]
-
-        # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints'
-        # gradients, matching the constant Whitney 2-form of unit integral over the face patch.
-        tails, heads = topology.corners[2, 1]
-        curls = 2 * (self.corner_gradients[tails] ^ self.corner_gradients[heads])  # [corners] Magnetic+[faces]
-        self.curl = (spdiag(curls * Scalar) * topology.oriented[2, 1]).sum(axis=0)  # (Magnetic+ <- Scalar+)[faces <- edges]
-
-        # Averaging adjacent face fields onto each edge preserves exactness of uniform 2-forms and
-        # makes the ideal Lie advection rate skew-symmetric in the 2-form magnetic energy.
-        face_to_edge = ~topology.incidence[2, 1].sum(axis=0)                 # Scalar+[edges <- faces]
-        edge_counts = face_to_edge * mv.scalar(np.ones(topology.n_elements[2])[..., None]).field()  # Scalar+[edges]
-        to_edges = spdiag(1 / edge_counts) * face_to_edge                    # Scalar+[edges <- faces]
-        self.edge_velocity_map = to_edges * Point                            # (Point- <- Point-)[edges <- faces]
-        self.edge_curl = (to_edges * Magnetic)(self.curl)                    # (Magnetic+ <- Scalar+)[edges <- edges]
-
-        # The vacuum takes each face's field to the excitation it causes, weighted by the face's area; pulled
-        # back through the curl, it gives the curl stiffness, from edge readings to the edge currents.
-        vacuum = self.areas * Magnetic.dual()                                # (Patch- <- Magnetic+)[faces]
-        self.curl_stiffness = self.curl.adjugate()(vacuum(self.curl))        # (Amount- <- Scalar+)[edges <- edges]
-        # A unit resistance on each interior edge turns its current into the resistive electric field, a plane
-        # through time, read on the edge's world sheet: a rate of its reading. Restricting the response to
-        # interior edges keeps boundary circulation fixed under resistivity.
-        interior = ~topology.reading(topology.interior[1], 1) * Scalar       # (Scalar+ <- Scalar+)[edges <- interior]
-        unit_resistance = Amount.dual_inverse()                              # [] Scalar+ <- Amount-
-        self.curl_laplacian = interior(unit_resistance(interior.adjugate()(self.curl_stiffness)))  # (Scalar+ <- Scalar+)[edges <- edges]
+def cartan_decomposition(corners: Point, corner_potentials: Plane,
+                         corner_velocities: Point) -> tuple[Scalar, Scalar, Patch, Field]:
+    """A moving triangle's edge readings change by endpoint potential differences (`[3] Scalar+[1]`) plus world-sheet fluxes (`[3] Scalar+[1]`) from the world sheets (`[3] Patch-[1]`) and face field (`Field+[1]`)."""
+    sides = triangle.boundary[2, 1] * (triangle.d[0] * corners)              # [3] Point-[1]
+    patch = (sides[0] & sides[1]) / 2                                        # Patch-[1]
+    # Each vertex function is constant in time, so its simplex gradient is the plane through the
+    # opposite side and time divided by twice the spacetime prism swept per unit time.
+    gradients = (time & sides) / (2 * (time & patch))                        # [3] Plane+[1]
+    face_potentials = triangle.incidence[2, 0] * corner_potentials           # [3] Plane+[1]
+    face_field = (gradients ^ face_potentials).sum(axis=0)                   # Field+[1]
+    # Each corner advances through spacetime along its world line `time + velocity` per unit time.
+    corner_motions = time + corner_velocities                                # Point-[3]
+    interior_readings = corner_potentials & corner_motions                   # Scalar+[3]
+    endpoint_differences = triangle.boundary[2, 1] * (triangle.d[0] * interior_readings)  # [3] Scalar+[1]
+    edge_motions = triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corner_motions)  # [3] Point-[1]
+    world_sheets = edge_motions & sides                                      # [3] Patch-[1]
+    # Pairing the face field with each edge's world sheet gives the magnetic flux crossing the moving edge.
+    swept_fluxes = face_field & world_sheets                                 # [3] Scalar+[1]
+    return endpoint_differences, swept_fluxes, world_sheets, face_field
 
 
 def vortex_streamfunction(vertices: Point, swirl_rate: float, ellipticity: float) -> Scalar:
-    """Streamfunction of an elliptical shearing vortex that vanishes smoothly on the unit circle."""
-    abscissa, ordinate = mv.x & vertices, mv.y & vertices                    # Scalar+[vertices], Scalar+[vertices]
-    radial_envelope = (1 - vertices.squared()).squared()                     # Scalar+[vertices]
-    quadrupole = 1 + ellipticity * (abscissa.squared() - ordinate.squared()) # Scalar+[vertices]
-    return swirl_rate * radial_envelope * quadrupole                         # Scalar+[vertices]
+    """An elliptical shearing vortex has streamfunction (`Scalar+[V]`) vanishing smoothly in value and slope on the unit circle."""
+    abscissa, ordinate = mv.x & vertices, mv.y & vertices                    # Scalar+[V], Scalar+[V]
+    radial_envelope = (1 - vertices.squared()).squared()                     # Scalar+[V]
+    quadrupole = 1 + ellipticity * (abscissa.squared() - ordinate.squared()) # Scalar+[V]
+    return swirl_rate * radial_envelope * quadrupole                         # Scalar+[V]
 
 
-def initial_cochain(operators: Operators, lobe_centres: Point,
+def initial_cochain(topology: Topology, vertices: Point, lobe_centres: Point,
                     lobe_strengths: np.ndarray, lobe_radius: float) -> Scalar:
-    """Initial edge 1-form cochain from localized circulating Gaussian potentials around `lobe_centres`."""
-    displacements = operators.edge_midpoints.batch()[:, None] - lobe_centres[None, :]  # [edges, lobes] Point-
-    # Pairing the unit bivector with the displacement from each lobe centre gives a circulating 1-form.
-    envelopes = (-displacements.squared() / (2 * lobe_radius**2)).exp()      # [edges, lobes] Scalar+
-    potential = ((envelopes * lobe_strengths) * (mv.xy & displacements)).sum(axis=-1).field()  # Plane+[edges]
-    return potential & operators.edges                                            # Scalar+[edges]
+    """Localized Gaussian magnetic potentials around `lobe_centres` pair with oriented edges to form the initial circulation cochain (`Scalar+[E]`)."""
+    edges = topology.d[0] * vertices                                         # Point-[E]
+    edge_midpoints = topology.incidence[1, 0].mean(axis=0) * vertices        # Point-[E]
+    displacements = edge_midpoints - lobe_centres                            # [...] Point-[E]
+    # Pairing the spatial bivector with the displacement from each lobe centre forms a circulating potential plane.
+    envelopes = (-displacements.squared() / (2 * lobe_radius**2)).exp()      # [...] Scalar+[E]
+    potential = ((envelopes * lobe_strengths) * (mv.xy & displacements)).sum(axis=0)  # Plane+[E]
+    return potential & edges                                                 # Scalar+[E]
 
 
-def edge_world_sheets(operators: Operators, stream: Scalar) -> tuple[Point, Patch, Patch]:
-    """The divergence-free face velocity, and the world sheets each mesh edge sweeps per unit time,
-    held fixed and carried by the flow."""
-    face_velocity = operators.gradient(stream) ^ operators.normals           # Point-[faces]
-    edge_velocity = operators.edge_velocity_map(face_velocity)               # Point-[edges]
-    fixed_sheets = time & operators.edges                                    # Patch-[edges]
-    comoving_sheets = (time + edge_velocity) & operators.edges               # Patch-[edges]
-    return face_velocity, fixed_sheets, comoving_sheets                      # Point-[faces], Patch-[edges], Patch-[edges]
+def whitney_curl(topology: Topology, vertices: Point) -> CurlMap:
+    """Corner simplex gradients wedge in pairs across oriented edges to form the piecewise-constant Whitney magnetic 2-form curl (`(Magnetic+ <- Scalar+)[F <- E]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    prisms = time & ((sides[0] & sides[1]) / 2)                              # Scalar-[F]
+    corner_gradients = (time & sides) / (2 * prisms)                         # [3] Plane+[F]
+    # Each edge's Whitney 1-form has exterior derivative equal to twice the wedge of its endpoint simplex gradients.
+    tails, heads = topology.corners[2, 1]
+    curls = 2 * (corner_gradients[tails] ^ corner_gradients[heads])          # [3] Magnetic+[F]
+    return (spdiag(curls * Scalar) * topology.oriented[2, 1]).sum(axis=0)    # (Magnetic+ <- Scalar+)[F <- E]
 
 
-def advect(initial: Scalar, rate: Evolution, dt: float, n_steps: int) -> Iterator[Scalar]:
-    """Successive edge 1-form cochains along fourth-order Runge-Kutta steps."""
-    cochain = initial                                                        # [cases] Scalar+[edges]
+def swept_edge_patches(topology: Topology, vertices: Point, stream: Scalar) -> Patch:
+    """Fixed and comoving edge world sheets under `stream` differ by the swept spatial patches (`Patch-[E]`)."""
+    edges = topology.d[0] * vertices                                         # Point-[E]
+    sides = topology.boundary[2, 1] * edges                                  # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
+    prisms = time & patches                                                  # Scalar-[F]
+    areas = prisms.norm()                                                    # Scalar+[F]
+    normals = patches / areas                                                # Patch-[F]
+    corner_gradients = (time & sides) / (2 * prisms)                         # [3] Plane+[F]
+    gradient = (spdiag(corner_gradients * Scalar) * topology.incidence[2, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[F <- V]
+    face_velocity = gradient(stream) ^ normals                               # Point-[F]
+    face_to_edge = topology.incidence[2, 1].sum(axis=0).adjugate()           # Scalar+[E <- F]
+    edge_counts = face_to_edge * (areas / areas)                             # Scalar+[E]
+    to_edges = spdiag(1 / edge_counts) * face_to_edge                        # (Scalar+ <- Scalar+)[E <- F]
+    edge_velocity = (to_edges * Point)(face_velocity)                        # Point-[E]
+    fixed_sheets = time & edges                                              # Patch-[E]
+    comoving_sheets = (time + edge_velocity) & edges                         # Patch-[E]
+    return fixed_sheets - comoving_sheets                                    # Patch-[E]
+
+
+def advection_map(topology: Topology, vertices: Point, curl: CurlMap,
+                  swept_patches: Patch) -> ScalarMap:
+    """Adjacent face magnetic fields average onto edges and pair with `swept_patches` to form the Lie advection map (`(Scalar+ <- Scalar+)[E <- E]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    areas = (time & ((sides[0] & sides[1]) / 2)).norm()                      # Scalar+[F]
+    # Averaging adjacent face fields onto each edge preserves uniform fields and skew-symmetry in magnetic energy.
+    face_to_edge = topology.incidence[2, 1].sum(axis=0).adjugate()           # Scalar+[E <- F]
+    edge_counts = face_to_edge * (areas / areas)                             # Scalar+[E]
+    to_edges = spdiag(1 / edge_counts) * face_to_edge                        # (Scalar+ <- Scalar+)[E <- F]
+    edge_curl = (to_edges * Magnetic)(curl)                                  # (Magnetic+ <- Scalar+)[E <- E]
+    return (Magnetic & swept_patches)(edge_curl)                             # (Scalar+ <- Scalar+)[E <- E]
+
+
+def curl_stiffness_map(topology: Topology, vertices: Point, curl: CurlMap) -> StiffnessMap:
+    """Pulling the area-weighted vacuum duality map back through `curl` forms the magnetic stiffness (`(Antiscalar- <- Scalar+)[E <- E]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    areas = (time & ((sides[0] & sides[1]) / 2)).norm()                      # Scalar+[F]
+    vacuum = areas * Magnetic.dual()                                         # (Patch- <- Magnetic+)[F]
+    return curl.adjugate()(vacuum(curl))                                     # (Antiscalar- <- Scalar+)[E <- E]
+
+
+def curl_laplacian_map(topology: Topology, curl_stiffness: StiffnessMap) -> ScalarMap:
+    """Restricting unit-resistance magnetic diffusion to interior edges keeps boundary circulation fixed (`(Scalar+ <- Scalar+)[E <- E]`)."""
+    interior = topology.reading(topology.interior[1], 1).adjugate() * Scalar # (Scalar+ <- Scalar+)[E <- E_interior]
+    unit_resistance = Antiscalar.dual_inverse()                              # [] Scalar+ <- Antiscalar-
+    return interior(unit_resistance(interior.adjugate()(curl_stiffness)))    # (Scalar+ <- Scalar+)[E <- E]
+
+
+def flux_density_map(topology: Topology, vertices: Point) -> ScalarMap:
+    """Dividing face boundary sums by triangle areas maps edge cochains to face magnetic flux densities (`(Scalar+ <- Scalar+)[F <- E]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    areas = (time & ((sides[0] & sides[1]) / 2)).norm()                      # Scalar+[F]
+    return spdiag(1 / areas) * (topology.d[1] * Scalar)                      # (Scalar+ <- Scalar+)[F <- E]
+
+
+def cochain_trajectory(initial: Scalar, rate: ScalarMap, dt: float, n_steps: int) -> Iterator[Scalar]:
+    """Yields edge circulation cochains (`[...] Scalar+[E]`) across `n_steps` fourth-order Runge-Kutta steps."""
+    cochain = initial                                                        # [...] Scalar+[E]
     yield cochain
     for _ in range(n_steps):
-        first = rate(cochain)                                                # [cases] Scalar+[edges]
-        second = rate(cochain + (dt / 2) * first)                            # [cases] Scalar+[edges]
-        third = rate(cochain + (dt / 2) * second)                            # [cases] Scalar+[edges]
-        fourth = rate(cochain + dt * third)                                  # [cases] Scalar+[edges]
-        cochain = cochain + (dt / 6) * (first + 2 * second + 2 * third + fourth)  # [cases] Scalar+[edges]
+        first_rate = rate(cochain)                                           # [...] Scalar+[E]
+        second_rate = rate(cochain + (dt / 2) * first_rate)                  # [...] Scalar+[E]
+        third_rate = rate(cochain + (dt / 2) * second_rate)                  # [...] Scalar+[E]
+        fourth_rate = rate(cochain + dt * third_rate)                        # [...] Scalar+[E]
+        cochain = cochain + (dt / 6) * (first_rate + 2 * second_rate + 2 * third_rate + fourth_rate)  # [...] Scalar+[E]
         yield cochain

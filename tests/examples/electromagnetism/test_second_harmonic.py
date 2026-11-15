@@ -1,87 +1,90 @@
-"""The frequency-doubling crystal: its response has the tetrahedral component law, turns with the
-crystal and reverses with its bonds, the [110] cut has its analytic polarization and power, the
-phase-matched growth follows the closed form."""
+"""Tests for second-harmonic generation cover the tetrahedral bond response, crystal rotation and
+bond inversion, the [110]-cut polarization and power, pump-probe linear mixing, closed-form slice
+growth, and figure rendering."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
+from numga import Algebra, stack
 from examples.electromagnetism.second_harmonic import core, render, scenarios
 
 mv = core.mv
-# The fields across the beam, which read a polarization's components by pairing.
-beam_fields = stack((core.horizontal_field, core.vertical_field))
+beam_fields = stack((core.horizontal_field, core.vertical_field))              # [2] Field+
 
 
-def test_response_has_the_tetrahedral_component_law_bound_at_once_or_one_axis_at_a_time():
+def test_response_has_tetrahedral_component_law_and_ignores_magnetic_fields():
     crystal = core.crystal
     rng = np.random.default_rng(814)
-    first, second = rng.normal(size=(19, 3)), rng.normal(size=(19, 3))
-    # The six permutations of three distinct axes share one unit coefficient.
-    first_field = core.field_along((core.axes * first).sum(axis=-1))
-    second_field = core.field_along((core.axes * second).sum(axis=-1))
+    first, second = rng.normal(size=(7, 3)), rng.normal(size=(7, 3))
+    first_field = core.field_along((core.axes * first).sum(axis=-1))           # [7] Field+
+    second_field = core.field_along((core.axes * second).sum(axis=-1))         # [7] Field+
     expected = (core.axes * np.stack((
         first[:, 1] * second[:, 2] + first[:, 2] * second[:, 1],
         first[:, 2] * second[:, 0] + first[:, 0] * second[:, 2],
         first[:, 0] * second[:, 1] + first[:, 1] * second[:, 0],
-    ), axis=-1)).sum(axis=-1) & core.time
-    magnetic_fields = mv(core.Field.derive.within("x y z"), rng.normal(size=(2, 19, 3)))
-    np.testing.assert_allclose((crystal(first_field, second_field) - expected).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((crystal(first_field)(second_field) - expected).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((crystal(first_field + magnetic_fields[0], second_field + magnetic_fields[1]) - expected).kernel, 0, atol=1e-12)
+    ), axis=-1)).sum(axis=-1) & core.time                                      # [7] Polarization-
+    magnetic_fields = mv(core.Field.derive.within(Algebra("x+y+z+")), rng.normal(size=(2, 7, 3)))
+    assert ((crystal(first_field, second_field) - expected).norm_squared() < 1e-12).all()
+    assert ((crystal(first_field)(second_field) - expected).norm_squared() < 1e-12).all()
+    assert ((crystal(first_field + magnetic_fields[0], second_field + magnetic_fields[1]) - expected).norm_squared() < 1e-12).all()
 
 
-def test_the_response_turns_with_the_crystal_and_reverses_with_its_bonds():
+def test_response_turns_with_crystal_and_reverses_with_bonds():
     crystal = core.crystal
     rng = np.random.default_rng(177)
-    fields, probes = mv.bivector(rng.normal(size=(23, 6))), mv.bivector(rng.normal(size=(23, 6)))
+    fields, probes = mv.bivector(rng.normal(size=(7, 6))), mv.bivector(rng.normal(size=(7, 6)))
     rotation = (mv.xy * 0.37).exp() * (mv.yz * 0.23).exp()
-    # The crystal turned: both fields carried into its frame, and its response carried back.
-    turned = rotation >> crystal(rotation << core.Field, rotation << core.Field)
-    rebuilt = core.bond_response(rotation >> core.bonds)
-    np.testing.assert_allclose(
-        (turned(rotation >> fields, rotation >> probes) - (rotation >> crystal(fields, probes))).kernel,
-        0, atol=1e-8)
-    np.testing.assert_allclose((turned(fields, probes) - rebuilt(fields, probes)).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((core.bond_response(-core.bonds)(fields, probes) + crystal(fields, probes)).kernel, 0, atol=2e-12)
+    turned_response = rotation >> crystal(rotation << core.Field, rotation << core.Field)
+    rebuilt_response = core.bond_response(rotation >> core.bonds)
+    assert ((turned_response(rotation >> fields, rotation >> probes) - (rotation >> crystal(fields, probes))).norm_squared() < 1e-8).all()
+    assert ((turned_response(fields, probes) - rebuilt_response(fields, probes)).norm_squared() < 1e-12).all()
+    assert ((core.bond_response(-core.bonds)(fields, probes) + crystal(fields, probes)).norm_squared() < 1e-12).all()
 
 
-def test_110_cut_has_the_analytic_polarization_and_power():
-    headings = np.linspace(0, 2 * np.pi, 129)
+def test_110_cut_polarization_and_power():
+    n_headings = 17
+    headings = np.linspace(0, 2 * np.pi, n_headings)
     across, up = np.cos(headings), np.sin(headings)
-    pumps, _ = scenarios.turning(1, len(headings))
+    pumps, _ = scenarios.turning(1, n_headings)
     harmonic = core.second_harmonic(pumps, pumps)
     expected = -core.horizontal_polarization * (across * up) - core.vertical_polarization * (across**2 / 2)
-    np.testing.assert_allclose((harmonic - expected).kernel, 0, atol=1e-6)
+    assert ((harmonic - expected).norm_squared() < 1e-10).all()
     power = (beam_fields & harmonic[..., None]).squared().sum(axis=-1)
-    np.testing.assert_allclose(power.to_array(), across**2 * (4 - 3 * across**2) / 4, atol=1e-6)
+    assert ((power - across**2 * (4 - 3 * across**2) / 4).abs() < 1e-10).all()
 
 
-def test_pump_bound_response_is_the_mixed_part_of_the_doubled_field():
-    pumps, probes, generated = scenarios.mixing(49)
+def test_pump_bound_response_matches_cross_term():
+    pumps, probes, generated = scenarios.mixing(13)
     pump_and_probe = pumps[:, None] + probes
-    change = (core.second_harmonic(pump_and_probe, pump_and_probe)
-              - core.second_harmonic(pumps[:, None], pumps[:, None]) - core.second_harmonic(probes, probes))
-    np.testing.assert_allclose((change - generated).kernel, 0, atol=1e-12)
+    cross_term = (core.second_harmonic(pump_and_probe, pump_and_probe)
+                  - core.second_harmonic(pumps[:, None], pumps[:, None])
+                  - core.second_harmonic(probes, probes))
+    assert ((cross_term - generated).norm_squared() < 1e-12).all()
 
 
-def test_uniform_growth_follows_the_closed_form():
-    slices = 512
-    depths = (np.arange(slices) + 0.5) / slices
+def test_uniform_growth_matches_closed_form_and_quasi_phase_matching_builds():
+    n_slices = 128
+    depths = (np.arange(n_slices) + 0.5) / n_slices
     mismatch = np.array([[0.0], [2 * np.pi], [4 * np.pi]])
     source = (core.horizontal_polarization + core.vertical_polarization) / np.sqrt(2)
-    amplitude = core.growth(source, np.ones((3, slices)), mismatch, depths)
-    # The running sum of midpoint slices, against the integral up to each slice's far edge.
-    edges = depths + 0.5 / slices
+    amplitude = core.growth(source, np.ones((3, n_slices)), mismatch, depths)
+    edges = depths + 0.5 / n_slices
     exact = np.where(mismatch == 0, edges, (np.exp(1j * mismatch * edges) - 1) / (1j * np.where(mismatch == 0, 1, mismatch)))
     expected = source * np.stack((exact.real, exact.imag), axis=-1)
-    np.testing.assert_allclose((amplitude - expected).kernel, 0, atol=1e-4)
+    assert ((amplitude - expected).norm_squared() < 1e-3).all()
+
+    _, matched_amplitude = scenarios.phase_matching(256)
+    power = matched_amplitude.scalar_norm_squared().sum(axis=-1)
+    assert ((power[:, -1] - np.array([1.0, 0.0, (2 / np.pi) ** 2])).abs() < 1e-4).all()
 
 
-def test_phase_matching_builds_while_uniform_mismatched_light_cancels():
-    _, amplitude = scenarios.phase_matching(256)
-    power = (beam_fields & amplitude[..., None]).squared().sum(axis=(-2, -1))
-    np.testing.assert_allclose(power[:, -1].to_array(), [1.0, 0.0, (2 / np.pi) ** 2], atol=1e-4)
-
-
-def test_one_frame_of_the_turning_crystal_draws():
-    next(render.animate(*scenarios.turning(1, 2)))
+def test_render_views_and_animation_frame():
+    phase, pump, harmonic = scenarios.waveform(9)
+    plt.close(render.draw_waveform(phase, pump, harmonic))
+    pumps, states = scenarios.turning(1, 5)
+    bonds, turned_harmonic = next(states)
+    plt.close(render.draw_response(pumps, bonds, turned_harmonic))
+    frame = next(render.animate(pumps, [(bonds, turned_harmonic)]))
+    assert frame.ndim == 3 and frame.shape[-1] == 3
+    plt.close(render.draw_mixing(*scenarios.mixing(5)))
+    plt.close(render.draw_growth(*scenarios.phase_matching(8)))

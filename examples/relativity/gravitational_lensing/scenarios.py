@@ -1,67 +1,93 @@
-"""A source passing behind two equal point masses: the critical curve and its caustic, the images
-as the source crosses the caustic, and small round sources as the lens shows them
-on the sky."""
+"""Scene parameters and figure/animation generation for gravitational lensing by a binary mass."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 
 import numpy as np
 
 from examples.relativity.gravitational_lensing import core
 
-# Two equal masses on the x axis, 1.1 Einstein angles apart: one caustic with six cusps.
-positions = core.mv.x.dual() * np.array([-0.55, 0.55])                         # [masses] Point-
-MASSES = np.array([0.5, 0.5])
-# The pixels along each side of the sky the critical curve is traced on.
-N_PIXELS = 480
-# The source's path, across the caustic 0.12 Einstein angles off the masses' axis, the step the still
-# shows, the source's width, and the duration of a frame in milliseconds.
-N_PATH_STEPS = 145
-path = (core.mv.x * np.linspace(-0.6, 0.6, N_PATH_STEPS) + core.mv.y * 0.12).dual()   # [steps] Point-
-SHOWN_STEP = 47
-SOURCE_WIDTH = 0.035
-DURATION_MS = 40
+# Two equal half-mass lenses separated by 1.1 Einstein angles along the x axis, producing a six-cusped caustic.
+n_masses = 2
+positions = core.mv.x.dual() * np.array([-0.55, 0.55])                         # [n_masses] Point-
+masses = np.array([0.5, 0.5])                                                  # [n_masses]
+# Sky sampling half-width and pixel count per side used to trace the critical curve and caustic.
+sky_half_width = 1.9
+n_pixels = 480
+# Source path crossing the caustic 0.12 Einstein angles above the binary axis, still index, width, and frame duration.
+n_steps = 145
+path = (core.mv.x * np.linspace(-0.6, 0.6, n_steps) + core.mv.y * 0.12).dual()   # [n_steps] Point-
+shown_step = 47
+source_width = 0.035
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def deflected(observed: core.Point) -> core.Point:
-    """The source direction each observed direction reaches, through the two masses."""
-    return core.deflected(observed, positions, MASSES)                         # [...] Point-
+def binary_source_direction(observed: core.Point) -> core.Point:
+    """The two binary masses deflect each `observed` sky direction (`[...] Point-`) to its source direction (`[...] Point-`)."""
+    return core.source_direction(observed, positions, masses)                  # [...] Point-
 
 
-def lens(resolution: int) -> tuple[core.Point, core.Scalar, core.LocalMap]:
-    """The sky's directions, the local map's area ratio on the sky, zero on the critical curve, and
-    the local map."""
-    directions = core.sky(1.9, resolution)                                     # [rows, columns] Point-
-    local = core.local_map(directions, positions, MASSES)                      # [rows, columns] Point- <- Point-
-    area = local.det()                                                         # [rows, columns] Scalar+
+def binary_lens_grid(n_grid_pixels: int) -> tuple[core.Point, core.Scalar, core.LocalMap]:
+    """The binary lens over an `[n_grid_pixels, n_grid_pixels]` sky grid determines pixel directions, signed area ratios, and local Jacobians."""
+    directions = core.sky_grid(sky_half_width, n_grid_pixels)                  # [n_grid_pixels, n_grid_pixels] Point-
+    local = core.local_map(directions, positions, masses)                      # [n_grid_pixels, n_grid_pixels] Point- <- Point-
+    area = local.det()                                                         # [n_grid_pixels, n_grid_pixels] Scalar+
     return directions, area, local
 
 
-def light(centre: core.Point, width: float
-          ) -> tuple[Callable[[core.Point], core.Scalar], Callable[[core.Point], core.Scalar]]:
-    """The source about a centre unlensed, and the light the sky shows in each direction: the
-    source's brightness where its sightline arrives."""
-    return (lambda at: core.brightness(at, centre, width)), (lambda at: core.brightness(deflected(at), centre, width))
+# --- plumbing -------------------------------------------------------------------------
+def save_states(
+    states: Iterable,
+    animate: Callable[..., Iterable[np.ndarray]],
+    *arguments,
+    name: str,
+    duration_ms: int,
+) -> list:
+    """Streams `states` once through `animate` into `save_animation` and returns the collected states."""
+    from examples.util.animation import save_animation
+
+    recorded = []
+
+    def passing() -> Iterator:
+        for state in states:
+            recorded.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms)
+    return recorded
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
     from examples.relativity.gravitational_lensing import render
+    from examples.util.animation import save_figure
 
-    directions, area, local = lens(N_PIXELS)
-    save_figure(render.draw(directions, area, deflected, positions, light(path[SHOWN_STEP], SOURCE_WIDTH)), "gravitational_lensing")
-    steps = (light(centre, SOURCE_WIDTH) for centre in path)
-    save_animation(render.animate(directions, area, deflected, positions, steps), "gravitational_lensing", DURATION_MS)
+    directions, area, local = binary_lens_grid(n_pixels)
+    exposures = save_states(
+        core.path_exposures(path, positions, masses, source_width),
+        render.lensing_animation,
+        directions,
+        area,
+        binary_source_direction,
+        positions,
+        name="gravitational_lensing",
+        duration_ms=frame_duration_ms,
+    )
+    fig = render.lensing_figure(directions, area, binary_source_direction, positions, exposures[shown_step])
+    save_figure(fig, "gravitational_lensing")
+    import matplotlib.pyplot as plt
+    plt.close(fig)
 
     # checks
-    # The reflections have no trace, so the trace is two; the local map is the derivative of the
-    # deflection.
-    np.testing.assert_allclose(local.trace().to_array(), 2.0, atol=1e-11)
-    probe, step = directions[::97, ::97], 1e-6 * core.mv.x.dual()              # [probes, probes] Point-
-    difference = (core.deflected(probe + step, positions, MASSES) - core.deflected(probe - step, positions, MASSES)) / 2e-6
-    np.testing.assert_allclose((difference - local[::97, ::97](core.mv.x.dual())).kernel, 0.0, atol=1e-7)
+    # Planar reflections are traceless, so the local map has trace 2 everywhere and its trace-2 inverse formula
+    # `(2 * Point - local) / area` recovers the identity on every pixel away from the critical curve.
+    assert ((local.trace() - 2.0).abs() < 1e-11).all()
+    probe = core.mv.x.dual()                                                   # Point-
+    recovered = ((2 * core.Point - local) / area)(local(probe))                # [n_pixels, n_pixels] Point-
+    away_from_critical = area.abs() > 1e-2
+    assert (((recovered - probe).scalar_norm_squared() < 1e-18) | ~away_from_critical).all()
+    assert len(exposures) == n_steps
 
 
 if __name__ == "__main__":

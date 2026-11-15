@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("wgpu")
 
 from examples.relativity.kerr import core, gpu
-from examples.util.wgsl import Shader
+from numga.wgsl import Shader
 
 mv = core.mv
 # Single precision against double.

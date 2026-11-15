@@ -1,27 +1,23 @@
-"""Newtonian gravity of soft masses, its tidal map, and a cluster of stars stretched by it.
+"""Newtonian gravity of soft Plummer masses, their tidal map, and first-order cluster deformation.
 
-Each mass is a Plummer sphere, a mass with a soft core: beyond the core it pulls as a point mass, as
-one over the squared distance, and its density is smooth and finite at the centre. The acceleration
-is a sum over the masses, and so is the tidal map at a point: the change in gravity over a small step,
-a map from displacements to the planes that read the change, `Tidal = Plane <- Point`, written in
-closed form. The metric turns its reading into the change in acceleration.
+Each gravitating source is modelled as a Plummer sphere whose density stays finite inside its core
+radius and falls off into an inverse-square pull at large distance. Summing over the sources gives
+both the gravitational acceleration and the tidal map `Plane+ <- Point-`, which sends an intrinsic
+displacement to the extrinsic plane reading the first-order change in gravity.
 
-The geometric derivative of gravity multiplies each plane the tidal map gives by the plane that reads
-its step, `(Plane * tidal(Point)).trace(1, 2)`. Its outer half, the curl, vanishes with no metric
-involved, since the tidal map is symmetric; its inner half, where the metric enters, is minus four pi
-times the density, which is Poisson's equation. A cluster of stars falls through the field; its shape,
-to first order in its size, is a map too, the deformation, which the tidal map drives along the
-cluster's centre: `deformation'' == tidal(deformation).dual()`, the Jacobi equation. The stars' spread
-is a map from planes to offsets, `Spread = Point <- Plane`, each offset weighted by its reading by the
-plane; the deformation carries it forward and its adjugate carries the planes back,
-`deformation(spread(deformation.adjugate()))`. A round cluster starts as its radius squared times
-`Plane.dual()`, roundness being where the metric enters, and its rim is the offsets `x` with
-`spread.solve(x) & x == 1`.
+Multiplying each output plane of the tidal map by the plane reading its input step and taking the
+trace `(Plane * tides(Point)).trace(1, 2)` forms the geometric derivative of gravity. Its bivector
+curl vanishes by symmetry without invoking the metric, while its scalar divergence recovers minus
+four pi times the Plummer mass density through Poisson's equation. Along a falling star cluster's
+guiding centre, dualizing `tides(deformation).dual()` turns the plane reading into the tidal
+acceleration of the linear deformation map `Point- <- Point-`, pushing an initial round spread
+`cluster_radius**2 * Plane.dual()` forward to `deformation(start_spread(deformation.adjugate()))`
+whose level curve `predicted_spread.solve(offsets) & offsets == 1` marks the deformed rim.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -29,120 +25,127 @@ from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-# Positions, displacements, velocities and accelerations are antivectors with intrinsic orientation; the
-# planes that read them are vectors, with extrinsic orientation.
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Even = ga.gatype.even()
+Scalar = ga.gatype.scalar()                                 # Scalar+
+# Positions, displacements, velocities and accelerations are intrinsic antivectors; planes are extrinsic vectors.
+Point = ga.gatype.antivector()                              # Point-
+Plane = ga.gatype.vector()                                  # Plane+
+Even = ga.gatype.even()                                     # Even+
 Tidal = ga.gatype((Plane, Point))                           # Plane+ <- Point-
 Deformation = ga.gatype((Point, Point))                     # Point- <- Point-
 Spread = ga.gatype((Point, Plane))                          # Point- <- Plane+
-Form = ga.gatype((Scalar, Point, Point))                    # Scalar+ <- (Point-, Point-)
 
 
-# --- math -----------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Masses:
-    centres: Point                                           # [masses] Point-
-    # The mass of each.
-    masses: np.ndarray                                       # [masses] float
-    core_radius: float
-
-    def acceleration(self, points: Point) -> Point:
-        """The pull of the masses at each point."""
-        towards = self.centres - points[..., None]                           # [..., masses] Point-
-        pull, _ = self._profile(towards)                                     # [..., masses] Scalar+
-        return (pull * towards).sum(axis=-1)                                 # [...] Point-
-
-    def tidal(self, points: Point) -> Tidal:
-        """The tidal map at each point: the change in gravity for a small displacement, as the plane that
-        reads it."""
-        towards = self.centres - points[..., None]                           # [..., masses] Point-
-        pull, pull_change = self._profile(towards)                           # [..., masses] Scalar+, Scalar+
-        # The planes across the line to each mass, which read a step's part towards it.
-        across = towards.dual_inverse()                                      # [..., masses] Plane+
-        # A displacement moves away from each mass by itself, weakening the pull along every direction,
-        # and changes the pull by its reading by the plane across the line to the mass, along that line.
-        squeeze = -pull * Point.dual_inverse()                               # [..., masses] Plane+ <- Point-
-        stretch = -2 * pull_change * across * (across & Point)               # [..., masses] Plane+ <- Point-
-        return (squeeze + stretch).sum(axis=-1)                              # [...] Plane+ <- Point-
-
-    def _profile(self, towards: Point) -> tuple[Scalar, Scalar]:
-        """The pull per unit distance towards each mass, and its change with the squared distance."""
-        softened = towards.scalar_norm_squared() + self.core_radius**2       # [..., masses] Scalar+
-        pull = self.masses / (softened * softened.square_root())             # [..., masses] Scalar+
-        return pull, -1.5 * pull / softened
+def gravitational_acceleration(
+    points: Point, centres: Point, masses: np.ndarray, core_radius: float
+) -> Point:
+    """Plummer spheres at `centres` pull each sample in `points` toward them (`[...] Point-`)."""
+    source_offsets = centres - points[..., None]                             # [...] Point-
+    softened_squares = source_offsets.scalar_norm_squared() + core_radius**2  # [...] Scalar+
+    pull_strength = masses / (softened_squares * softened_squares.square_root())  # [...] Scalar+
+    return (pull_strength * source_offsets).sum(axis=-1)                     # [...] Point-
 
 
-@dataclass(frozen=True)
-class Stars:
-    positions: Point                                         # [..., stars] Point-
-    velocities: Point                                        # [..., stars] Point-
-
-    def centre(self) -> Point:
-        """The stars' centre of mass."""
-        return self.positions.mean(axis=-1)                                  # [...] Point-
-
-    def moment(self) -> Spread:
-        """The stars' spread about their centre of mass, a map from planes to offsets: the mean of each
-        offset weighted by its reading by the plane."""
-        offsets = self.positions - self.centre()[..., None]                # [..., stars] Point-
-        return (offsets * (Plane & offsets)).mean(axis=-1)                  # [...] Point- <- Plane+
-
-    def fall(self, masses: Masses, dt: float) -> Stars:
-        """The stars moved for a time `dt` by the velocity Verlet rule."""
-        start = masses.acceleration(self.positions)                          # [..., stars] Point-
-        positions = self.positions + self.velocities * dt + start * (dt**2 / 2)
-        end = masses.acceleration(positions)                                 # [..., stars] Point-
-        return Stars(positions, self.velocities + (start + end) * (dt / 2))
+def tidal_map(
+    points: Point, centres: Point, masses: np.ndarray, core_radius: float
+) -> Tidal:
+    """Each Plummer sphere combines an isotropic squeeze with a radial stretch into the tidal map at `points` (`[...] Plane+ <- Point-`)."""
+    source_offsets = centres - points[..., None]                             # [...] Point-
+    softened_squares = source_offsets.scalar_norm_squared() + core_radius**2  # [...] Scalar+
+    pull_strength = masses / (softened_squares * softened_squares.square_root())  # [...] Scalar+
+    pull_slope = -1.5 * pull_strength / softened_squares                     # [...] Scalar+
+    # Each radial plane pairs with a displacement to read its component toward that mass.
+    source_planes = source_offsets.dual_inverse()                            # [...] Plane+
+    squeeze_map = -pull_strength * Point.dual_inverse()                      # [...] Plane+ <- Point-
+    stretch_map = -2 * pull_slope * source_planes * (source_planes & Point)  # [...] Plane+ <- Point-
+    return (squeeze_map + stretch_map).sum(axis=-1)                          # [...] Plane+ <- Point-
 
 
-@dataclass(frozen=True)
-class Shape:
-    """The cluster's centre and its deformation: how an offset from the centre at the start has moved."""
-    centre: Point                                            # [] Point-
-    velocity: Point                                          # [] Point-
-    deformation: Deformation                                 # [] Point- <- Point-
-    rate: Deformation                                        # [] Point- <- Point-
-
-    def deform(self, masses: Masses, dt: float) -> Shape:
-        """The centre moved and the deformation carried by the tidal map at it, by the velocity Verlet
-        rule: the deformation's rate of change changes by the tidal map applied to the deformation."""
-        # The metric turns the tidal map's reading into the change in acceleration.
-        start = masses.acceleration(self.centre)                             # [] Point-
-        start_tide = masses.tidal(self.centre)(self.deformation).dual()      # [] Point- <- Point-
-        centre = self.centre + self.velocity * dt + start * (dt**2 / 2)
-        deformation = self.deformation + self.rate * dt + start_tide * (dt**2 / 2)
-        end = masses.acceleration(centre)                                    # [] Point-
-        end_tide = masses.tidal(centre)(deformation).dual()                  # [] Point- <- Point-
-        return Shape(centre, self.velocity + (start + end) * (dt / 2),
-                     deformation, self.rate + (start_tide + end_tide) * (dt / 2))
-
-    def spread(self, radius: float) -> Spread:
-        """Where a round cluster of the given starting radius has spread to, to first order in its size:
-        the deformation carries the offsets forward and its adjugate carries the planes back. Its rim's
-        offsets `x` have `spread.solve(x) & x == 1`."""
-        # Round is where the metric enters: each plane reads the offsets across it, out to the radius.
-        start = radius**2 * Plane.dual()                                     # [] Spread
-        return self.deformation(start(self.deformation.adjugate()))          # [] Point- <- Plane+
-
-    def rim(self, radius: float) -> Form:
-        """The rim of a round cluster of the given starting radius, carried by the deformation: the form
-        that is one, on the same offset twice, at the rim's offsets from the centre."""
-        return self.spread(radius).solve(Point) & Point                      # [] Scalar+ <- (Point-, Point-)
+def gravity_derivative(tides: Tidal) -> Even:
+    """Tracing `Plane * tides(Point)` combines the scalar divergence and bivector curl of gravity (`[...] Even+`)."""
+    # Tracing pairs each factor of Plane with the displacement argument of tides.
+    return (Plane * tides(Point)).trace(1, 2)                                # [...] Even+
 
 
-def derivative(tides: Tidal) -> Even:
-    """The geometric derivative of gravity: its inner half, where the metric enters, minus four pi times
-    the density, and its outer half the curl, which needs none."""
-    # The trace pairs each open plane with the displacement the tidal map reads, plane against point.
-    return (Plane * tides(Point)).trace(1, 2)                               # [...] Even+
+def sample_grid(
+    half_width: float, half_height: float, n_columns: int, n_rows: int
+) -> Point:
+    """Cell centres span a `2 * half_width` by `2 * half_height` rectangle in the xy-plane (`[n_rows, n_columns] Point-`)."""
+    x_offsets = (np.arange(n_columns) + 0.5) / n_columns * 2 * half_width - half_width
+    y_offsets = (np.arange(n_rows) + 0.5) / n_rows * 2 * half_height - half_height
+    return (mv.x * x_offsets[None, :] + mv.y * y_offsets[:, None]).dual()    # [n_rows, n_columns] Point-
 
 
-# --- plumbing -------------------------------------------------------------------------
-def grid(half_width: float, half_height: float, columns: int, rows: int) -> Point:
-    """Displacements on a grid in the plane z = 0, at the centres of its cells."""
-    x = (np.arange(columns) + 0.5) / columns * 2 * half_width - half_width
-    y = (np.arange(rows) + 0.5) / rows * 2 * half_height - half_height
-    return (mv.x * x[None, :] + mv.y * y[:, None]).dual().cast(Point)       # [rows, columns] Point-
+def star_step(
+    positions: Point,
+    velocities: Point,
+    centres: Point,
+    masses: np.ndarray,
+    core_radius: float,
+    dt: float,
+) -> tuple[Point, Point]:
+    """Velocity Verlet advances star positions and velocities across one time step `dt` (`[...] Point-`, `[...] Point-`)."""
+    start_acceleration = gravitational_acceleration(positions, centres, masses, core_radius)  # [...] Point-
+    next_positions = positions + velocities * dt + start_acceleration * (dt**2 / 2)           # [...] Point-
+    end_acceleration = gravitational_acceleration(next_positions, centres, masses, core_radius)  # [...] Point-
+    next_velocities = velocities + (start_acceleration + end_acceleration) * (dt / 2)         # [...] Point-
+    return next_positions, next_velocities
+
+
+def deformation_step(
+    centre: Point,
+    velocity: Point,
+    deformation: Deformation,
+    deformation_rate: Deformation,
+    centres: Point,
+    masses: np.ndarray,
+    core_radius: float,
+    dt: float,
+) -> tuple[Point, Point, Deformation, Deformation]:
+    """Velocity Verlet advances the guiding centre and its tidal deformation across `dt` (`[] Point-`, `[] Point- <- Point-`)."""
+    # Dualization turns the tidal map's plane reading into an intrinsic acceleration offset.
+    start_acceleration = gravitational_acceleration(centre, centres, masses, core_radius)     # [] Point-
+    start_tide = tidal_map(centre, centres, masses, core_radius)(deformation).dual()          # [] Point- <- Point-
+    next_centre = centre + velocity * dt + start_acceleration * (dt**2 / 2)                   # [] Point-
+    next_deformation = deformation + deformation_rate * dt + start_tide * (dt**2 / 2)         # [] Point- <- Point-
+    end_acceleration = gravitational_acceleration(next_centre, centres, masses, core_radius)  # [] Point-
+    end_tide = tidal_map(next_centre, centres, masses, core_radius)(next_deformation).dual()  # [] Point- <- Point-
+    next_velocity = velocity + (start_acceleration + end_acceleration) * (dt / 2)             # [] Point-
+    next_rate = deformation_rate + (start_tide + end_tide) * (dt / 2)                         # [] Point- <- Point-
+    return next_centre, next_velocity, next_deformation, next_rate
+
+
+def cluster_moment(positions: Point, centre: Point) -> Spread:
+    """Star offsets around `centre` form the empirical second-moment map (`[...] Point- <- Plane+`)."""
+    offsets = positions - centre[..., None]                                  # [...] Point-
+    return (offsets * (Plane & offsets)).mean(axis=-1)                       # [...] Point- <- Plane+
+
+
+def flyby_states(
+    positions: Point,
+    velocities: Point,
+    guiding_centre: Point,
+    guiding_velocity: Point,
+    centres: Point,
+    masses: np.ndarray,
+    core_radius: float,
+    cluster_radius: float,
+    dt: float,
+    n_substeps: int,
+    n_frames: int,
+) -> Iterator[tuple[Point, Point, Spread]]:
+    """Yields `(positions, star_centre, predicted_spread)` across `n_frames` frames separated by `n_substeps` steps."""
+    # Roundness enters through Plane.dual(), which maps each unit plane to the offset of equal length across it.
+    start_spread = cluster_radius**2 * Plane.dual()                          # [] Point- <- Plane+
+    deformation = Point                                                      # [] Point- <- Point-
+    deformation_rate = 0 * Point                                             # [] Point- <- Point-
+    for _ in range(n_frames):
+        star_centre = positions.mean(axis=-1)                                # [] Point-
+        predicted_spread = deformation(start_spread(deformation.adjugate()))  # [] Point- <- Plane+
+        yield positions, star_centre, predicted_spread
+        for _ in range(n_substeps):
+            positions, velocities = star_step(
+                positions, velocities, centres, masses, core_radius, dt
+            )
+            guiding_centre, guiding_velocity, deformation, deformation_rate = deformation_step(
+                guiding_centre, guiding_velocity, deformation, deformation_rate, centres, masses, core_radius, dt
+            )

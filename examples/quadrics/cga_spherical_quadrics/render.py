@@ -1,13 +1,13 @@
-"""Spherical quadrics on S², painted on the GPU by a shader whose geometry is written in numga.
+"""Implicit GPU rendering of spherical quadrics on the front hemisphere of the unit sphere.
 
-Each pixel of the front hemisphere, seen along z, is a point of S², the sphere's centre plus a unit direction,
-`centre + (directions * vec3<f32>(across, height)).sum()`, and it takes the colour of the last body whose
-quadric's form, `quadrics[body](point) & point`, is negative there.
+Each pixel on the orthographic front hemisphere lifts to a null conformal point equal to the sphere's centre plus its
+unit spatial direction, and takes the colour of the last quadric in the stack whose quadratic form
+`quadrics[body](point) & point` is negative there.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import numpy as np
@@ -15,15 +15,14 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.quadrics.cga_spherical_quadrics.core import Plane, Point, Quadric, ga, mv
-from examples.util.wgsl import Shader, supersampled
+from numga.wgsl import Shader, supersampled
 
-# The colours of the background, of the disk and of its rim; where the rim begins: the squared distance from the
-# disk's centre, in its radii, past which a pixel is rim.
-BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
-RIM_START = 0.985
-# The sphere's centre and the directions x, y and z: the centre plus a unit direction is a point of S².
-centre = mv.w.dual()                                                          # [] Point-
-directions = stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))                   # [3] Direction-
+# Colours of the background, sphere disk, and rim, and the squared screen radius where the rim begins.
+background_hex, disk_hex, rim_hex = "#0a0f1d", "#111827", "#334155"
+rim_start = 0.985
+# The sphere's centre plus a unit combination of the three spatial directions forms a null point on the unit sphere.
+centre = mv.w.dual()                                                           # [] Point-
+directions = stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))                    # [3] Point-
 
 source = """
 var<storage, read> quadrics: array<Quadric>;
@@ -41,7 +40,7 @@ fn sample(place: vec2<f32>) -> Sample {
     if (squared > rim_start) {
         return rim;
     }
-    // The point of S² under the sample, on the front hemisphere: the centre plus a unit direction.
+    // Lift the screen sample to the front hemisphere as the sphere's centre plus a unit direction.
     let point = centre + foot + toward * sqrt(1 - squared);
     var colour = disk;
     for (var body = 0u; body < arrayLength(&quadrics); body++) {
@@ -56,16 +55,29 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 @cache
-def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric),
-                  dict(centre=centre, directions=directions, toward=directions[2], rim_start=RIM_START, disk=to_rgb(DISK), rim=to_rgb(RIM), background=to_rgb(BACKGROUND)))
+def hemisphere_shader() -> Shader:
+    """Compiles and caches the supersampled WebGPU shader that shades quadric regions on the front hemisphere."""
+    return Shader(
+        supersampled() + source,
+        ga,
+        dict(Point=Point, Plane=Plane, Quadric=Quadric),
+        dict(
+            centre=centre,
+            directions=directions,
+            toward=directions[2],
+            rim_start=rim_start,
+            disk=to_rgb(disk_hex),
+            rim=to_rgb(rim_hex),
+            background=to_rgb(background_hex),
+        ),
+    )
 
 
-def vortex_frames(world: Quadric, colors: list[str], resolution: int) -> Iterator[np.ndarray]:
-    """One frame per row of world quadrics: a pixel takes the colour of the last quadric whose form is
-    negative there, averaged over its samples."""
+def vortex_animation(colors: list[str], resolution: int, states: Iterable[Quadric]) -> Iterator[np.ndarray]:
+    """Renders each state of `[n_quadrics] Plane+ <- Point-` into a `[resolution, resolution, 3]` `uint8` RGB frame on
+    the front hemisphere."""
     rgb = np.array([to_rgb(color) for color in colors])
-    painter = shader()
-    for quadrics in world:
+    painter = hemisphere_shader()
+    for quadrics in states:
         yield np.round(np.clip(painter((resolution, resolution), quadrics=quadrics, colours=rgb)["image"], 0, 1)
                        * 255).astype(np.uint8)

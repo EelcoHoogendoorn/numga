@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import warnings
-
 import pytest
 
 from numga import Algebra, GATypeError
@@ -160,13 +158,6 @@ def test_incomparable_overlap_warns_and_uses_declaration_order():
 
     assert dispatch.resolve(actual) is structural
 
-    acknowledged = GATypeDispatch("acknowledged", algebra, 1, takes="a value")
-    acknowledged.register(even)(structural)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        acknowledged.register(unit, precedence="declaration")(factual)
-    assert not caught
-
 
 def test_multiple_dispatch_uses_product_order_specificity():
     algebra = Algebra("x+y+")
@@ -185,13 +176,11 @@ def test_multiple_dispatch_uses_product_order_specificity():
     def left_specific(left, right):
         return left, right
 
-    @dispatch.register(
-        generic_map,
-        vector_value,
-        precedence="declaration",
-    )
-    def right_specific(left, right):
-        return left, right
+    with pytest.warns(AmbiguousGATypeDispatchWarning):
+
+        @dispatch.register(generic_map, vector_value)
+        def right_specific(left, right):
+            return left, right
 
     @dispatch.register(generic_map, generic_value)
     def fallback(left, right):

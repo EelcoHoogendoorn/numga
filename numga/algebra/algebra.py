@@ -1,18 +1,37 @@
-"""Canonical bit-blade algebra for an orthogonal diagonal metric."""
+"""A finite-dimensional geometric algebra with up to 64 orthogonal generators maps each canonical
+basis blade to a non-negative integer bit mask whose `i`-th bit records generator `i` in increasing
+index order. Because the metric is diagonal with entries in `(+1, -1, 0)`, the geometric product of
+any two canonical basis blades produces a single output mask `left ^ right` scaled by an integer
+sign in `(-1, 0, +1)` combining pairwise generator swaps with negative and null metric contractions.
+
+`Algebra` accepts an `AlgebraDescription`, a compact interleaved string such as `"x+y+z+w0"`, or a
+`(p, q, r)` count tuple; per-generator metric sequences go through `Algebra.from_signature` so a
+three-dimensional metric tuple `(1, 1, 1)` cannot collide with signature counts. Instances are
+weakly interned by `(description, subspace_factory, gatype_factory, multivector_factory)` so
+repeated constructions of `Algebra("x+y+")` return the same `Algebra` object and their extensors
+interoperate, whereas stock algebras with custom layouts or value constructors such as `PGA3D`
+remain distinct from plain `Algebra("w0x+y+z+")`.
+
+Each `Algebra` owns the per-algebra flyweight namespaces that are independent of a numerical array
+backend: `subspace` for signed blade layouts, `gatype` for whole-extensor types and static trait
+deduction, `operator` for exact bilinear kernels, and `exact` for symbolic integer-array execution,
+while storing the `multivector_factory` callable bound by each numerical `Context`.
+"""
 
 from __future__ import annotations
 
-import weakref
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from operator import index
-from typing import TYPE_CHECKING, Callable, Iterable, NamedTuple, Sequence
+from types import NotImplementedType
+from typing import TYPE_CHECKING, NamedTuple
+import weakref
 
 import numpy as np
 
 from .bitops import (
     bit_count,
     mask_from_indices,
-    parity_sign,
     parity_to_sign,
     permutation_sign,
     unsigned_dtype,
@@ -29,7 +48,8 @@ if TYPE_CHECKING:
 
 
 class BladeProduct(NamedTuple):
-    """One term of a canonical basis-blade geometric product."""
+    """Multiplying two canonical basis blades yields an integer `coefficient` in `(-1, 0, +1)` and
+    a canonical output `blade` mask."""
 
     coefficient: int
     blade: int
@@ -40,7 +60,8 @@ class BladeProduct(NamedTuple):
 
 
 class OrientedBlade(NamedTuple):
-    """A spelled blade reduced to a canonical mask and orientation."""
+    """Parsing a spelled exterior blade yields its canonical `blade` mask and permutation `sign` in
+    `(-1, +1)`."""
 
     blade: int
     sign: int
@@ -52,7 +73,8 @@ class OrientedBlade(NamedTuple):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class ProductTable:
-    """Dense blade and coefficient tables for two ordered mask sequences."""
+    """Pairwise geometric products across two ordered blade sequences store immutable output
+    `blades` and integer `coefficients` matrices."""
 
     blades: np.ndarray
     coefficients: np.ndarray
@@ -63,8 +85,8 @@ class ProductTable:
         if blades.shape != coefficients.shape or blades.ndim != 2:
             raise ValueError("product-table arrays must be equally shaped matrices")
 
-        # Arrays backed by immutable bytes cannot be made writeable again by a
-        # consumer, unlike an owning ndarray with only its flag cleared.
+        # Arrays backed by immutable bytes cannot be made writeable again by a caller,
+        # unlike an owning ndarray with only its writeable flag cleared.
         frozen_blades = np.frombuffer(blades.tobytes(), dtype=blades.dtype).reshape(
             blades.shape
         )
@@ -79,15 +101,13 @@ class ProductTable:
         return self.blades.shape
 
 
-def _describe(spec: AlgebraDescription | str | tuple[int, int, int]) -> AlgebraDescription:
-    """The description an algebra's specification names: a description as it is, compact notation parsed, or a
-    ``(p, q, r)`` tuple of signature counts."""
-    if isinstance(spec, AlgebraDescription):
-        description = spec
-    elif isinstance(spec, str):
-        description = AlgebraDescription.parse(spec)
-    elif isinstance(spec, tuple) and len(spec) == 3:
-        description = AlgebraDescription.from_pqr(*spec)
+def _describe(specification: AlgebraDescription | str | tuple[int, int, int]) -> AlgebraDescription:
+    if isinstance(specification, AlgebraDescription):
+        description = specification
+    elif isinstance(specification, str):
+        description = AlgebraDescription.parse(specification)
+    elif isinstance(specification, tuple) and len(specification) == 3:
+        description = AlgebraDescription.from_pqr(*specification)
     else:
         raise TypeError(
             "Algebra expects an AlgebraDescription, compact string, or (p, q, r) tuple"
@@ -97,42 +117,31 @@ def _describe(spec: AlgebraDescription | str | tuple[int, int, int]) -> AlgebraD
     return description
 
 
-# The algebras built so far, by their description and factories, kept while anything holds them: constructing an
-# algebra again gives the same object, so that the values of two constructions mix.
-_interned: "weakref.WeakValueDictionary[tuple, Algebra]" = weakref.WeakValueDictionary()
+# Weakly interning algebras by description and factory callables lets repeated constructions share one Algebra instance.
+_interned = weakref.WeakValueDictionary()
 
 
 @dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class Algebra:
-    """An immutable geometric algebra with canonical integer bit blades.
-
-    ``Algebra(spec)`` accepts an :class:`AlgebraDescription`, compact notation
-    such as ``"x+y+z+w0"``, or a ``(p, q, r)`` tuple. A signature tuple is
-    intentionally not accepted by this shorthand; use :meth:`from_signature`
-    when the tuple contains metric entries rather than signature counts.
-
-    Equal constructions are one object: an algebra is interned by its description and
-    its factories, so ``Algebra("x+y+") is Algebra("x+y+")`` and the values made in the
-    two mix, while an algebra given its own factories, such as the stock ``PGA3D``, stays
-    distinct from the plain construction of its signature.
-    """
+    """An immutable geometric algebra represents basis blades as canonical integer bit masks and
+    interns instances by description and factory callables."""
 
     description: AlgebraDescription
     _subspace_factory: SubSpaceFactory = field(compare=False, repr=False)
     _gatype_factory: GATypeFactory = field(compare=False, repr=False)
     _exact_context: ExactContext = field(compare=False, repr=False)
     _operator_factory: OperatorFactory = field(compare=False, repr=False)
-    _multivector_factory: Callable[[Context], MultivectorFactory] = field(compare=False, repr=False)
+    _multivector_factory: Callable = field(compare=False, repr=False)
 
     def __new__(
         cls,
-        spec: AlgebraDescription | str | tuple[int, int, int],
+        specification: AlgebraDescription | str | tuple[int, int, int],
         *,
-        subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
-        gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
-        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
-    ) -> "Algebra":
-        key = (_describe(spec), subspace_factory, gatype_factory, multivector_factory)
+        subspace_factory: Callable | None = None,
+        gatype_factory: Callable | None = None,
+        multivector_factory: Callable | None = None,
+    ) -> Algebra:
+        key = (_describe(specification), subspace_factory, gatype_factory, multivector_factory)
         try:
             return _interned[key]
         except KeyError:
@@ -142,23 +151,21 @@ class Algebra:
 
     def __init__(
         self,
-        spec: AlgebraDescription | str | tuple[int, int, int],
+        specification: AlgebraDescription | str | tuple[int, int, int],
         *,
-        subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
-        gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
-        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
+        subspace_factory: Callable | None = None,
+        gatype_factory: Callable | None = None,
+        multivector_factory: Callable | None = None,
     ) -> None:
-        # An interned algebra handed back by `__new__` is built already.
+        # Returning an already-interned instance from __new__ still invokes __init__.
         try:
             self.description
             return
         except AttributeError:
             pass
-        object.__setattr__(self, "description", _describe(spec))
+        object.__setattr__(self, "description", _describe(specification))
 
-        # Construction namespaces are owned by the algebra, so their flyweight
-        # pools have the same natural lifetime. This is separate from the
-        # deliberately type-level registry of Extensor extension methods.
+        # Owning the construction namespaces ties their flyweight pools to the algebra's lifetime.
         from numga.backend.exact import ExactContext
         from numga.gatype.factory import GATypeFactory
         from numga.operator.factory import OperatorFactory
@@ -166,8 +173,7 @@ class Algebra:
 
         object.__setattr__(self, "_subspace_factory", (subspace_factory or SubSpaceFactory)(self))
         object.__setattr__(self, "_gatype_factory", (gatype_factory or GATypeFactory)(self))
-        # Each context builds its value constructors from this, so an algebra's specialization (points
-        # in projective algebras) reaches every backend.
+        # Storing the multivector factory callable lets every Context specialize value constructors.
         from numga.multivector.factory import MultivectorFactory
         object.__setattr__(self, "_multivector_factory", multivector_factory or MultivectorFactory)
         object.__setattr__(self, "_exact_context", ExactContext(self))
@@ -178,10 +184,10 @@ class Algebra:
         cls,
         description: AlgebraDescription,
         *,
-        subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
-        gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
-        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
-    ) -> "Algebra":
+        subspace_factory: Callable | None = None,
+        gatype_factory: Callable | None = None,
+        multivector_factory: Callable | None = None,
+    ) -> Algebra:
         return cls(
             description,
             subspace_factory=subspace_factory,
@@ -192,13 +198,15 @@ class Algebra:
     @classmethod
     def from_signature(
         cls,
-        signature: str | Iterable[int],
-        basis_names: Sequence[str] | None = None,
+        signature: Iterable[int],
+        basis_names: Iterable[str] | None = None,
         *,
-        subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
-        gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
-        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
-    ) -> "Algebra":
+        subspace_factory: Callable | None = None,
+        gatype_factory: Callable | None = None,
+        multivector_factory: Callable | None = None,
+    ) -> Algebra:
+        """Per-generator metric squares in `(-1, 0, +1)` build an algebra without colliding with
+        `(p, q, r)` count tuples."""
         return cls(
             AlgebraDescription.from_signature(signature, basis_names),
             subspace_factory=subspace_factory,
@@ -212,12 +220,13 @@ class Algebra:
         p: int,
         q: int,
         r: int,
-        basis_names: Sequence[str] | None = None,
+        basis_names: Iterable[str] | None = None,
         *,
-        subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
-        gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
-        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
-    ) -> "Algebra":
+        subspace_factory: Callable | None = None,
+        gatype_factory: Callable | None = None,
+        multivector_factory: Callable | None = None,
+    ) -> Algebra:
+        """Signature counts `(p, q, r)` order `+1` generators before `-1` and `0`."""
         return cls(
             AlgebraDescription.from_pqr(p, q, r, basis_names),
             subspace_factory=subspace_factory,
@@ -247,26 +256,22 @@ class Algebra:
 
     @property
     def subspace(self) -> SubSpaceFactory:
-        """Canonical SubSpace construction namespace for this algebra."""
-
+        """Canonical `SubSpace` supports and signed blade layouts are pooled per algebra."""
         return self._subspace_factory
 
     @property
     def gatype(self) -> GATypeFactory:
-        """Canonical whole-extensor type factory for this algebra."""
-
+        """Whole-extensor `GAType` instances and static trait derivations are pooled per algebra."""
         return self._gatype_factory
 
     @property
     def operator(self) -> OperatorFactory:
-        """Canonical exact operation factory for this algebra."""
-
+        """Exact bilinear and unary `SymbolicKernel` tables are cached per algebra."""
         return self._operator_factory
 
     @property
     def exact(self) -> ExactContext:
-        """The algebra-owned exact Extensor execution context."""
-
+        """Symbolic integer-array execution runs in an algebra-owned `ExactContext`."""
         return self._exact_context
 
     @property
@@ -275,8 +280,8 @@ class Algebra:
 
     @property
     def blade_masks(self) -> range:
-        """All canonical blade masks, without eagerly allocating them."""
-
+        """Canonical integer blade masks span `range(blade_count)` lazily without allocating an
+        array."""
         return range(self.blade_count)
 
     @property
@@ -379,32 +384,35 @@ class Algebra:
         return arr.astype(self.blade_dtype)
 
     def bit_dot(
-        self, a: int | np.ndarray, b: int | np.ndarray
+        self, left: int | np.ndarray, right: int | np.ndarray
     ) -> int | np.ndarray:
-        """Dot-product between bit-blades, counting their shared high bits."""
-        if isinstance(a, (int, np.integer)) and isinstance(b, (int, np.integer)):
-            return (int(a) & int(b)).bit_count()
-        return bit_count(np.bitwise_and(a, b))
+        """Bitwise overlap counts how many basis generators appear in both `left` and `right`."""
+        if isinstance(left, (int, np.integer)) and isinstance(right, (int, np.integer)):
+            return (int(left) & int(right)).bit_count()
+        return bit_count(np.bitwise_and(left, right))
 
-    def grade(self, blade: int | Sequence[int] | np.ndarray) -> int | np.ndarray:
-        """Grade of each blade; number of basis vectors present in each blade."""
+    def grade(self, blade: int | Iterable[int] | np.ndarray) -> int | np.ndarray:
+        """Set bits in a canonical blade mask count the basis generators in its wedge product."""
         if isinstance(blade, (int, np.integer)):
             return self._mask(blade).bit_count()
         return bit_count(self._masks_to_array(blade))
 
-    def complement(self, blade: int | Sequence[int] | np.ndarray) -> int | np.ndarray:
-        """Complement of a blade or set of blades."""
+    def complement(self, blade: int | Iterable[int] | np.ndarray) -> int | np.ndarray:
+        """XORing with `pseudoscalar_mask` toggles every generator bit to give the unsigned
+        complement mask."""
         if isinstance(blade, (int, np.integer)):
             return self._mask(blade) ^ self.pseudoscalar_mask
         return np.bitwise_xor(self._masks_to_array(blade), self.pseudoscalar_mask)
 
-    def involute_sign(self, blade: int | Sequence[int] | np.ndarray) -> int | np.ndarray:
+    def involute_sign(self, blade: int | Iterable[int] | np.ndarray) -> int | np.ndarray:
+        """Grade involution multiplies grade `k` by `(-1)**k`."""
         grade = self.grade(blade)
         return parity_to_sign(grade)
 
     involute = involute_sign
 
-    def reverse_sign(self, blade: int | Sequence[int] | np.ndarray) -> int | np.ndarray:
+    def reverse_sign(self, blade: int | Iterable[int] | np.ndarray) -> int | np.ndarray:
+        """Reversing generator order in a `k`-blade multiplies by `(-1)**(k * (k - 1) // 2)`."""
         grade = self.grade(blade)
         if isinstance(grade, (int, np.integer)):
             return parity_to_sign(int(grade) * (int(grade) - 1) // 2)
@@ -412,7 +420,9 @@ class Algebra:
 
     reverse = reverse_sign
 
-    def conjugate_sign(self, blade: int | Sequence[int] | np.ndarray) -> int | np.ndarray:
+    def conjugate_sign(self, blade: int | Iterable[int] | np.ndarray) -> int | np.ndarray:
+        """Clifford conjugation composes grade involution with reversion, multiplying grade `k` by
+        `(-1)**(k * (k + 1) // 2)`."""
         grade = self.grade(blade)
         if isinstance(grade, (int, np.integer)):
             return parity_to_sign(int(grade) * (int(grade) + 1) // 2)
@@ -421,84 +431,52 @@ class Algebra:
     conjugate = conjugate_sign
 
     def cayley(
-        self, a: np.ndarray, b: np.ndarray
+        self, left: np.ndarray, right: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Cayley table of the geometric product a * b.
-
-        Parameters
-        ----------
-        a: np.ndarray, [...], blade_dtype
-            Basis blades encoded as integer bit patterns.
-        b: np.ndarray, [...], blade_dtype
-            Basis blades encoded as integer bit patterns.
-
-        Returns
-        -------
-        cayley: np.ndarray, [...], blade_dtype
-            Bit patterns of the blades that the product maps to.
-        swaps: np.ndarray, [...], np.int8
-            Minimal number of pairwise swaps required to reorder basis vectors back
-            to canonical sorted order.
-        """
-        a = np.asarray(a, dtype=self.blade_dtype)
-        b = np.asarray(b, dtype=self.blade_dtype)
-        cayley = np.bitwise_xor(a, b)
+        """Pairwise XOR gives the output blade masks of `left * right`, paired with the adjacent
+        generator swap counts needed to restore canonical increasing generator order."""
+        left = np.asarray(left, dtype=self.blade_dtype)
+        right = np.asarray(right, dtype=self.blade_dtype)
+        cayley = np.bitwise_xor(left, right)
 
         if self.dimension > 1:
-            shifted = b
+            shifted = right
             swaps = 0
             for _ in range(self.dimension - 1):
                 shifted = np.left_shift(shifted, 1)
-                swaps = swaps + self.bit_dot(a, shifted)
+                swaps = swaps + self.bit_dot(left, shifted)
             swaps = np.asarray(swaps, dtype=np.int8)
         else:
-            swaps = np.zeros(np.broadcast_shapes(a.shape, b.shape), dtype=np.int8)
+            swaps = np.zeros(np.broadcast_shapes(left.shape, right.shape), dtype=np.int8)
 
         return cayley, swaps
 
     def product(
-        self, a: Iterable[int] | np.ndarray, b: Iterable[int] | np.ndarray
+        self, left: Iterable[int] | np.ndarray, right: Iterable[int] | np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Construct geometric product between elements of a and b.
+        """Evaluating the outer geometric product across two blade sequences yields
+        `[len(left), len(right)]` arrays of canonical output masks and `int8` signs in `(-1, 0, +1)`
+        combining reordering swaps with metric contractions."""
+        arr_left = self._masks_to_array(left)
+        arr_right = self._masks_to_array(right)
 
-        Parameters
-        ----------
-        a: np.ndarray, [A], blade_dtype
-            Basis blades encoded as integer bit patterns.
-        b: np.ndarray, [B], blade_dtype
-            Basis blades encoded as integer bit patterns.
-
-        Returns
-        -------
-        cayley: np.ndarray, [A, B], blade_dtype
-            Bit patterns of the blades that the product maps to.
-        signs: np.ndarray, [A, B], np.int8
-            Signs / coefficients of the product.
-        """
-        arr_a = self._masks_to_array(a)
-        arr_b = self._masks_to_array(b)
-
-        # Basis vectors occurring on both sides, eliminated by the metric
-        doubles = np.bitwise_and.outer(arr_a, arr_b)
+        # Generators present on both sides contract under the diagonal metric.
+        doubles = np.bitwise_and.outer(arr_left, arr_right)
         negatives = self.bit_dot(doubles, self.negative_mask)
         zeros = self.bit_dot(doubles, self.degenerate_mask)
 
-        cayley, swaps = self.cayley(arr_a[:, None], arr_b[None, :])
+        cayley, swaps = self.cayley(arr_left[:, None], arr_right[None, :])
         signs = parity_to_sign(negatives + swaps) * (zeros == 0)
         return cayley, signs.astype(np.int8)
 
     def parse_blade(self, blade: str | Iterable[str]) -> OrientedBlade:
-        """Normalize a spelled exterior blade to canonical mask and sign.
-
-        A string may be ``"1"`` for the scalar, one exact generator name,
-        caret-delimited tokens such as ``"e0^e1"``, or concatenated one-character
-        generator names such as ``"yx"``. An iterable of names is always
-        unambiguous and is preferred for multi-character generators.
-        """
-
+        """Parsing an exterior blade spelling yields its canonical generator mask and permutation
+        sign. Strings accept `"1"` or `""` for the scalar, a single generator name, caret-delimited
+        tokens such as `"e0^e1"`, or concatenated single-character names such as `"yx"`, while
+        string iterables resolve multi-character generator names directly."""
         if isinstance(blade, str):
             if blade in ("", "1"):
-                tokens: tuple[str, ...] = ()
+                tokens = ()
             elif "^" in blade:
                 tokens = tuple(blade.split("^"))
                 if any(not token for token in tokens):
@@ -514,7 +492,7 @@ class Algebra:
         else:
             tokens = tuple(blade)
 
-        positions: list[int] = []
+        positions = []
         for token in tokens:
             if not isinstance(token, str):
                 raise TypeError("blade tokens must be strings")
@@ -531,8 +509,8 @@ class Algebra:
         )
 
     def blade_name(self, blade: int) -> str:
-        """Format a canonical mask in increasing generator order."""
-
+        """Canonical blade names list generators in increasing index order, joined with `"^"` when
+        any generator name has multiple characters, with mask `0` named `"1"`."""
         mask = self._mask(blade)
         if mask == 0:
             return "1"
@@ -545,9 +523,8 @@ class Algebra:
         return separator.join(names)
 
     def oriented_blade_name(self, blade: int, sign: int) -> str:
-        """Name an oriented blade as the subspace parser reads it: a negative orientation swaps
-        the first two generators, zx for -xz, and only a scalar or a vector takes a minus sign."""
-
+        """Negative orientation swaps the first two generators (`"zx"` for `-"xz"`), using a leading
+        `"-"` only on scalars and vectors so spellings round-trip through `subspace.from_blades`."""
         name = self.blade_name(blade)
         if sign > 0:
             return name
@@ -558,12 +535,9 @@ class Algebra:
         return separator.join([names[1], names[0], *names[2:]])
 
     def geometric_product(self, left: int, right: int) -> BladeProduct:
-        """Multiply two canonical basis blades.
-
-        The result remains a single blade because the supported metric is
-        diagonal. A degenerate contraction returns coefficient zero and the
-        deterministic XOR output mask; callers discard zero terms.
-        """
+        """Two canonical basis blades multiply to a single output mask `left ^ right` and integer
+        coefficient in `(-1, 0, +1)`; contractions on null generators return coefficient `0` with
+        the deterministic XOR mask."""
         left_mask = self._mask(left)
         right_mask = self._mask(right)
         output = left_mask ^ right_mask
@@ -586,11 +560,14 @@ class Algebra:
         left_blades: Iterable[int],
         right_blades: Iterable[int],
     ) -> ProductTable:
-        """Build the dense canonical product table for two ordered supports."""
+        """Ordered left and right blade supports determine an immutable `ProductTable` of canonical
+        output masks and integer signs."""
         blades, coefficients = self.product(left_blades, right_blades)
         return ProductTable(blades, coefficients)
 
-    def __mul__(self, other: object) -> "Algebra":
+    def __mul__(self, other: object) -> Algebra | NotImplementedType:
+        """Multiplying two algebras with disjoint generator names constructs their orthogonal
+        direct-sum algebra."""
         if not isinstance(other, Algebra):
             return NotImplemented
         return Algebra(self.description * other.description)

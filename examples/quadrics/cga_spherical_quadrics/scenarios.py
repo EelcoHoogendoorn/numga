@@ -1,63 +1,77 @@
-"""Spherical quadric shapes on S², and the conformal vortex that carries them."""
+"""Named spherical quadric presets and the intersecting-circle conformal vortex scenario."""
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from numga import concatenate, stack
 from examples.quadrics.cga_spherical_quadrics.core import (
-    Point, Quadric, flow, make_bernoulli_lemniscate, make_conical_donut, make_eccentric_cyclide, make_pinched_horn,
-    make_spherical_cassini, make_spherical_clover, make_spherical_crescent, make_spherical_hourglass,
-    make_spherical_parabola, make_spherical_spindle, mv, point,
+    Point,
+    Quadric,
+    bernoulli_lemniscate,
+    conformal_flow,
+    conical_donut,
+    eccentric_cyclide,
+    mv,
+    pinched_horn,
+    sphere_points,
+    spherical_cassini,
+    spherical_clover,
+    spherical_crescent,
+    spherical_hourglass,
+    spherical_parabola,
+    spherical_spindle,
 )
 
-# The two circles whose intersection generates the flow: each the plane z tilted toward x or y, and its radius.
-FIRST_TILT, FIRST_RADIUS = 0.35, np.radians(48.0)
-SECOND_TILT, SECOND_RADIUS = 0.40, np.radians(52.0)
-# The shapes carried, by name in `shapes`; the frames of one turn, the pixels across, and a frame's duration in
-# milliseconds.
+# Tilts and angular radii of the two off-axis circles whose intersection 2-blade drives the conformal vortex.
+first_tilt, first_radius = 0.35, np.radians(48)
+second_tilt, second_radius = 0.40, np.radians(52)
+# Preset names rendered in `main`, frame count for one period, image resolution in pixels, and frame duration in ms.
 shape_names = ["trio"]
-n_animation_frames = 50
+n_frames = 50
 resolution = 300
-frame_duration = 40
+frame_duration_ms = 40
+
+# Each circle is a tilted plane shifted by the cosine of its angular radius along w; their wedge generates the flow.
+first_turn = (mv.zx * (-first_tilt / 2)).exp()                                            # [] Rotor+
+second_turn = (mv.zy * (-second_tilt / 2)).exp()                                          # [] Rotor+
+first_circle = (first_turn >> mv.z) + np.cos(first_radius) * mv.w                         # [] Plane+
+second_circle = (second_turn >> mv.z) + np.cos(second_radius) * mv.w                      # [] Plane+
+generator = (first_circle ^ second_circle).normalized()                                   # [] Bivector+
 
 
-# The two circles, each the vector of its plane with the cosine of its radius on w, meet in a 2-blade: its
-# exponential is the conformal flow.
-first = ((mv.zx * (-FIRST_TILT / 2)).exp() >> mv.z) + mv.w * np.cos(FIRST_RADIUS)        # [] Plane+
-second = ((mv.zy * (-SECOND_TILT / 2)).exp() >> mv.z) + mv.w * np.cos(SECOND_RADIUS)     # [] Plane+
-generator = (first ^ second).normalized()                                                # [] Bivector+
-
-
-def shapes() -> dict[str, tuple[Quadric, list[str]]]:
-    """Every shape, tilted into view by a rotor, with its colour; the trio combines three of them."""
+def shape_catalogue() -> dict[str, tuple[Quadric, list[str]]]:
+    """Twelve named spherical quadrics tilted into view with their display colours, plus the three-shape `trio` stack
+    (`[n_quadrics] Plane+ <- Point-`)."""
     single = {
-        # Donut (solid ring and central hole) that narrows and meets in a sharp conical apex.
-        "conical_donut": (make_conical_donut(0.55, 0.22), (mv.xz * -0.20).exp(), "#38bdf8"),
+        # Ring narrowing to a conical apex at the north pole.
+        "conical_donut": (conical_donut(0.55, 0.22), (mv.xz * -0.20).exp(), "#38bdf8"),
         # Pinched-waist Cassini oval.
-        "peanut": (make_spherical_cassini(np.radians(25.0), np.radians(25.0), 0.012), (mv.yz * 0.30).exp(), "#f59e0b"),
-        # Two disconnected droplet beads.
-        "islands": (make_spherical_cassini(np.radians(25.0), np.radians(25.0), 0.006), (mv.yz * 0.30).exp(), "#10b981"),
-        # Figure-8 with two symmetric lobes crossing at a node.
-        "lemniscate": (make_bernoulli_lemniscate(0.38), (mv.yz * 0.0).exp(), "#a855f7"),
-        # Eccentric sickle with two sharp cusps.
-        "crescent": (make_spherical_crescent(np.radians(45.0), np.radians(24.0), np.radians(16.0)), (mv.yz * 0.25).exp(), "#fb7185"),
+        "peanut": (spherical_cassini(np.radians(25), np.radians(25), 0.012), (mv.yz * 0.30).exp(), "#f59e0b"),
+        # Disconnected twin Cassini islands.
+        "islands": (spherical_cassini(np.radians(25), np.radians(25), 0.006), (mv.yz * 0.30).exp(), "#10b981"),
+        # Figure-eight with two symmetric lobes crossing at a node.
+        "lemniscate": (bernoulli_lemniscate(0.38), (mv.yz * 0.0).exp(), "#a855f7"),
+        # Eccentric sickle with two cusps.
+        "crescent": (spherical_crescent(np.radians(45), np.radians(24), np.radians(16)), (mv.yz * 0.25).exp(), "#fb7185"),
         # Eccentric Dupin cyclide with unequal tube width.
-        "cyclide": (make_eccentric_cyclide(np.radians(34.0), np.radians(13.0), 0.65), (mv.yz * 0.30).exp(), "#fbbf24"),
-        # Pinched horn cyclide with a singular self-touching cusp.
-        "pinched": (make_pinched_horn(np.radians(65.0)), (mv.yz * 0.35).exp(), "#f43f5e"),
-        # Spindle with two sharp opposite conical poles.
-        "spindle": (make_spherical_spindle(1.8, 0.8, 0.35), (mv.yz * 0.30).exp(), "#06b6d4"),
-        # Asymmetric Cassini droplet tapering to a fine tail.
-        "teardrop": (make_spherical_cassini(np.radians(10.0), np.radians(35.0), 0.010), (mv.yz * 0.30).exp(), "#ec4899"),
-        # Triadic 3-lobed deltoid.
-        "clover": (make_spherical_clover(np.radians(32.0), np.radians(28.0), 0.35), (mv.yz * 0.20).exp(), "#4ade80"),
-        # Vertical hourglass: two symmetric bells connected by a narrow waist.
-        "hourglass": (make_spherical_hourglass(np.radians(24.0), 0.010), (mv.yz * 0.0).exp(), "#f59e0b"),
+        "cyclide": (eccentric_cyclide(np.radians(34), np.radians(13), 0.65), (mv.yz * 0.30).exp(), "#fbbf24"),
+        # Pinched horn cyclide with a self-touching cusp.
+        "pinched": (pinched_horn(np.radians(65)), (mv.yz * 0.35).exp(), "#f43f5e"),
+        # Spindle with two opposite conical poles.
+        "spindle": (spherical_spindle(1.8, 0.8, 0.35), (mv.yz * 0.30).exp(), "#06b6d4"),
+        # Asymmetric Cassini droplet tapering to a tail.
+        "teardrop": (spherical_cassini(np.radians(10), np.radians(35), 0.010), (mv.yz * 0.30).exp(), "#ec4899"),
+        # Three-lobed rounded deltoid.
+        "clover": (spherical_clover(np.radians(32), np.radians(28), 0.35), (mv.yz * 0.20).exp(), "#4ade80"),
+        # Vertical hourglass with two symmetric bulbs and a narrow waist.
+        "hourglass": (spherical_hourglass(np.radians(24), 0.010), (mv.yz * 0.0).exp(), "#f59e0b"),
         # Parabolic bow.
-        "parabola": (make_spherical_parabola(1.0, 0.5, 0.20), (mv.yz * 0.25).exp(), "#f97316"),
+        "parabola": (spherical_parabola(1.0, 0.5, 0.20), (mv.yz * 0.25).exp(), "#f97316"),
     }
-    # Each shape carried into view by its tilt: the point pulled back, the plane pushed forward.
+    # Carry each quadric into view by pulling input points back and pushing output planes forward.
     tilted = {name: (tilt >> quadric(tilt << Point), color) for name, (quadric, tilt, color) in single.items()}
     table = {name: (stack([quadric]), [color]) for name, (quadric, color) in tilted.items()}
     trio = ("conical_donut", "lemniscate", "hourglass")
@@ -65,13 +79,13 @@ def shapes() -> dict[str, tuple[Quadric, list[str]]]:
     return table
 
 
-def vortex(names: list[str], n_frames: int) -> tuple[Quadric, list[str]]:
-    """The chosen shapes carried once around by the exponential of two circles' intersection."""
-    table = shapes()
-    quadrics = concatenate([table[name][0] for name in names])
+def vortex_states(names: list[str], n_steps: int) -> tuple[Iterator[Quadric], list[str]]:
+    """Selected preset quadrics and their colours pair with a streaming `conformal_flow` iterator over `n_steps`
+    frames."""
+    table = shape_catalogue()
+    quadrics = concatenate([table[name][0] for name in names])                            # [n_quadrics] Plane+ <- Point-
     colors = [color for name in names for color in table[name][1]]
-    world = flow(quadrics, generator, np.linspace(0.0, 2.0 * np.pi, n_frames, endpoint=False))
-    return world, colors
+    return conformal_flow(quadrics, generator, n_steps), colors
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -79,18 +93,30 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.quadrics.cga_spherical_quadrics import render
 
-    world, colors = vortex(shape_names, n_animation_frames)
-    save_animation(render.vortex_frames(world, colors, resolution), f"cga_{'_'.join(shape_names)}_vortex", frame_duration)
+    states, colors = vortex_states(shape_names, n_frames)
+    kept: list[Quadric] = []
+
+    def recorded() -> Iterator[Quadric]:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(
+        render.vortex_animation(colors, resolution, recorded()),
+        f"cga_{'_'.join(shape_names)}_vortex",
+        frame_duration_ms,
+    )
 
     # checks
-    # The flow is conformal, so points of S² stay null; and a full turn brings every quadric back.
-    quadrics = concatenate([shapes()[name][0] for name in shape_names])
-    probes = point(np.array([[0.6, 0.0, 0.8], [0.0, -0.28, 0.96], [0.36, 0.48, 0.8]]))
-    carried = (generator * 0.4).exp() >> probes
-    np.testing.assert_allclose((carried | carried).to_array(), 0.0, atol=1e-12)
-    returned = flow(quadrics, generator, np.array([2.0 * np.pi]))[0]
-    np.testing.assert_allclose((returned(probes[:, None]) & probes[:, None]).to_array(),
-                               (quadrics(probes[:, None]) & probes[:, None]).to_array(), atol=1e-6)
+    # Every streamed quadric stays symmetric under polarity pullback, and stepping one more frame closes the full turn.
+    initial, last = kept[0], kept[-1]
+    probes = sphere_points(np.array([[0.6, 0.0, 0.8], [0.0, -0.28, 0.96], [0.36, 0.48, 0.8]]))
+    assert (((last.adjugate()(probes[0, None]) & probes[1]) - (last(probes[1, None]) & probes[0])).abs() < 1e-12).all()
+    one_step = (generator * (np.pi / n_frames)).exp()                                     # [] Rotor+
+    closed = one_step >> last(one_step << Point)                                          # [3] Plane+ <- Point-
+    assert (((closed(probes[:, None]) & probes[:, None]) - (initial(probes[:, None]) & probes[:, None])).abs() < 1e-6).all()
+    carried_probes = one_step >> probes                                                   # [3] Point-
+    assert ((carried_probes | carried_probes).abs() < 1e-12).all()
 
 
 if __name__ == "__main__":

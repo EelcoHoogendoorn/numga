@@ -1,12 +1,12 @@
-"""Spherical synchronization: directions on a sphere turning while attracting one another, carried by
-one evolving Möbius transformation, in the algebra `x+y+z+t-` of the sphere's conformal geometry.
+"""Spherical synchronization turns a population of directions on a sphere while attracting them toward
+one another through a single evolving Möbius transformation in the sphere's conformal geometry.
 
-A point of the sphere is modelled as a null ray, an antivector, `direction + time`, and a circle as a cut, a vector,
-through which a point passes when `cut & point == 0`. A rotor of this algebra moves points and cuts alike
-and keeps the sphere's circles and their angles: it is a Möbius transformation. When every direction has
-the same natural rotation, the whole population follows one such rotor: its generator is the shared
-rotation less a boost towards the population's mean, `mean.commutator(time)`, the turn from time towards
-the mean, which on the sphere is a tangential attraction.
+Each point on the sphere is modelled as a null ray `direction + time` (`Antivector-`), and each circle
+as a cut (`Vector+`) whose points satisfy `cut & point == 0`. A rotor moves points and cuts together
+while preserving circles and their intersection angles. When every direction shares the same natural
+rotation, one rotor carries the entire population: its bivector rate combines the shared rotation with
+a boost `mean.commutator(time)` toward the population's mean direction, which acts on the sphere as a
+tangential attraction.
 """
 
 from __future__ import annotations
@@ -24,37 +24,40 @@ Cut = ga.gatype.vector()                                             # Vector+
 Point = ga.gatype.antivector()                                       # Antivector-
 Bivector = ga.gatype.bivector()                                      # Bivector+
 Rotor = ga.gatype.rotor()                                            # Rotor+
-# The rays' time direction, which pairs to one with `mv.t`; the dual carries the minus of t's square.
+# The rays' time direction pairs to one with `mv.t`; the dual carries the minus sign of `t`'s square.
 time = -mv.t.dual()                                                  # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
 def directions(points: Point) -> Point:
-    """The unit directions on the sphere of null rays: each scaled to unit time, less its time."""
+    """Rescaling null rays (`[...] Point-`) to unit time and subtracting `time` recovers their unit
+    spatial directions on the sphere."""
     return points / (mv.t & points) - time
 
 
-def generator(rotor: Rotor, seeds: Point, rotation: Bivector, coupling: float) -> Bivector:
-    """The shared rotation, less a boost towards the population's mean direction."""
-    population = directions(rotor >> seeds)                         # [particles] Point-
+def flow_rate(rotor: Rotor, seeds: Point, rotation: Bivector, coupling: float) -> Bivector:
+    """The instantaneous bivector rate combines the shared `rotation` with a boost toward the
+    population's mean direction (`[] Bivector+`)."""
+    population = directions(rotor >> seeds)                         # [...] Point-
     mean = population.mean(axis=-1)                                 # [] Point-
-    # A boost towards the mean becomes tangential attraction on the sphere.
+    # Rescaling each null ray back to the sphere turns this boost into tangential attraction.
     return rotation - coupling * mean.commutator(time)              # [] Bivector+
 
 
 def motion(initial: Rotor, seeds: Point, rotation: Bivector, coupling: float, dt: float) -> Iterator[Rotor]:
-    """The common transformation from the start and after each step, without end, the generator taken
-    at the midpoint of each step."""
-    rotor = initial                                                # [] Rotor+
+    """Yields the common Möbius rotor (`[] Rotor+`) from `initial` onward, advancing each step by the
+    midpoint `flow_rate`."""
+    rotor = initial                                                 # [] Rotor+
     while True:
         yield rotor
-        halfway = (generator(rotor, seeds, rotation, coupling) * (dt / 4)).exp() * rotor   # [] Rotor+
-        rotor = (generator(halfway, seeds, rotation, coupling) * (dt / 2)).exp() * rotor    # [] Rotor+
+        halfway = (flow_rate(rotor, seeds, rotation, coupling) * (dt / 4)).exp() * rotor   # [] Rotor+
+        rotor = (flow_rate(halfway, seeds, rotation, coupling) * (dt / 2)).exp() * rotor   # [] Rotor+
 
 
 # --- plumbing -------------------------------------------------------------------------
 def sphere_points(longitudes: np.ndarray, latitudes: np.ndarray) -> Point:
-    """Unit directions at the given longitudes and latitudes: a reference direction turned twice."""
+    """Turning the reference direction along `longitudes` and `latitudes` places unit spatial directions
+    on the sphere (`[...] Point-`)."""
     longitude = (-mv.xy * (longitudes / 2)).exp()                   # [...] Rotor+
     latitude = (-mv.xz * (latitudes / 2)).exp()                     # [...] Rotor+
     return (longitude * latitude) >> mv.x.dual()                    # [...] Point-

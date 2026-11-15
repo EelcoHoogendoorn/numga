@@ -1,10 +1,6 @@
-"""Drawing for Jeffery orbits: the paths of the long axes on the sphere of directions, and the bodies
-tumbling in the shear flow. The flow runs to the right, its gradient points up, and the normal of the vortex plane
-points out of the picture.
+"""Drawing for Jeffery orbits: long-axis paths on the sphere of directions and rigid ellipsoids tumbling in shear flow.
 
-The bodies are traced solids: each the ellipsoid its shape bounds, cut by its own three planes into eight octants,
-painted light and dark by the signs of the body's own directions in them, so the pattern is carried by the body
-exactly.
+The flow runs to the right, its velocity gradient points up, and the normal to the shear plane points out of the picture. Each body is traced on the GPU as the solid ellipsoid bounded by its dual quadric, cut by its three principal planes into eight octants painted light and dark by parity so rigid turning reads cleanly.
 """
 
 from __future__ import annotations
@@ -20,147 +16,122 @@ from matplotlib.colors import to_rgb
 from numga import concatenate, stack
 from examples.fluids.jeffery import core
 from examples.util import charts
-from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, simplices, solids
+from examples.util.panels import labels, show
 
-# The colours of the starts, of the bodies, of the flow and of the frame's names. The view as (elevation, azimuth) in
-# degrees: raised from the normal of the vortex plane towards the gradient, then turned towards the flow. Where the
-# marks on the long axis end past its tips, as a share of the axis, and the margin around the farthest of them, as a
-# share of it.
-STARTS = cm.viridis(np.linspace(0.1, 0.9, 5))
-BODY, BODY_DARK, TIP, FLOW, NAMES = "#7dd3fc", "#0369a1", "#f97316", "#94a3b8", "#475569"
-VIEW = (18, 28)
-MARK_END = 1.15
-FRAME_MARGIN = 0.08
-# A body's octants, by the signs of its own directions along its three axes, and their colours: dark where the
-# signs multiply to plus. The width in pixels of the paths of the tips and of the marks past them.
-OCTANTS = np.array(list(product((1.0, -1.0), repeat=3)))                     # [octants, 3]
-OCTANT_COLOURS = np.where((OCTANTS.prod(axis=-1) > 0)[:, None], to_rgb(BODY_DARK), to_rgb(BODY))  # [octants, 3]
-TIP_RGB = np.array(to_rgb(TIP))
-PATH_WIDTH, MARK_WIDTH = 2.0, 3.0
-# The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
-# width in pixels and opacity; the frame's arrows' length in radii of the sphere, the flow's arrows' width and the
-# length of the strokes of the chevrons at their tips in pixels, and how far the frame's names reach; the frame's
-# arrows' width and the radius of the balls at their tips in pixels; the orbits' width in pixels, the margin around the
-# names' reach, and the pixels across a sphere.
-SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
-GRID_WIDTH, GRID_OPACITY = 1.5, 0.3
-FLOW_RGB = np.array(to_rgb(FLOW))
-ARROW_LENGTH, ARROW_WIDTH, ARROW_CHEVRON, LABEL_DISTANCE = 1.35, 3.0, 12.0, 1.47
-SPHERE_ARROW_WIDTH, SPHERE_ARROW_TIP = 1.5, 2.4
-ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 1.5, 0.05, 260
+# Start-tilt colours, body octant colours, tip trail colour, flow arrow colour, and axis label colour.
+start_colours = cm.viridis(np.linspace(0.1, 0.9, 5))
+body_light, body_dark, tip_colour, flow_colour, label_colour = "#7dd3fc", "#0369a1", "#f97316", "#94a3b8", "#475569"
+view_angles = (18, 28)
+mark_end = 1.15
+frame_margin = 0.08
+# Octant sign combinations along the three body axes and their alternating colours.
+octant_signs = np.array(list(product((1, -1), repeat=3)))                     # [8, 3]
+octant_colours = np.where((octant_signs.prod(axis=-1) > 0)[:, None], to_rgb(body_dark), to_rgb(body_light))
+tip_rgb = np.array(to_rgb(tip_colour))
+path_width, mark_width = 2.0, 3.0
+# Unit direction sphere styling, coordinate-frame arrows, and orbit tube width.
+sphere_rgb, sphere_opacity = np.array(to_rgb("#cbd5e1")), 0.15
+grid_width, grid_opacity = 1.5, 0.3
+flow_rgb = np.array(to_rgb(flow_colour))
+arrow_length, arrow_width, arrow_chevron, label_distance = 1.35, 3.0, 12.0, 1.47
+sphere_arrow_width, sphere_arrow_tip = 1.5, 2.4
+orbit_width, orbit_margin, orbit_pixels = 1.5, 0.05, 260
+
+# Rotor cycling core axes into the scene frame so the flow runs right, the gradient points up, and the vortex axis points forward.
+scene_turn = ((solids.mv.x - solids.mv.y) * (solids.mv.y - solids.mv.z)).normalized()   # [] Rotor+
 
 
-# The core's frame turned into the scene's, so that the gradient points up and the order stays right-handed: the
-# flow x to y, the gradient y to z and the normal of the vortex plane z to x, by the mirrors swapping y with z, then
-# x with y.
-to_scene = ((solids.mv.x - solids.mv.y) * (solids.mv.y - solids.mv.z)).normalized()   # [] Rotor+
-
-
-def sphere(view: solids.View) -> tuple[list, list, list]:
-    """The faint unit sphere, traced: the frame of the normal of the vortex plane, the flow and the gradient as arrows,
-    rods with balls at their tips, the sphere's ball translucent among them, and its parallels and meridians inked on
-    it, where their planes cut it."""
-    # The frame: along the normal of the vortex plane, along the flow and along the gradient.
-    tips = solids.origin + solids.axes.dual() * ARROW_LENGTH                  # [3] Point-
-    parts = [(solids.rods(solids.origin, tips, SPHERE_ARROW_WIDTH / 2 * view.pixel), FLOW_RGB),
-             (solids.ball(tips, SPHERE_ARROW_TIP * view.pixel)[:, None], FLOW_RGB)]
-    ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE, SPHERE_OPACITY)]
-    # The parallels: the planes across the vertical through the points the pole turns to at each polar angle; the
-    # meridians: the plane x turned about the vertical by each azimuth.
-    polar_turns = (solids.mv.zx * (-np.radians(np.arange(30, 180, 30)) / 2)).exp()   # [parallels] Rotor+
-    on_parallels = polar_turns >> (solids.origin + solids.mv.z.dual())        # [parallels] Point-
-    parallels = solids.mv.z - solids.mv.w * (solids.mv.z & on_parallels)      # [parallels] Plane+
-    meridians = (solids.mv.xy * (-np.radians(np.arange(0, 180, 30)) / 2)).exp() >> solids.mv.x   # [meridians] Plane+
-    planes = concatenate([parallels, meridians])                              # [circles] Plane+
-    # The ball is the first translucent part, after the opaque ones.
-    grid = solids.Ink(len(parts), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), SPHERE,
-                      GRID_WIDTH, GRID_OPACITY)
+def direction_sphere(view: solids.View) -> tuple[list, list, list]:
+    """Opaque frame arrows, translucent unit ball, and latitude-longitude grid inks for a direction-sphere panel."""
+    arrow_tips = solids.origin + solids.axes.dual() * arrow_length            # [3] Point-
+    parts = [(solids.rods(solids.origin, arrow_tips, sphere_arrow_width / 2 * view.pixel), flow_rgb),
+             (solids.ball(arrow_tips, sphere_arrow_tip * view.pixel)[:, None], flow_rgb)]
+    ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_rgb, sphere_opacity)]
+    # Latitude planes through turned pole points and longitude planes turned around the vertical axis.
+    polar_rotors = (solids.mv.zx * (-np.radians(np.arange(30, 180, 30)) / 2)).exp()     # [5] Rotor+
+    parallel_points = polar_rotors >> (solids.origin + solids.mv.z.dual())              # [5] Point-
+    parallels = solids.mv.z - solids.mv.w * (solids.mv.z & parallel_points)             # [5] Plane+
+    meridian_rotors = (solids.mv.xy * (-np.radians(np.arange(0, 180, 30)) / 2)).exp()   # [6] Rotor+
+    meridians = meridian_rotors >> solids.mv.x                                          # [6] Plane+
+    grid_planes = concatenate([parallels, meridians])                                   # [11] Plane+
+    grid = solids.Ink(len(parts), solids.half_space(grid_planes), solids.everywhere[None].broadcast_to(grid_planes.shape),
+                      sphere_rgb, grid_width, grid_opacity)
     return parts, ball, [grid]
 
 
 @charts.style()
 def draw_orbits(trails: core.Point) -> plt.Figure:
-    """The path of each body's long axis from each start `[steps + 1, bodies, starts]`, on the sphere of
-    directions, both ends of the axis drawn, among the sphere's own surfaces sample by sample."""
-    # Both ends of every long axis, the scene's points the axis reaches from its origin.
-    axis_ends = trails * np.array([1.0, -1.0])[:, None, None, None]          # [ends, steps + 1, bodies, starts] Point-
-    ends = solids.origin + (to_scene >> solids.context.include_from_algebra(axis_ends))   # [ends, steps + 1, bodies, starts]
-    n_ends, n_points, count, n_starts = ends.shape
-    # The paths from every start at both ends of the axis, chains of edges down the steps through a body's points
-    # numbered as they lie, each edge in its start's colour.
-    numbered = np.arange(n_ends * n_points * n_starts).reshape(n_ends, n_points, n_starts)
-    paths = simplices.Topology(numbered.size, np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1).reshape(-1, 2))
-    path_colours = np.broadcast_to(STARTS[:, :3], numbered[:, 1:].shape + (3,)).reshape(-1, 3)
-    view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
-                       np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
-    figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
-    parts, ball, inks = sphere(view)
-    for body in range(count):
-        orbits = simplices.tubes(ends[:, :, body].reshape(-1), paths, path_colours, ORBIT_WIDTH, view,
+    """Render both antipodal ends of each body's long-axis trajectory across the translucent sphere of directions."""
+    axis_ends = trails * np.array([1, -1])[:, None, None, None]                         # [2, ...] Point-
+    scene_offsets = scene_turn >> solids.context.include_from_algebra(axis_ends)        # [2, ...] Point-
+    ends = solids.origin + scene_offsets                                                # [2, ...] Point-
+    n_ends, n_points, n_bodies, n_starts = ends.shape
+    vertex_indices = np.arange(n_ends * n_points * n_starts).reshape(n_ends, n_points, n_starts)
+    paths = Topology(vertex_indices.size,
+                               np.stack([vertex_indices[:, :-1], vertex_indices[:, 1:]], axis=-1).reshape(-1, 2))
+    path_colours = np.broadcast_to(start_colours[:, :3], vertex_indices[:, 1:].shape + (3,)).reshape(-1, 3)
+    view = solids.View(solids.aim(solids.origin, np.radians(view_angles[0]), np.radians(view_angles[1] + 90)),
+                       np.full(2, label_distance * (1 + orbit_margin)), orbit_pixels)
+    figure = plt.figure(figsize=(n_bodies * orbit_pixels / 100, orbit_pixels / 100), dpi=100)
+    parts, ball, inks = direction_sphere(view)
+    for body_index in range(n_bodies):
+        orbits = simplices.tubes(ends[:, :, body_index].reshape(-1), paths, path_colours, orbit_width, view,
                                  gloss=solids.gloss)
-        ax = figure.add_axes((body / count, 0, 1 / count, 1))
+        ax = figure.add_axes((body_index / n_bodies, 0, 1 / n_bodies, 1))
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
-        # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
-        labels(ax, view, solids.origin + solids.axes.dual() * LABEL_DISTANCE, ["$z$", "$x$", "$y$"], ha="center",
-               va="center", color=NAMES)
+        labels(ax, view, solids.origin + solids.axes.dual() * label_distance, ["$z$", "$x$", "$y$"], ha="center",
+               va="center", color=label_colour)
     return figure
 
 
-def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
-    """Each body as traced solids about the origin, `[..., octants, 4]`: its ellipsoid, the offsets its inverse shape
-    takes into the unit ball, cut by its own planes into eight octants."""
-    # The body's shape, its dual quadric, the solid about the origin, turned into the scene's frame.
-    shapes = solids.context.include_from_algebra(core.placed(stretches, orientations))   # [...] Point- <- Plane+
-    ellipsoids = solids.placed(solids.solid_of_dual_quadric(shapes), to_scene)   # [...] Plane+ <- Point-
-    # Each octant on the side of each of the body's own planes its signs pick: the planes across the body's axes.
-    normals = to_scene >> solids.context.include_from_algebra(orientations[..., None] >> core.axes)   # [..., 3] Plane+
-    sides = solids.half_space(normals[..., None, :] * -OCTANTS)               # [..., octants, 3] Quadric
+def octant_solids(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
+    """Solid ellipsoids obtained by polarity inversion of their dual quadrics and clipped into eight body-frame octants."""
+    shapes = solids.context.include_from_algebra(core.body_shapes(stretches, orientations))   # [...] Point- <- Plane+
+    ellipsoids = solids.placed(solids.solid_of_dual_quadric(shapes), scene_turn)              # [...] Plane+ <- Point-
+    body_planes = orientations[..., None] >> core.axes                                        # [..., 3] Plane+
+    normals = scene_turn >> solids.context.include_from_algebra(body_planes)                  # [..., 3] Plane+
+    sides = solids.half_space(normals[..., None, :] * -octant_signs)                          # [..., 8, 3] Plane+ <- Point-
     return concatenate([ellipsoids[..., None, None].broadcast_to(sides.shape[:-1] + (1,)), sides], axis=-1)
 
 
-def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: core.Point,
-                     frames: Iterable[tuple[core.Rotor, core.Point]], pixels: int) -> Iterator[np.ndarray]:
-    """Each frame of the bodies' orientations `[bodies]` and the tips of their long axes `[bodies]`, two or more:
-    every body tumbling in the flow, side by side in a row, each panel so many pixels across, with the paths of its
-    tips so far, each frame traced in one pass among the flow, which is set up once."""
-    orientations, tips = (stack(list(part)) for part in zip(*frames))        # [frames, bodies] Rotor+, Point-
-    count = tips.shape[1]
-    # One frame for every panel, so that the bodies' sizes compare: the farthest marks past a long axis's tips,
-    # and the margin.
-    radii = tips.norm().reshape(-1)
-    limit = solids.context.include_from_algebra(radii.max()) * (MARK_END * (1 + FRAME_MARGIN))
-    camera = solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90))
-    view = solids.View(camera, (limit * np.array([count, 1.0])).to_array(), count * pixels)
-    # Each body's panel about its own centre, two half-widths apart across the image, the row about the origin.
-    across = (camera >> solids.mv.x.dual()) * (2 * limit * (np.arange(count) - (count - 1) / 2))   # [bodies] Point-
-    shifts = solids.translator(across)                                        # [bodies] Motor+
-    # Every body in its own panel, at every frame, `[frames, bodies, octants, 4]`.
-    placed_bodies = solids.placed(bodies(stretches, orientations), shifts[:, None, None])
-    colours = np.tile(OCTANT_COLOURS, (count, 1))                             # [bodies * octants, 3]
-    # The shear flow's velocity at each height, centred on it, about every body.
-    starts, ends = (shifts[:, None] >> (solids.origin + (to_scene >> solids.context.include_from_algebra(offsets)))
-                    for offsets in (heights - velocities / 2, heights + velocities / 2))   # [bodies, heights] Point-, Point-
-    # Each an arrow, a tube ending in a chevron.
-    n_arrows = np.prod(starts.shape)
-    flow = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_arrows), FLOW_RGB,
-                           ARROW_WIDTH, view, gloss=solids.gloss, chevrons=np.ones(n_arrows), chevron=ARROW_CHEVRON)
-    # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
-    tip_ends = tips * np.array([1.0, -1.0])[:, None, None]                    # [ends, frames, bodies] Point-
-    tip_offsets = to_scene >> solids.context.include_from_algebra(tip_ends)   # [ends, frames, bodies] Point-
-    axis_ends = shifts >> (solids.origin + tip_offsets)                       # [ends, frames, bodies] Point-
-    mark_ends = shifts >> (solids.origin + tip_offsets * MARK_END)            # [ends, frames, bodies] Point-
-    # The tips' paths, chains of edges down the frames through the ends numbered as they lie; and the marks, an edge
-    # from each end out past it.
-    numbered = np.arange(np.prod(axis_ends.shape)).reshape(axis_ends.shape)  # [ends, frames, bodies]
-    steps = np.stack([numbered[:, :-1], numbered[:, 1:]], axis=-1)           # [ends, frames - 1, bodies, 2]
-    marked = simplices.Topology.chains([2] * (2 * count))
+def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: core.Point, n_pixels: int,
+                     states: Iterable[tuple[core.Rotor, core.Point]]) -> Iterator[np.ndarray]:
+    """Yield RGB frames of the ellipsoids tumbling side by side in the shear flow with accumulating tip trails."""
+    orientations, tips = (stack(list(part)) for part in zip(*states))                   # [..., ...] Rotor+, Point-
+    n_frames, n_bodies = tips.shape
+    radii = tips.norm().reshape(-1)                                                     # [...] Scalar+
+    limit = solids.context.include_from_algebra(radii.max()) * (mark_end * (1 + frame_margin))
+    camera = solids.aim(solids.origin, np.radians(view_angles[0]), np.radians(view_angles[1] + 90))
+    view = solids.View(camera, (limit * np.array([n_bodies, 1.0])).to_array(), n_bodies * n_pixels)
+    panel_offsets = (camera >> solids.mv.x.dual()) * (2 * limit * (np.arange(n_bodies) - (n_bodies - 1) / 2))   # [n_bodies] Point-
+    panel_motors = solids.translator(panel_offsets)                                     # [n_bodies] Motor+
+    panel_bodies = solids.placed(octant_solids(stretches, orientations), panel_motors[:, None, None])
+    colours = np.tile(octant_colours, (n_bodies, 1))
+    # Ambient shear velocity arrows centred at each sampled height behind every body.
+    arrow_starts, arrow_ends = (
+        panel_motors[:, None] >> (solids.origin + (scene_turn >> solids.context.include_from_algebra(offsets)))
+        for offsets in (heights - velocities / 2, heights + velocities / 2)
+    )                                                                                   # [n_bodies, ...] Point-, Point-
+    n_arrows = int(np.prod(arrow_starts.shape))
+    flow = simplices.tubes(stack((arrow_starts, arrow_ends), axis=-1).reshape(-1),
+                           Topology.chains([2] * n_arrows), flow_rgb,
+                           arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_arrows), chevron=arrow_chevron)
+    tip_ends = tips * np.array([1, -1])[:, None, None]                                  # [2, n_frames, n_bodies] Point-
+    tip_offsets = scene_turn >> solids.context.include_from_algebra(tip_ends)           # [2, n_frames, n_bodies] Point-
+    axis_ends = panel_motors >> (solids.origin + tip_offsets)                           # [2, n_frames, n_bodies] Point-
+    mark_ends = panel_motors >> (solids.origin + tip_offsets * mark_end)                # [2, n_frames, n_bodies] Point-
+    vertex_indices = np.arange(np.prod(axis_ends.shape)).reshape(axis_ends.shape)
+    edge_pairs = np.stack([vertex_indices[:, :-1], vertex_indices[:, 1:]], axis=-1)
+    mark_chains = Topology.chains([2] * (2 * n_bodies))
     scene = Scene(view, np.ones(3), [], [(flow, 1.0)], inks=[], translucent=[])
-    for index in range(len(tips)):
-        # The paths of the tips so far, and the marks from each end out past it.
-        paths = simplices.tubes(axis_ends.reshape(-1), simplices.Topology(numbered.size, steps[:, :index].reshape(-1, 2)),
-                                TIP_RGB, PATH_WIDTH, view, gloss=solids.gloss)
-        marks = simplices.tubes(stack([axis_ends[:, index], mark_ends[:, index]], axis=-1).reshape(-1), marked, TIP_RGB,
-                                MARK_WIDTH, view, gloss=solids.gloss)
-        yield scene.draw([(placed_bodies[index].reshape(-1, 4), colours)], inks=[], translucent=[],
+    for frame_index in range(n_frames):
+        paths = simplices.tubes(axis_ends.reshape(-1),
+                                Topology(vertex_indices.size, edge_pairs[:, :frame_index].reshape(-1, 2)),
+                                tip_rgb, path_width, view, gloss=solids.gloss)
+        marks = simplices.tubes(stack([axis_ends[:, frame_index], mark_ends[:, frame_index]], axis=-1).reshape(-1),
+                                mark_chains, tip_rgb, mark_width, view, gloss=solids.gloss)
+        yield scene.draw([(panel_bodies[frame_index].reshape(-1, 4), colours)], inks=[], translucent=[],
                          meshes=[(paths, 1.0), (marks, 1.0)])
+

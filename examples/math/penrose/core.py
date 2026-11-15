@@ -1,32 +1,8 @@
-"""Penrose tilings by cut and project: a two-dimensional cut through the integer lattice of
-five-dimensional space, at the slope of a five-fold turn, in the geometric algebra of five dimensions.
+"""Penrose tilings by cut and project slice the five-dimensional integer lattice at a five-fold slope.
 
-A Penrose tiling covers two-dimensional space with two kinds of rhombus, a thick and a thin one, in a
-pattern that never repeats yet has five-fold symmetry everywhere. It is the shadow of an ordinary lattice
-in more dimensions: the cubes of the integer lattice of five-dimensional space, cut by a two-dimensional
-slice, the cut, tilted so that it never passes through a second lattice point. Each square face of the
-lattice that the cut passes close enough to becomes a tile, laid flat onto the cut. Shifting the cut
-without tilting it changes which faces are close enough, and the tiling rearranges itself by local flips,
-never sliding as a whole.
+A Penrose tiling covers two-dimensional space with thick and thin rhombi in a pattern that never repeats yet shows five-fold symmetry everywhere. In the cut-and-project construction, the tiling is modelled as the shadow of the five-dimensional integer lattice cut by a two-dimensional slice tilted so that it passes through at most one lattice point. Each square face of the lattice that the cut passes close enough to projects onto a rhombus tile on the cut. Shifting the cut perpendicularly without tilting it changes which faces qualify, rearranging the tiling by local three-tile flips rather than sliding it as a whole.
 
-The lattice's points and axes are antivectors, intrinsic like all geometry. Turning the five axes into
-one another in a cycle is a rotation, the product of four reflections in the mirrors between
-neighbouring axes. It turns the directions of its first bivector by a fifth of a turn, those of its
-second by two fifths, and leaves the diagonal fixed. Averaged over its five powers, each weighted by the
-cosine of a fifth of a turn times the power, the turn projects onto the directions it turns by a fifth,
-`along(Antivector)`, and the cut is the join of two axes laid flat, `along(first) & along(second)`. A
-square face of the lattice is a tile where the cut passes through the cube it is dual to, the cube
-through its centre along the three other axes. Whether it does is read by the planes that pair to one
-with one of those axes and to nothing with the other two and the cut: Cramer's rule with joins alone,
-`(second & third & cut) / (first & second & third & cut)`, with no metric. How often a face is a tile is
-the size of its dual cube's shadow square to the cut, the join of its three axes under
-`Antivector - along`, which equals the size of its tile, the join of its two sides laid flat: thick
-tiles outnumber thin ones by the golden ratio.
-
-In the notation of de Bruijn's pentagrid, a tiling vertex is the integer point
-$k_j = \\lceil \\mathbf x \\cdot \\mathbf e_j + \\gamma_j \\rceil$ of the five grids of lines
-$\\mathbf x \\cdot \\mathbf e_j + \\gamma_j \\in \\mathbb Z$, with
-$\\mathbf e_j = (\\cos\\frac{2\\pi j}{5}, \\sin\\frac{2\\pi j}{5})$ and $\\sum_j \\gamma_j = 0$.
+Points and lattice axes are intrinsic `Antivector-` directions dual to the five coordinate mirrors `Plane+`. Four reflections across the mirrors between consecutive axes compose into an order-five rotor `turn` that cycles the five axes; averaging the five powers of `turn >> Point` weighted by cosines of fifths of a turn isolates the harmonic projections `projection(1)` onto the cut and `projection(2)` onto the perpendicular phason plane, making the cut the join `along(axes[0]) & along(axes[1])`. A lattice face becomes a tile when the cut intersects its dual three-cube along the remaining three axes, and Cramer's rule in joins alone builds the reciprocal reading planes `(second & third & cut) / (first & second & third & cut)` that test all three offsets by metric-free pairings `frames & offset`. Comparing the projected tile norm `(along(first) & along(second)).norm()` against the perpendicular dual-cube shadow norm proves that thick rhombi outnumber thin ones by the golden ratio.
 """
 
 from __future__ import annotations
@@ -40,83 +16,110 @@ from numga import Algebra, NumpyContext, stack
 
 ga = Algebra("a+b+c+d+e+")
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()                               # Scalar+
-# Planes, read by pairing with points: the mirrors, and the planes that read a point's offsets.
-Plane = ga.gatype.vector()                                # Vector+
-# Points and directions are antivectors, intrinsic; the join of two directions is an oriented area, such as
-# the cut or a tile, of three a volume.
-Antivector = ga.gatype.antivector()                       # Antivector-
-Join = ga.gatype.antibivector()                           # Antibivector-
-# A map on directions: the turn, its powers, and the projections onto the directions it turns by one angle.
-Projection = ga.gatype((Antivector, Antivector))          # Antivector- <- Antivector-
+Scalar = ga.gatype.scalar()                                                   # Scalar+
+# Mirrors and reading planes that pair with points and offsets.
+Plane = ga.gatype.vector()                                                    # Plane+
+# Lattice points and axis directions are intrinsic antivectors; joins of two or three span areas and volumes.
+Point = ga.gatype.antivector()                                                # Point-
+Area = ga.gatype.antibivector()                                               # Area-
+Projection = ga.gatype((Point, Point))                                        # Point- <- Point-
 
-# The mirror across each axis, and the axis, its dual.
-mirrors = mv.basis()                                      # [axes] Plane+
-axes = mirrors.dual()                                     # [axes] Antivector-
-# The faces of the lattice: each pair of axes, and the three other axes of each.
-faces_axes = list(itertools.combinations(range(5), 2))
-sides_index = np.array(faces_axes)                        # [faces, 2]
-others_index = np.array([[k for k in range(5) if k not in face] for face in faces_axes])   # [faces, 3]
+# Coordinate mirrors across the five axes and their dual axis directions.
+mirrors = mv.basis()                                                          # [5] Plane+
+axes = mirrors.dual()                                                         # [5] Point-
+# The ten axis pairs spanning lattice square faces, and the three remaining axes of each dual cube.
+face_pairs = list(itertools.combinations(range(5), 2))
+side_indices = np.array(face_pairs)                                           # [10, 2]
+other_indices = np.array([[index for index in range(5) if index not in pair] for pair in face_pairs])  # [10, 3]
 
 
 # --- math -----------------------------------------------------------------------------
-# The mirror between two neighbouring axes swaps them; the four swaps in a row turn each axis into the next
-# and the last into the first.
-neighbour_mirrors = (mirrors[:-1] - mirrors[1:]).normalized()                 # [axes - 1] Plane+
-turn = neighbour_mirrors[0] * neighbour_mirrors[1] * neighbour_mirrors[2] * neighbour_mirrors[3]   # [] Rotor+
-# The turn as a map on directions.
-turning = turn >> Antivector                                                  # [] Antivector- <- Antivector-
+# Each mirror between consecutive axes swaps them; four swaps in sequence cycle all five axes.
+neighbour_mirrors = (mirrors[:-1] - mirrors[1:]).normalized()                 # [4] Plane+
+turn = neighbour_mirrors[0] * neighbour_mirrors[1] * neighbour_mirrors[2] * neighbour_mirrors[3]  # [] Rotor+
+turning = turn >> Point                                                       # [] Point- <- Point-
 
 
-def powers(cycle: Projection, n_powers: int) -> Iterator[Projection]:
-    """The map applied once, twice, and so on."""
-    power = cycle                                                             # [] Antivector- <- Antivector-
+def cycle_powers(step_map: Projection, n_powers: int) -> Iterator[Projection]:
+    """Yields the first `n_powers` iterated compositions (`[] Point- <- Point-`) of `step_map`."""
+    power = step_map                                                          # [] Point- <- Point-
     for _ in range(n_powers):
         yield power
-        power = cycle(power)
+        power = step_map(power)
 
 
-def projection(harmonic: int) -> Projection:
-    """The projection onto the directions the turn turns by `harmonic` fifths of a turn: its five powers as
-    maps on directions, the fifth being the identity, each weighted by the cosine of that turn times the power."""
-    maps = stack(list(powers(turning, 5)))                                    # [powers] Antivector- <- Antivector-
+def harmonic_projection(harmonic: int) -> Projection:
+    """Cosine-weighted Fourier average over the five powers of `turning` projects onto the plane turned by `harmonic` fifths of a turn (`[] Point- <- Point-`)."""
+    maps = stack(list(cycle_powers(turning, 5)))                              # [5] Point- <- Point-
     weights = 2 / 5 * np.cos(2 * np.pi * harmonic * np.arange(1, 6) / 5)
-    return (maps * weights).sum(axis=0)                                       # [] Antivector- <- Antivector-
+    return (maps * weights).sum(axis=0)                                       # [] Point- <- Point-
 
 
-def reciprocal(cut: Join) -> Plane:
-    """Per face, the reciprocal frame of its three other axes and the cut `[faces, 3]`: the planes whose
-    pairings with a point read how far along each of the three axes it is, blind to the cut."""
-    others = axes[others_index]                                               # [faces, 3] Antivector-
-    # Cramer's rule with joins: per axis, the other two joined with the cut, a plane that pairs to nothing
-    # with them and with the cut, over the volume all three span with the cut.
-    cofactors = others[:, [1, 2, 0]] & others[:, [2, 0, 1]] & cut             # [faces, 3] Plane+
-    volume = others[:, 0] & others[:, 1] & others[:, 2] & cut                 # [faces] Scalar+
-    return cofactors / volume[:, None]                                        # [faces, 3] Plane+
+def reciprocal_frames(cut: Area) -> Plane:
+    """Cramer's rule in joins builds the three reading planes (`[10, 3] Plane+`) of each face's dual cube that vanish on `cut`."""
+    others = axes[other_indices]                                              # [10, 3] Point-
+    # Joining two complementary axes with the cut gives a plane blind to both and to the cut; dividing by the full five-volume normalizes its pairing on the remaining axis.
+    cofactors = others[:, [1, 2, 0]] & others[:, [2, 0, 1]] & cut             # [10, 3] Plane+
+    volumes = others[:, 0] & others[:, 1] & others[:, 2] & cut                # [10] Scalar+
+    return cofactors / volumes[:, None]                                       # [10, 3] Plane+
 
 
-def margins(shift: Antivector, centres: Antivector, frames: Plane) -> Scalar:
-    """How far inside the dual cube of each face the cut passes, along each of its three other axes
-    `[..., faces, 3]`, for the cut through `shift`: the face is a tile where all three are positive."""
-    offsets = frames & (shift - centres)[..., None]                           # [..., faces, 3] Scalar+
-    return 1 / 4 - offsets.squared()                                          # [..., faces, 3] Scalar+
+def cube_margins(shift: Point, centres: Point, frames: Plane) -> Scalar:
+    """Pairings of `frames` with the offset from `centres` to `shift` give the squared-half-width margins (`[..., 10, 3] Scalar+`) inside each dual cube."""
+    offsets = frames & (shift - centres)[..., None]                           # [..., 10, 3] Scalar+
+    return 1 / 4 - offsets.squared()                                          # [..., 10, 3] Scalar+
 
 
-def shadows(along: Projection) -> tuple[Scalar, Scalar]:
-    """Per face `[faces]`: its area laid flat onto the cut, and the volume of the shadow its dual cube
-    casts square to the cut, how often the face is a tile among faces of every kind."""
-    sides = axes[sides_index]                                                 # [faces, 2] Antivector-
-    others = axes[others_index]                                               # [faces, 3] Antivector-
-    # The tile is the join of the face's two sides laid flat; the shadow the join of its three other axes
-    # with their parts in the cut taken away.
-    square = Antivector - along                                               # [] Antivector- <- Antivector-
-    tiles = along(sides[:, 0]) & along(sides[:, 1])                           # [faces] Join-
-    cube_shadows = square(others[:, 0]) & square(others[:, 1]) & square(others[:, 2])   # [faces] Antitrivector-
+def shadow_measures(cut_projection: Projection) -> tuple[Scalar, Scalar]:
+    """Projected side joins and perpendicular dual-cube joins measure each face's tile area and selection frequency (`[10] Scalar+`, `[10] Scalar+`)."""
+    sides = axes[side_indices]                                                # [10, 2] Point-
+    others = axes[other_indices]                                              # [10, 3] Point-
+    # Subtracting the cut projection leaves the complementary projection square to the cut.
+    perpendicular_projection = Point - cut_projection                         # [] Point- <- Point-
+    tiles = cut_projection(sides[:, 0]) & cut_projection(sides[:, 1])         # [10] Area-
+    cube_shadows = (
+        perpendicular_projection(others[:, 0])
+        & perpendicular_projection(others[:, 1])
+        & perpendicular_projection(others[:, 2])
+    )                                                                         # [10] Antitrivector-
     return tiles.norm(), cube_shadows.norm()
 
 
-# --- plumbing -------------------------------------------------------------------------
-def lattice(radius: int) -> Antivector:
-    """The points of the integer lattice within `radius` of the origin along every axis `[points]`."""
-    coordinates = np.array(list(itertools.product(range(-radius, radius + 1), repeat=5)))   # [points, 5]
-    return (axes * coordinates).sum(axis=-1)                                  # [points] Antivector-
+def lattice_faces(cut_projection: Projection, lattice_radius: int) -> tuple[Point, Point]:
+    """Integer lattice points within `lattice_radius` carry ten square face centres (`[n_points, 10] Point-`) and projected corner loops (`[n_points, 10, 4] Point-`)."""
+    n_span = 2 * lattice_radius + 1
+    n_points = n_span ** 5
+    coordinates = np.array(list(itertools.product(range(-lattice_radius, lattice_radius + 1), repeat=5)))  # [n_points, 5]
+    lattice_points = (axes * coordinates).sum(axis=-1)                        # [n_points] Point-
+    sides = axes[side_indices]                                                # [10, 2] Point-
+    centres = lattice_points[:, None] + sides.sum(axis=-1) / 2                # [n_points, 10] Point-
+    # Displace half a unit along both face axes in cyclic order around each face centre.
+    first_steps, second_steps = np.array([-1, 1, 1, -1]) / 2, np.array([-1, -1, 1, 1]) / 2
+    corner_offsets = sides[:, None, 0] * first_steps + sides[:, None, 1] * second_steps  # [10, 4] Point-
+    return centres, cut_projection(centres[..., None] + corner_offsets)
+
+
+def reading_planes(cut_projection: Projection) -> Plane:
+    """Orthonormal directions in the cut dualize to two reading planes (`[2] Plane+`) aligned with the first projected axis."""
+    right = cut_projection(axes[0]).normalized()                              # [] Point-
+    # The commutator of two non-collinear directions in the cut generates rotations within the cut plane.
+    cut_bivector = right.commutator(cut_projection(axes[1]))                  # [] Bivector+
+    quarter_turn = (cut_bivector / cut_bivector.scalar_norm_squared().square_root() * (-np.pi / 4)).exp()  # [] Rotor+
+    up = quarter_turn >> right                                                # [] Point-
+    return stack([right, up]).dual()                                          # [2] Plane+
+
+
+def phason_loop(phason_projection: Projection, origin_shift: Point, radius: float, n_frames: int) -> Point:
+    """Rotors in the perpendicular phason plane sweep `origin_shift` around a closed circle of `n_frames` shifts (`[n_frames] Point-`)."""
+    start = phason_projection(axes[0])                                        # [] Point-
+    loop_bivector = start.commutator(phason_projection(axes[1]))              # [] Bivector+
+    angles = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
+    rotors = (loop_bivector / loop_bivector.scalar_norm_squared().square_root() * (angles / 2)).exp()  # [n_frames] Rotor+
+    circle_points = rotors >> start                                           # [n_frames] Point-
+    return origin_shift + radius * (circle_points - start) / start.norm()     # [n_frames] Point-
+
+
+def margin_stream(shifts: Point, centres: Point, frames: Plane) -> Iterator[Scalar]:
+    """Yields the dual-cube margins (`[..., 10, 3] Scalar+`) for each shift point along `shifts`."""
+    for frame_shift in shifts:
+        yield cube_margins(frame_shift, centres, frames)

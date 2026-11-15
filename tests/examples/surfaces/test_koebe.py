@@ -1,8 +1,20 @@
-"""Koebe polyhedra: the centred circles of the irregular triangulation, carried by one boost, run and draw."""
+"""Centred Koebe circles solve to external tangency, stay tangent under a boost, and render both static and animated views."""
 
-from examples.surfaces.koebe import render, scenarios
+import matplotlib.pyplot as plt
+
+from examples.surfaces.koebe import core, render, scenarios
 
 
-def test_the_boosted_circles_run_and_draw():
-    topology, frames = scenarios.boosted(n_frames=1)
-    assert len(list(render.animate(topology, frames))) == 1
+def test_koebe_circles_solve_boost_and_render():
+    topology, circles = scenarios.centred_polyhedron()
+    figure = render.polyhedron_figure(topology, circles)
+    plt.close(figure)
+
+    boosted = next(core.boost_states(circles, scenarios.rapidity, scenarios.tilt, 2))
+    assert ((boosted.squared() - 1).abs() < 1e-10).all()
+    ends = topology.incidence[1, 0] * boosted                               # [2] Plane+[E]
+    assert (((ends[0] | ends[1]) + 1).abs() < 1e-10).all()
+
+    view = render.polyhedron_view(core.cone_apexes(boosted), 80)
+    frame = next(render.boost_animation(topology, view, [boosted]))
+    assert frame.ndim == 3 and frame.shape[2] == 3

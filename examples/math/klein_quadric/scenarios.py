@@ -1,12 +1,11 @@
-"""The scenes of the four-line problem hold three lines on the hyperboloid x² + y² = 1 + z² and a
-steep fourth line swinging across it, through its waist and out the other side. Outside, the fourth
-line crosses the hyperboloid twice and both transversals are real; through the waist it misses the
-hyperboloid and the transversals are a complex-conjugate pair."""
+"""Three lines on a hyperboloid of one sheet stay fixed while a steep fourth line swings into the
+hyperboloid's waist and back out. Outside the waist the fourth line crosses the surface twice and both
+transversals are real; through the waist it misses the surface and the transversals form a
+complex-conjugate pair."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from itertools import islice
 
 import numpy as np
 
@@ -14,17 +13,15 @@ from numga import stack
 from examples.math.klein_quadric import core
 
 mv = core.mv
-# Where the three lines cross the hyperboloid's waist, by angle about z.
+# Azimuthal angles about z where the three fixed lines cross the waist circle.
 waist_angles = np.array([0.3, 2.3, 4.4])
-# The fourth line: where it crosses the plane z = 0 at rest, the direction it runs in, and how far it
-# swings along x either way.
+# Rest crossing of the fourth line with the plane z = 0, its direction, and its swing amplitude along x.
 fourth_crossing = [0.0, 0.4, 0.0]
 fourth_direction = [0.3, -0.2, 1.0]
 swing_amplitude = 1.5
-# The lines drawn of each family on the hyperboloid.
+# Number of rulings drawn per family on the hyperboloid.
 n_rulings = 12
-# The frames of the swing; the points it is sampled at to pace it, and the share of the line's own motion in the
-# pace; the frame shown as a still, and the duration of a frame in milliseconds.
+# Animation frame count, dense path sample count and motion share for pacing, still index, and frame delay.
 n_frames = 168
 n_path, line_share = 960, 0.6
 still_frame = n_frames // 12
@@ -32,99 +29,120 @@ frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def scene(three: core.Bivector, fourth: core.Bivector) -> tuple[core.Bivector, core.Bivector, core.Point]:
-    """The four lines, the two transversals of all four and the two points where the fourth line
-    crosses the quadric of the three, for each of a batch of fourth lines."""
-    first, second, third = three[0], three[1], three[2]                        # [] Bivector+, Bivector+, Bivector+
-    lines = stack([first.broadcast_to(fourth.shape), second.broadcast_to(fourth.shape),
-                   third.broadcast_to(fourth.shape), fourth], axis=-1)         # [..., 4] Bivector+
-    # The plane joining a point to the first line meets the third line in a point; the plane joining
-    # that point to the second line holds the first point exactly when a line through it meets all three.
-    surface = ((core.Point & first) ^ third) & second                          # [] Plane- <- Point-
-    return lines, core.transversals_of(lines), core.crossings_of(surface, fourth)
+def configuration(three_lines: core.Bivector,
+                  fourth_line: core.Bivector) -> tuple[core.Bivector, core.Bivector, core.Point]:
+    """Three fixed lines (`[3] Bivector+`) and `fourth_line` (`[...] Bivector+`) determine the
+    combined four-line bundle (`[..., 4] Bivector+`), its two transversals (`[..., 2] Bivector+`), and
+    its two crossings (`[..., 2] Antivector-`) with the ruled quadric of `three_lines`."""
+    first, second, third = three_lines[0], three_lines[1], three_lines[2]      # [] Bivector+, Bivector+, Bivector+
+    lines = stack([first.broadcast_to(fourth_line.shape), second.broadcast_to(fourth_line.shape),
+                   third.broadcast_to(fourth_line.shape), fourth_line], axis=-1)   # [..., 4] Bivector+
+    # Joining a point to `first`, meeting `third`, and joining to `second` yields a plane holding the point iff a transversal through it meets all three.
+    surface = ((core.Point & first) ^ third) & second                          # [] Antitrivector- <- Antivector-
+    return lines, core.transversals_of(lines), core.crossings_of(surface, fourth_line)
 
 
-def rulings(three: core.Bivector, n_rulings: int) -> core.Bivector:
-    """Both families of lines on the quadric of three lines: the lines through points spread over the
-    first that meet the other two, and the lines that meet three of those, the family of the three."""
-    # The line through a point that meets two lines is the meet of the planes joining the point to each.
-    starts = core.spread(three[0], n_rulings)                                  # [rulings] Point-
-    sweep = (starts & three[1]) ^ (starts & three[2])                          # [rulings] Bivector+
-    family_starts = core.spread(sweep[0], n_rulings)                           # [rulings] Point-
-    family = (family_starts & sweep[n_rulings // 3]) ^ (family_starts & sweep[2 * n_rulings // 3])   # [rulings] Bivector+
-    return stack([sweep, family])                                              # [families, rulings] Bivector+
+def hyperboloid_rulings(three_lines: core.Bivector, n_rulings: int) -> core.Bivector:
+    """Three skew lines (`[3] Bivector+`) determine both ruling families (`[2, n_rulings] Bivector+`)
+    of their ruled quadric."""
+    # The unique line through a point meeting two skew lines is the meet of the two planes joining the point to each line.
+    starts = core.line_points(three_lines[0], n_rulings)                       # [n_rulings] Antivector-
+    transversal_family = (starts & three_lines[1]) ^ (starts & three_lines[2])   # [n_rulings] Bivector+
+    # Repeating the construction across three lines of the first family recovers the family containing `three_lines`.
+    second_starts = core.line_points(transversal_family[0], n_rulings)         # [n_rulings] Antivector-
+    original_family = (
+        (second_starts & transversal_family[n_rulings // 3])
+        ^ (second_starts & transversal_family[2 * n_rulings // 3])
+    )                                                                          # [n_rulings] Bivector+
+    return stack([transversal_family, original_family])                        # [2, n_rulings] Bivector+
 
 
-def swing(n_frames: int, n_rulings: int) -> Iterator[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]:
-    """The fourth line swung once across the hyperboloid and back, slowing where its crossings merge: per frame the
-    four lines, both families of lines on the hyperboloid, the transversals and the crossings."""
-    three = waist_lines(waist_angles)                                          # [3] Bivector+
-    # The swing sampled closely along a closed path, and the squared distance between the crossings along it,
-    # negative where they are a complex pair.
+def swing_scenes(
+    n_frames: int, n_rulings: int
+) -> Iterator[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]:
+    """Yields per-frame `(lines, rulings, transversals, crossings)` tuples over `n_frames` as the
+    fourth line swings across the hyperboloid and slows near tangency."""
+    three_lines = waist_lines(waist_angles)                                    # [3] Bivector+
+    # Signed crossing separation along a dense cosine path paces the swing so tangency is resolved cleanly.
     path = swing_amplitude * np.cos(np.linspace(0.0, 2 * np.pi, n_path + 1))
-    _, _, along_path = scene(three, steep(path))                               # [path + 1, 2] Point-
-    separations = (along_path[..., 0] & along_path[..., 1]).scalar_norm_squared()   # [path + 1] Scalar+
-    hyperboloid = rulings(three, n_rulings)                                    # [families, rulings] Bivector+
-    for offset in paced(path, separations, n_frames, line_share):
-        lines, transversals, crossings = scene(three, steep(offset))
-        yield lines, hyperboloid, transversals, crossings
+    _, _, path_crossings = configuration(three_lines, fourth_lines(path))      # [n_path + 1, 2] Antivector-
+    separations = (path_crossings[..., 0] & path_crossings[..., 1]).scalar_norm_squared()   # [n_path + 1] Scalar+
+    rulings = hyperboloid_rulings(three_lines, n_rulings)                      # [2, n_rulings] Bivector+
+    for offset in paced_offsets(path, separations, n_frames, line_share):
+        lines, transversals, crossings = configuration(three_lines, fourth_lines(offset))
+        yield lines, rulings, transversals, crossings
 
 
 # --- plumbing -------------------------------------------------------------------------
-def paced(path: np.ndarray, separations: core.Scalar, n_frames: int, line_share: float) -> np.ndarray:
-    """Offsets along a closed path, at equal steps of the gap between the fourth line's crossings and of a share of
-    the line's own motion: slow where the crossings merge, so the transversals are seen to close. The gap is the
-    distance between the crossings while they are real and minus it once they are a complex pair, where their
-    squared separation turns negative, so that it passes through zero where they merge."""
-    squared = separations.to_array().real
-    gaps = np.sign(squared) * np.sqrt(np.abs(squared))
-    pace = np.concatenate([[0.0], np.cumsum(np.abs(np.diff(gaps)) + line_share * np.abs(np.diff(path)))])
-    return np.interp(np.linspace(0.0, pace[-1], n_frames, endpoint=False), pace, path)
+def paced_offsets(path: np.ndarray, separations: core.Scalar, n_frames: int, line_share: float) -> core.Scalar:
+    """Piecewise-linear arc-length interpolation resamples `path` into `n_frames` offsets (`[n_frames]
+    Scalar+`) advancing at equal combined steps of signed crossing gap and `line_share` times path
+    displacement."""
+    # Squared separation flips sign across tangency; its signed square root passes continuously through zero there.
+    signed_squares = separations.real()                                        # [...] Scalar+
+    signs = 1 - 2 * (signed_squares < 0)
+    gaps = signs * (signs * signed_squares).square_root()                      # [...] Scalar+
+    steps = (gaps[1:] - gaps[:-1]).abs() + line_share * np.abs(np.diff(path))  # [...] Scalar+
+    pace = core.Scalar.concatenate([0.0 * steps[:1], steps.cumsum(axis=0)], axis=0)   # [...] Scalar+
+    targets = pace[-1] * np.linspace(0.0, 1.0, n_frames, endpoint=False)       # [n_frames] Scalar+
+    indices = np.clip((pace[:, None] <= targets[None, :]).sum(axis=0) - 1, 0, len(path) - 2)
+    fractions = (targets - pace[indices]) / steps[indices]                     # [n_frames] Scalar+
+    return path[indices] + fractions * (path[indices + 1] - path[indices])     # [n_frames] Scalar+
 
 
 def waist_lines(angles: np.ndarray) -> core.Bivector:
-    """Lines of the hyperboloid x² + y² = 1 + z² through the points of its waist at the given angles,
-    all leaning the same way."""
-    # The line through (1, 0, 0) leaning along (0, 1, 1), the meet of the planes x = 1 and y = z, turned
-    # about z by each angle.
+    """Turning the ruling `(x - w) ^ (y - z)` about the z-axis places lines (`[...] Bivector+`) on the
+    unit hyperboloid at the given waist `angles`."""
     leaning = (mv.x - mv.w) ^ (mv.y - mv.z)                                    # [] Bivector+
-    turns = (mv.xy * (-angles / 2)).exp()                                      # [angles] Rotor+
-    return turns >> leaning                                                    # [angles] Bivector+
+    turns = (mv.xy * (-angles / 2)).exp()                                      # [...] Rotor+
+    return turns >> leaning                                                    # [...] Bivector+
 
 
-def steep(offsets: np.ndarray) -> core.Bivector:
-    """The fourth line, moved along x by each offset: the meet of the two planes through it along x
-    and along y."""
-    shifts = (mv.xw * (offsets / 2)).exp()                                     # [offsets] Motor+
-    anchors = shifts >> mv.point(fourth_crossing)                              # [offsets] Point-
-    # The fourth line as the join of its anchor and its direction, and again as a meet of planes.
-    line = anchors & mv.direction(fourth_direction)                            # [offsets] Line-
-    return (line & mv.direction([1, 0, 0])) ^ (line & mv.direction([0, 1, 0]))   # [offsets] Bivector+
+def fourth_lines(offsets: core.Scalar) -> core.Bivector:
+    """Translating the anchor along x by `offsets` yields the fourth line (`[...] Bivector+`) as the
+    meet of two coordinate-aligned planes through it."""
+    shifts = (mv.xw * (offsets / 2)).exp()                                     # [...] Motor+
+    anchors = shifts >> mv.point(fourth_crossing)                              # [...] Antivector-
+    # Joining anchor and direction gives the intrinsic line, then meeting two direction-spanned planes gives its extrinsic axis.
+    intrinsic_line = anchors & mv.direction(fourth_direction)                  # [...] Antibivector-
+    return (intrinsic_line & mv.direction([1, 0, 0])) ^ (intrinsic_line & mv.direction([0, 1, 0]))   # [...] Bivector+
 
 
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.math.klein_quadric import render
 
-    still = next(islice(swing(n_frames, n_rulings), still_frame, None))
-    save_figure(render.draw(*still), "klein_transversals")
-    save_animation(render.animate(swing(n_frames, n_rulings), n_frames), "klein_swing", frame_duration_ms)
+    recorded_scenes = []
+
+    def streaming():
+        for scene_state in swing_scenes(n_frames, n_rulings):
+            recorded_scenes.append(scene_state)
+            yield scene_state
+
+    save_animation(render.swing_frames(n_frames, streaming()), "klein_swing", frame_duration_ms)
+    still_fig = render.scene_figure(*recorded_scenes[still_frame])
+    save_figure(still_fig, "klein_transversals")
+    import matplotlib.pyplot as plt
+    plt.close(still_fig)
 
     # checks
-    # The transversals are lines and meet all four lines; the crossings lie on the fourth line and on
-    # the quadric, each on one of the transversals; both families lie on the quadric.
-    three = waist_lines(waist_angles)
-    fourth = steep(swing_amplitude * np.cos(np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False)))
-    lines, transversals, crossings = scene(three, fourth)
-    surface = ((core.Point & three[0]) ^ three[2]) & three[1]
-    np.testing.assert_allclose((transversals ^ transversals).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((lines[..., :, None] ^ transversals[..., None, :]).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((crossings & lines[..., 3:]).kernel, 0.0, atol=1e-10)
-    np.testing.assert_allclose((surface(crossings) & crossings).kernel, 0.0, atol=1e-10)
-    off = np.abs((crossings[..., :, None] & transversals[..., None, :]).kernel).max(axis=-1)   # [frames, 2, 2]
-    np.testing.assert_allclose(off.min(axis=-1), 0.0, atol=1e-10)
-    ends = core.spread(rulings(three, n_rulings), 3)                           # [families, rulings, 3] Point-
-    np.testing.assert_allclose((surface(ends) & ends).kernel, 0.0, atol=1e-10)
+    lines = stack([state[0] for state in recorded_scenes])                     # [n_frames, 4] Bivector+
+    rulings = recorded_scenes[0][1]                                            # [2, n_rulings] Bivector+
+    transversals = stack([state[2] for state in recorded_scenes])              # [n_frames, 2] Bivector+
+    crossings = stack([state[3] for state in recorded_scenes])                 # [n_frames, 2] Antivector-
+    three_lines = lines[0, :3]                                                 # [3] Bivector+
+    surface = ((core.Point & three_lines[0]) ^ three_lines[2]) & three_lines[1]   # [] Antitrivector- <- Antivector-
+    basis_points = stack((mv.x, mv.y, mv.z, mv.w)).dual()                      # [4] Antivector-
+    assert ((transversals ^ transversals).dual().abs() < 1e-11).all()
+    assert (((lines[:, :, None] ^ transversals[:, None, :]).dual()).abs() < 1e-11).all()
+    assert (((crossings & lines[:, 3:])[..., None] & basis_points).abs() < 1e-9).all()
+    assert ((surface(crossings) & crossings).abs() < 1e-9).all()
+    incidence_residuals = (                                                    # [n_frames, 2, 2] Scalar+
+        ((crossings[:, :, None] & transversals[:, None, :])[..., None] & basis_points).abs().max(axis=-1)
+    )
+    assert (incidence_residuals.min(axis=-1) < 1e-9).all()
+    ruling_samples = core.line_points(rulings, 3)                              # [2, n_rulings, 3] Antivector-
+    assert ((surface(ruling_samples) & ruling_samples).abs() < 1e-9).all()
 
 
 if __name__ == "__main__":

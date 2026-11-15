@@ -1,11 +1,6 @@
-"""Refraction through a rippled interface and its map to a flat receiver.
+"""Snell refraction across a rippled air-water interface maps incoming rays onto a flat horizontal receiver.
 
-Positions and ray directions are modelled as intrinsic antivectors, and the wavevectors of the ripples and the
-plane of the water surface as extrinsic vectors, read against a position or a direction by pairing,
-`wavevector & position`.
-The surface is the level set of its height above the ripples, so its plane at a point is
-`mv.z - gradient`, and a ray refracts across that plane by Snell's law. Horizontal positions, on the
-water and on the receiver, are the antivectors that contain `z`.
+Three-dimensional geometric algebra models spatial displacements and ray directions as intrinsic antivectors, while wavevectors and local tangent planes are extrinsic vectors. Pairing a horizontal wavevector with a horizontal position via `wavevector & position` evaluates the ripple phase, and subtracting the slope 1-form from the vertical 1-form gives the local interface plane `z - gradient`. Scaling the tangential part of an incident ray by the refractive index ratio implements Snell's law directly on antivector directions, and projecting refracted rays onto the horizontal receiver defines a differentiable map whose determinant vanishes along caustic folds.
 """
 
 from __future__ import annotations
@@ -17,45 +12,47 @@ from numga.algebras import VGA3D as ga
 from numga.backend.jax import JaxContext
 
 mv = JaxContext(ga).multivector
-Scalar = ga.gatype.scalar()                                     # Scalar+
-# Positions and directions are intrinsic antivectors; wavevectors and planes are extrinsic vectors.
-Direction = ga.gatype.antivector()                              # Antivector-
-Plane = ga.gatype.vector()                                      # Vector+
-Wavevector = Plane.derive.within(Algebra("x+y+"))               # Vector+
-Horizontal = Wavevector.derive.dual                             # Antivector-
+Scalar = ga.gatype.scalar()                                                       # Scalar+
+# Spatial displacements and ray directions are intrinsic antivectors; planes and wavevectors are extrinsic vectors.
+Direction = ga.gatype.antivector()                                                # Antivector-
+Plane = ga.gatype.vector()                                                        # Vector+
+Wavevector = Plane.derive.within(Algebra("x+y+"))                                 # Vector+
+Horizontal = Wavevector.derive.dual                                               # Antivector-
 
-# The direction straight up.
-up = mv.z.dual()
+# Unit upward vertical direction.
+up = mv.z.dual()                                                                  # [] Direction-
 
 
 # --- math -----------------------------------------------------------------------------
-def rays(
+def refracted_rays(
     position: Horizontal, wavevectors: Wavevector, amplitudes: np.ndarray,
     phases: np.ndarray, index_ratio: float,
 ) -> tuple[Direction, Plane, Direction]:
-    """Surface positions, unit surface planes and transmitted directions for vertical illumination."""
-    phase = (wavevectors & position[..., None]) - phases        # [..., waves] Scalar+
-    height = (amplitudes * phase.cos()).sum(axis=-1)            # [...] Scalar+
-    gradient = -(wavevectors * (amplitudes * phase.sin())).sum(axis=-1)   # [...] Wavevector+
-    # The plane of the surface, `z - height == 0`, and the unit direction across it.
-    plane = (mv.z - gradient).normalized()                      # [...] Plane+
-    normal = plane.dual()                                       # [...] Direction-
+    """Vertical illumination hitting the rippled surface at horizontal `position` (`[...] Horizontal-`)
+    refracts across unit surface planes (`[...] Plane+`) from surface points (`[...] Direction-`) into
+    transmitted unit directions (`[...] Direction-`)."""
+    wave_phases = (wavevectors & position[..., None]) - phases                    # [..., n_waves] Scalar+
+    height = (amplitudes * wave_phases.cos()).sum(axis=-1)                        # [...] Scalar+
+    slope_gradient = -(wavevectors * (amplitudes * wave_phases.sin())).sum(axis=-1)  # [...] Wavevector+
+    # Level-set 1-form of `z - height == 0` normalized to unit length, and its dual upward normal.
+    surface_plane = (mv.z - slope_gradient).normalized()                          # [...] Plane+
+    surface_normal = surface_plane.dual()                                         # [...] Direction-
 
-    # Snell's law scales the part of the ray along the surface; unit length fixes the part across it.
-    incoming = -up                                              # [] Direction-
-    tangent = index_ratio * (incoming - normal * (plane & incoming))   # [...] Direction-
-    outgoing = tangent - normal * (1 - tangent.scalar_norm_squared()).square_root()   # [...] Direction-
-    surface = position + up * height                            # [...] Direction-
-    return surface, plane, outgoing
+    # Snell's law scales the component tangential to the interface, and unit norm fixes the downward normal component.
+    incoming = -up                                                                # [] Direction-
+    tangent_part = index_ratio * (incoming - surface_normal * (surface_plane & incoming))  # [...] Direction-
+    outgoing = tangent_part - surface_normal * (1 - tangent_part.scalar_norm_squared()).square_root()  # [...] Direction-
+    surface_point = position + up * height                                        # [...] Direction-
+    return surface_point, surface_plane, outgoing
 
 
-def receiver(
+def receiver_landing(
     position: Horizontal, wavevectors: Wavevector, amplitudes: np.ndarray,
     phases: np.ndarray, depth: float, index_ratio: float,
 ) -> Horizontal:
-    """Horizontal landing positions on the receiver below the refracting surface."""
-    surface, _, outgoing = rays(position, wavevectors, amplitudes, phases, index_ratio)
-    # The distance along the ray down to the receiver, at height minus the depth.
-    distance = (-depth - (mv.z & surface)) / (mv.z & outgoing)  # [...] Scalar+
-    landing = surface + distance * outgoing                     # [...] Direction-
-    return landing.cast(Horizontal)
+    """Tracing refracted rays from horizontal `position` (`[...] Horizontal-`) down to `z = -depth`
+    yields their horizontal landing positions (`[...] Horizontal-`) on the receiver plane."""
+    surface_point, _, outgoing = refracted_rays(position, wavevectors, amplitudes, phases, index_ratio)
+    ray_distance = (-depth - (mv.z & surface_point)) / (mv.z & outgoing)          # [...] Scalar+
+    landing_point = surface_point + ray_distance * outgoing                       # [...] Direction-
+    return landing_point.cast(Horizontal)                                         # [...] Horizontal-

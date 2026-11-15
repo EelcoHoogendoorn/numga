@@ -1,15 +1,6 @@
-"""A dynamo: a stirred flow of conducting fluid in a ball that makes a seed magnetic field grow until the field's
-force on the current it drives brakes the flow, and the two settle into trading energy back and forth.
+"""Hydromagnetic dynamo in a planetary core in spacetime.
 
-Spacetime, `x+y+z+t-`, holds the ball in one instant: its points are directions of space, and the magnetic field is a
-plane of space that reads its flux through an oriented patch as `field & patch`. The field is the curl of a potential
-on the edges, Whitney's edge forms reconstructing it in each tetrahedron, so it has no sources however it grows. The
-moving fluid reads the field as an electric one, the magnetic plane met with the velocity and swept through time,
-`(velocity & magnetic) ^ mv.t`, and drives a current with it; the current, gathered back onto the edges, changes the
-potential. A conducting core holds the flow, and a mantle of poor conductor around it lets the field reach out as it
-would into an insulator. The flow is a few modes of the fluid shell between a solid inner core and the mantle: it
-carries itself, the stirring pulls it back toward a helical flow, and the field pushes on the current, the adjugate of
-the motional map reading the current as a force.
+Stirred conducting fluid in an outer-core shell stretches and twists a weak seed magnetic field until the magnetic force on the induced conduction current brakes the flow and the two settle into exchanging energy. Spatial planes, displacements, velocities, and conduction 4-currents live in spacetime, where edge potentials reconstruct divergence-free magnetic planes in each tetrahedron through Whitney forms built from corner simplex gradients. Moving fluid meets the magnetic plane in a motional electric field that drives conduction 4-currents, and pairing the magnetic plane back with those 4-currents gives the Lorentz braking form on fluid velocities.
 """
 
 from __future__ import annotations
@@ -20,171 +11,137 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
-from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology
+from numga.sparse import Sparse, SparseExtensor, spdiag
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
-# Space, within spacetime: the directions x, y and z.
+# Spatial planes within spacetime span x, y, and z.
 space = Algebra("x+y+z+")
 Scalar = ga.gatype.scalar()                         # Scalar+
-# The planes of space, which read a point's coordinates; a function's gradient in a tetrahedron is one.
 Plane = ga.gatype.vector().derive.within(space)     # Vector+
-# The points of space, each the direction from the origin to it; edges, velocities and currents are points too.
 Point = Plane.derive.dual                           # Antivector-
-# Electric and magnetic fields, planes through time and planes of space.
 Field = ga.gatype.bivector()                        # Bivector+
-# The magnetic field alone, a plane of space.
 Magnetic = Field.derive.within(space)               # Bivector+
-# A rotation rate, or the fluid's vorticity: a plane of space.
 Rate = Field.derive.within(space)                   # Bivector+
-# A function integrated over a share of the ball is an amount.
-Amount = ga.gatype.antiscalar()                     # Antiscalar-
-# Intrinsic planes, the joins of points: the current a field drives is a point swept through time.
-Patch = Field.derive.dual                           # Antibivector-
-# Ohm's law, from a field to the current it drives.
-Conduction = ga.gatype((Patch, Field))              # Patch- <- Field+
-# The observer's direction of time.
-time = -mv.t.dual()                                 # [] Point-
-# The electric field along a direction: the plane it sweeps through time, met with the dual.
-along = (Point & time).dual()                       # [] Field+ <- Point-
+# Rest-frame observer 4-velocity and rest-frame conduction 4-current readout.
+time = -mv.t.dual()                                 # Antivector-
+electric_current = -(Field & time).dual()           # Point- <- Field+
 
 
-class Ball:
-    """A tetrahedral ball's Whitney operators: the potential's curl, the magnetic energy, and the electric field each
-    edge's potential sets up in each tetrahedron."""
-
-    def __init__(self, topology: Topology, vertices: Point):
-        self.topology = topology
-        self.centres = topology.incidence[3, 0].mean(axis=0) * vertices          # Point-[tets]
-        self.edges = topology.d[0] * vertices                                    # Point-[edges]
-        # Each tetrahedron's edges in its own vertex order; the first three run from its first corner.
-        edges = topology.oriented[3, 1] * self.edges                             # [tet_edges] Point-[tets]
-        volumes = (edges[0] & edges[1] & edges[2]) / 6                           # Antitrivector-[tets]
-        # The prism each tetrahedron sweeps in a unit of time; its size is the tetrahedron's volume.
-        self.prisms = volumes & time                                             # Scalar-[tets]
-        sides = topology.boundary[2, 1] * self.edges                             # [3] Point-[faces]
-        face_patches = topology.boundary[3, 2] * ((sides[0] & sides[1]) / 2)     # [corners] Patch-[tets]
-        # A corner hat's gradient is the volume its opposite face sweeps through time over the prism.
-        corner_gradients = (face_patches & time) / (3 * self.prisms)             # [corners] Plane+[tets]
-        tails, heads = topology.corners[3, 1]
-        # At each centroid an edge's Whitney form is a quarter of the difference of its ends' gradients, and its curl
-        # is twice their wedge.
-        centroid_forms = (corner_gradients[heads] - corner_gradients[tails]) / 4    # [tet_edges] Plane+[tets]
-        self.whitney = (spdiag(centroid_forms * Scalar) * topology.oriented[3, 1]).sum(axis=0)   # (Plane+ <- Scalar+)[tets <- edges]
-        curls = 2 * (corner_gradients[tails] ^ corner_gradients[heads])          # [tet_edges] Magnetic+[tets]
-        self.curl = (spdiag(curls * Scalar) * topology.oriented[3, 1]).sum(axis=0)   # (Magnetic+ <- Scalar+)[tets <- edges]
-        # Each edge's potential changing in time sets up an electric field, its Whitney form swept through time.
-        sweep = Plane ^ mv.t                                                     # [] Field+ <- Plane+
-        self.electric = sweep(self.whitney)                                      # (Field+ <- Scalar+)[tets <- edges]
-        # Twice the magnetic energy: the field paired with its dual over each volume, pulled back to the edges.
-        vacuum = self.prisms.norm() * Magnetic.dual()                            # (Patch- <- Magnetic+)[tets]
-        self.stiffness = self.curl.adjugate()(vacuum(self.curl))                 # (Amount- <- Scalar+)[edges <- edges]
+def whitney_operators(topology: Topology, vertices: Point) -> tuple[Scalar, SparseExtensor, SparseExtensor]:
+    """Tetrahedral volumes (`Scalar+[T]`), centroid Whitney 1-forms (`(Plane+ <- Scalar+)[T <- E]`), and curls (`(Magnetic+ <- Scalar+)[T <- E]`) map edge circulations onto each tetrahedron."""
+    edges = topology.d[0] * vertices                                                    # Point-[E]
+    simplex_edges = topology.oriented[3, 1] * edges                                     # [6] Point-[T]
+    prisms = ((simplex_edges[0] & simplex_edges[1] & simplex_edges[2]) / 6) & time      # Scalar-[T]
+    sides = topology.boundary[2, 1] * edges                                             # [3] Point-[F]
+    face_patches = topology.boundary[3, 2] * ((sides[0] & sides[1]) / 2)                # [4] Antibivector-[T]
+    # Each corner's simplex gradient is the spacetime volume its opposite face sweeps over three prism volumes.
+    gradients = (face_patches & time) / (3 * prisms)                                    # [4] Plane+[T]
+    tails, heads = topology.corners[3, 1]                                               # [6], [6]
+    # At each centroid an edge's Whitney form is a quarter of its endpoint gradient difference, and its curl is twice their wedge.
+    centroid_forms = (gradients[heads] - gradients[tails]) / 4                          # [6] Plane+[T]
+    whitney = (spdiag(centroid_forms * Scalar) * topology.oriented[3, 1]).sum(axis=0)   # (Plane+ <- Scalar+)[T <- E]
+    curls = 2 * (gradients[tails] ^ gradients[heads])                                   # [6] Magnetic+[T]
+    curl = (spdiag(curls * Scalar) * topology.oriented[3, 1]).sum(axis=0)               # (Magnetic+ <- Scalar+)[T <- E]
+    return prisms.norm(), whitney, curl
 
 
-def ohm(ball: Ball, conductivity: Scalar) -> Conduction:
-    """Ohm's law in each tetrahedron: the current a field drives, the field read back along the direction it points,
-    swept through time and weighted by the volume, so that a field paired with it is the heat it makes."""
-    return ball.prisms.norm() * conductivity * (along.inverse() & time)        # (Patch- <- Field+)[tets]
+def magnetic_stiffness(volumes: Scalar, curl: SparseExtensor) -> SparseExtensor:
+    """Pulling the vacuum excitation back across the curl maps edge potentials to edge flux forms (`(Antiscalar- <- Scalar+)[E <- E]`)."""
+    excitation = volumes * Magnetic.dual()                                              # (Antibivector- <- Magnetic+)[T]
+    return curl.adjugate()(excitation(curl))                                            # (Antiscalar- <- Scalar+)[E <- E]
 
 
-def induction(ball: Ball, velocities: Point, conductivity: Scalar) -> tuple[SparseExtensor, SparseExtensor]:
-    """The two forms of the potential's induction law, both on the edges: the conductance, which a changing potential
-    meets, and the drive, the moving fluid's electric field pushing current along each edge. A potential `A` changes by
-    `conductance(dA/dt) == drive(A) - stiffness(A)`."""
-    current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets]
-    conductance = ball.electric.adjugate()(current(ball.electric))               # (Amount- <- Scalar+)[edges <- edges]
-    # The moving fluid reads the magnetic plane as an electric field: met with the velocity, swept through time.
-    motional = ((velocities & Magnetic) ^ mv.t)(ball.curl)                       # (Field+ <- Scalar+)[tets <- edges]
-    drive = ball.electric.adjugate()(current(motional))                          # (Amount- <- Scalar+)[edges <- edges]
+def flow_modes(fluid_topology: Topology, fluid_vertices: Point, embedding: Sparse,
+               n_scalar_modes: int, n_modes: int) -> tuple[Scalar, Point, Rate]:
+    """Incompressible eigenmodes of the fluid shell give viscous decay rates (`[n_modes] Scalar+`), velocities (`[n_modes] Point-[T]`), and vorticities (`[n_modes] Rate+[T]`)."""
+    V_fluid, E_fluid, F_fluid, T_fluid = fluid_topology.n_elements
+    volumes, whitney, curl = whitney_operators(fluid_topology, fluid_vertices)          # Scalar+[T_fluid], (Plane+ <- Scalar+)[T_fluid <- E_fluid], (Magnetic+ <- Scalar+)[T_fluid <- E_fluid]
+    velocity_whitney = Plane.dual()(whitney)                                            # (Point- <- Scalar+)[T_fluid <- E_fluid]
+    momentum = volumes * Point.dual()                                                   # (Plane+ <- Point-)[T_fluid]
+    kinetic = velocity_whitney.adjugate()(momentum(velocity_whitney))                   # (Antiscalar- <- Scalar+)[E_fluid <- E_fluid]
+    # Divergence at each vertex and the pressure stiffness that removes inflow, pinned at vertex zero.
+    inflow = fluid_topology.d[0].adjugate() * kinetic                                   # (Antiscalar- <- Scalar+)[V_fluid <- E_fluid]
+    pressure = inflow * fluid_topology.d[0]                                             # (Antiscalar- <- Scalar+)[V_fluid <- V_fluid]
+    reference = mv.scalar((np.arange(V_fluid) == 0)[:, None]).field()                   # Scalar+[V_fluid]
+    pinned_pressure = pressure + pressure.diagonal() * reference                        # (Antiscalar- <- Scalar+)[V_fluid <- V_fluid]
+    vertex_volumes = spdiag((fluid_topology.incidence[3, 0].mean(axis=0).adjugate() * volumes) * Scalar.dual())  # (Antiscalar- <- Scalar+)[V_fluid <- V_fluid]
+    _, scalar_modes = pressure.eigh(vertex_volumes, n_scalar_modes + 1)                 # [n_scalar_modes + 1] Scalar+[V_fluid]
+    # Non-constant scalar modes at edge midpoints laid along x, y, and z and projected free of inflow.
+    edge_means = fluid_topology.incidence[1, 0].mean(axis=0) * scalar_modes[1:]         # [n_scalar_modes] Scalar+[E_fluid]
+    edge_spans = stack((mv.x, mv.y, mv.z))[:, None] & (fluid_topology.d[0] * fluid_vertices)  # [3, 1] Scalar+[E_fluid]
+    seed_circulations = (edge_means * edge_spans).reshape(-1)                           # [3 * n_scalar_modes] Scalar+[E_fluid]
+    solenoidal_flows = seed_circulations - fluid_topology.d[0] * pinned_pressure.solve(inflow(seed_circulations))  # [3 * n_scalar_modes] Scalar+[E_fluid]
+    # Generalized eigenmodes of enstrophy against kinetic energy on the solenoidal subspace.
+    basis_map = (solenoidal_flows * Scalar).batch().field(0, 1).adjoint()               # (Scalar+ <- Scalar+)[E_fluid <- 3 * n_scalar_modes]
+    stiffness = magnetic_stiffness(volumes, curl)                                       # (Antiscalar- <- Scalar+)[E_fluid <- E_fluid]
+    energy_form = (Scalar & (basis_map.adjugate()(kinetic(solenoidal_flows)).batch() * Scalar)).field(1, 2)     # (Scalar+ <- (Scalar+, Scalar+))[3 * n_scalar_modes, 3 * n_scalar_modes]
+    enstrophy_form = (Scalar & (basis_map.adjugate()(stiffness(solenoidal_flows)).batch() * Scalar)).field(1, 2)  # (Scalar+ <- (Scalar+, Scalar+))[3 * n_scalar_modes, 3 * n_scalar_modes]
+    decay_rates, mixtures = enstrophy_form.eigh(energy_form)                            # [3 * n_scalar_modes] Scalar+, [3 * n_scalar_modes] Scalar+[3 * n_scalar_modes]
+    circulations = basis_map(mixtures[:n_modes])                                        # [n_modes] Scalar+[E_fluid]
+    return decay_rates[:n_modes], (embedding * velocity_whitney)(circulations), (embedding * curl)(circulations)
+
+
+def induction_operators(volumes: Scalar, whitney: SparseExtensor, curl: SparseExtensor,
+                        velocities: Point, conductivity: Scalar) -> tuple[SparseExtensor, SparseExtensor]:
+    """Edge conductance and motional drive (`(Antiscalar- <- Scalar+)[E <- E]`) pull Ohm's conduction 4-current back onto the edges."""
+    conduction = (volumes * conductivity) * electric_current                            # (Point- <- Field+)[T]
+    electric = (Plane ^ mv.t)(whitney)                                                  # (Field+ <- Scalar+)[T <- E]
+    conductance = whitney.adjugate()(conduction(electric))                              # (Antiscalar- <- Scalar+)[E <- E]
+    # Moving fluid reads the magnetic plane as an electric field by meeting with velocity and sweeping through time.
+    motional = ((velocities & Magnetic) ^ mv.t)(curl)                                   # (Field+ <- Scalar+)[T <- E]
+    drive = whitney.adjugate()(conduction(motional))                                    # (Antiscalar- <- Scalar+)[E <- E]
     return conductance, drive
 
 
-class Flow:
-    """A flow in the fluid part of the ball as the amplitudes of its slowest modes, orthonormal in kinetic energy. The
-    flow's degrees of freedom are its circulations along the fluid's edges: their Whitney forms are its momentum in each
-    tetrahedron, the momentum's dual its velocity, and their curl its vorticity. The modes start from the fluid's
-    slowest scalar modes, each laid along each axis as a momentum and made incompressible by taking away the gradient
-    that carries its inflow; among the flows these span, the modes are those of least enstrophy for their kinetic
-    energy, and the ratio of the two is each mode's rate of viscous decay at unit viscosity."""
-
-    def __init__(self, fluid: Ball, embedding: SparseExtensor, n_scalar_modes: int, n_modes: int):
-        topology, volumes = fluid.topology, fluid.prisms.norm()                 # Scalar+[fluid]
-        circulating = Plane.dual()(fluid.whitney)                                # (Point- <- Scalar+)[fluid <- edges]
-        momentum = volumes * Point.dual()                                        # (Plane+ <- Point-)[fluid]
-        kinetic = circulating.adjugate()(momentum(circulating))                  # (Amount- <- Scalar+)[edges <- edges]
-        # The fluid flowing into each vertex's share of the fluid, and the stiffness of a pressure pushing it down its
-        # gradient, with the pressure's free constant pinned at the first vertex.
-        inflow = ~topology.d[0] * kinetic                                        # (Amount- <- Scalar+)[vertices <- edges]
-        pressure = inflow * topology.d[0]                                        # (Amount- <- Scalar+)[vertices <- vertices]
-        reference = mv.scalar((np.arange(topology.n_vertices) == 0)[:, None]).field()   # Scalar+[vertices]
-        pinned = pressure + pressure.diagonal() * reference                      # (Amount- <- Scalar+)[vertices <- vertices]
-        shares = spdiag((~topology.incidence[3, 0].mean(axis=0) * volumes) * Scalar.dual())   # (Amount- <- Scalar+)[vertices <- vertices]
-        _, scalar_modes = pressure.eigh(shares, n_scalar_modes + 1)              # [scalar + 1] Scalar+[vertices]
-        # Each scalar mode but the constant, at the edges' midpoints, times each edge's reach along each axis.
-        means = topology.incidence[1, 0].mean(axis=0) * scalar_modes[1:]         # [scalar] Scalar+[edges]
-        reaches = stack((mv.x, mv.y, mv.z))[:, None] & fluid.edges                # [3, 1] Scalar+[edges]
-        seeds = (means * reaches).reshape(-1)                                    # [seeds] Scalar+[edges]
-        incompressible = seeds - topology.d[0] * pinned.solve(inflow(seeds))     # [seeds] Scalar+[edges]
-        # Twice the kinetic energy and twice the enstrophy of the flows the seeds span, as forms on their mixtures.
-        spanned = (incompressible * Scalar).batch().field(0, 1).adjoint()        # (Scalar+ <- Scalar+)[edges <- seeds]
-        energy = (Scalar & (spanned.adjugate()(kinetic(incompressible)).batch() * Scalar)).field(1, 2)   # Scalar+ <- (Scalar+[seeds], Scalar+[seeds])
-        enstrophy = (Scalar & (spanned.adjugate()(fluid.stiffness(incompressible)).batch() * Scalar)).field(1, 2)   # Scalar+ <- (Scalar+[seeds], Scalar+[seeds])
-        decay, mixtures = enstrophy.eigh(energy)                                 # [seeds] Scalar+, [seeds] Scalar+[seeds]
-        self.decay = decay[:n_modes].field()                                     # Scalar+[modes]
-        self.modes = spanned(mixtures[:n_modes])                                 # [modes] Scalar+[edges]
-        self.circulation = (self.modes * Scalar).batch().field(0, 1).adjoint()  # (Scalar+ <- Scalar+)[edges <- modes]
-        # The velocity and the vorticity of the fluid's circulations, placed among the ball's tetrahedra.
-        self.velocity = embedding * circulating                                  # (Point- <- Scalar+)[tets <- edges]
-        self.vorticity = embedding * fluid.curl                                  # (Rate+ <- Scalar+)[tets <- edges]
-
-    def reading(self, form: Plane) -> Scalar:
-        """Each mode's share of a form on the velocities in the ball's tetrahedra, `Scalar+[modes]`: the power a force
-        puts into each mode, or a momentum's amplitude in each."""
-        return (self.modes & self.velocity.adjugate()(form)).sites.sum().field()
+def flow_advection(volumes: Scalar, curl: SparseExtensor, mode_velocities: Point, mode_vorticities: Rate,
+                   target_velocity: Point, amplitudes: Scalar, potential: Scalar) -> tuple[Field, Scalar]:
+    """Departure motional field (`Field+[T]`) and self-advection mode rates (`[n_modes] Scalar+`) come from the current flow state."""
+    velocity = (amplitudes * mode_velocities).sum(axis=0)                               # Point-[T]
+    vorticity = (amplitudes * mode_vorticities).sum(axis=0)                             # Rate+[T]
+    departure_field = ((velocity - target_velocity) & curl(potential)) ^ mv.t           # Field+[T]
+    advection_rates = (-(volumes * (velocity & vorticity)) & mode_velocities).sites.sum()  # [n_modes] Scalar+
+    return departure_field, advection_rates
 
 
-def advected(ball: Ball, flow: Flow, stirred: Point, amplitudes: Scalar, potential: Scalar) -> tuple[Field, Scalar]:
-    """The flow's own part of a step: the motional field of its departure from the stirred flow, `Field+[tets]`, and
-    the rate of each mode's amplitude as the flow carries itself, `Scalar+[modes]`. The flow's momentum changes against
-    its velocity met with its vorticity plane."""
-    circulations = flow.circulation(amplitudes)                                 # Scalar+[edges]
-    velocity, vorticity = flow.velocity(circulations), flow.vorticity(circulations)   # Point-[tets], Rate+[tets]
-    # The moving fluid reads the magnetic plane as an electric field: met with the velocity, swept through time.
-    departure = ((Point & ball.curl(potential)) ^ mv.t)(velocity - stirred)         # Field+[tets]
-    return departure, flow.reading(-(ball.prisms.norm() * (velocity & vorticity)))
-
-
-def dynamo(ball: Ball, flow: Flow, conductivity: Scalar, viscosity: float, pull: float, amplitudes: Scalar,
-           potential: Scalar, dt: float, n_steps: int) -> Iterator[tuple[Scalar, Scalar]]:
-    """Successive flow amplitudes and potentials, `Scalar+[modes]` and `Scalar+[edges]`, from the stirred flow
-    `amplitudes`, which the stirring pulls the flow back toward at the rate `pull`. The field is stepped by
-    Crank–Nicolson under the stirred flow, so that every step is a substitution into one factorized map, and by
-    Adams–Bashforth under the flow's departure from it. The current of that step brakes the flow
-    halfway through it; the flow is stepped by Crank–Nicolson under viscosity and the stirring's pull and by
-    Adams–Bashforth as it carries itself."""
-    current = ohm(ball, conductivity)                                            # (Patch- <- Field+)[tets]
-    stirred = flow.velocity(flow.circulation(amplitudes))                       # Point-[tets]
-    conductance, drive = induction(ball, stirred, conductivity)
-    growth = drive - ball.stiffness                                              # (Amount- <- Scalar+)[edges <- edges]
-    ahead, behind = conductance - (dt / 2) * growth, conductance + (dt / 2) * growth
-    damping = viscosity * flow.decay + pull                                      # Scalar+[modes]
-    stirring = pull * amplitudes                                                 # Scalar+[modes]
-    departure, rate = advected(ball, flow, stirred, amplitudes, potential)       # Field+[tets], Scalar+[modes]
-    previous_departure, previous_rate = departure, rate                          # Field+[tets], Scalar+[modes]
+def dynamo_states(volumes: Scalar, whitney: SparseExtensor, curl: SparseExtensor,
+                  decay_rates: Scalar, mode_velocities: Point, mode_vorticities: Rate,
+                  conductivity: Scalar, viscosity: float, pull: float, target_amplitudes: Scalar,
+                  potential: Scalar, dt: float, n_steps: int) -> Iterator[tuple[Scalar, Scalar]]:
+    """Yields flow mode amplitudes (`[n_modes] Scalar+`) and edge potentials (`Scalar+[E]`) across coupled Crank–Nicolson and Adams–Bashforth steps."""
+    conduction = (volumes * conductivity) * electric_current                            # (Point- <- Field+)[T]
+    electric = (Plane ^ mv.t)(whitney)                                                  # (Field+ <- Scalar+)[T <- E]
+    target_velocity = (target_amplitudes * mode_velocities).sum(axis=0)                 # Point-[T]
+    conductance, drive = induction_operators(volumes, whitney, curl, target_velocity, conductivity)
+    growth = drive - magnetic_stiffness(volumes, curl)                                  # (Antiscalar- <- Scalar+)[E <- E]
+    implicit_operator = conductance - (dt / 2) * growth                                 # (Antiscalar- <- Scalar+)[E <- E]
+    explicit_operator = conductance + (dt / 2) * growth                                 # (Antiscalar- <- Scalar+)[E <- E]
+    damping = viscosity * decay_rates + pull                                            # [n_modes] Scalar+
+    stirring_rates = pull * target_amplitudes                                           # [n_modes] Scalar+
+    amplitudes = target_amplitudes                                                      # [n_modes] Scalar+
+    departure_field, advection_rates = flow_advection(
+        volumes, curl, mode_velocities, mode_vorticities, target_velocity, amplitudes, potential
+    )
+    previous_departure, previous_rates = departure_field, advection_rates               # Field+[T], [n_modes] Scalar+
     yield amplitudes, potential
     for _ in range(n_steps):
-        pushed = 1.5 * departure - 0.5 * previous_departure                      # Field+[tets]
-        stepped = ahead.solve(behind(potential) + dt * ball.electric.adjugate()(current(pushed)))   # Scalar+[edges]
-        change, middle = (stepped - potential) / dt, (stepped + potential) / 2   # Scalar+[edges], Scalar+[edges]
-        # The current of the step, the one Ampère's law balances, `electric.adjugate()(currents) == stiffness(middle)`:
-        # the motional field less the field the changing potential sets up.
-        motional = spdiag((Point & ball.curl(middle)) ^ mv.t)                   # (Field+ <- Point-)[tets <- tets]
-        currents = current(motional(stirred) + pushed - ball.electric(change))  # Patch-[tets]
-        # The field's force on the current is the adjugate of the motional map, which reads the current as a form on
-        # velocities.
-        braking = flow.reading(-motional.adjugate()(currents))                   # Scalar+[modes]
-        pushed_flow = amplitudes + dt * (1.5 * rate - 0.5 * previous_rate + braking + stirring - damping * amplitudes / 2)   # Scalar+[modes]
-        amplitudes, potential = pushed_flow / (1 + (dt / 2) * damping), stepped  # Scalar+[modes], Scalar+[edges]
-        previous_departure, previous_rate = departure, rate
-        departure, rate = advected(ball, flow, stirred, amplitudes, potential)
+        extrapolated_field = 1.5 * departure_field - 0.5 * previous_departure           # Field+[T]
+        next_potential = implicit_operator.solve(
+            explicit_operator(potential) + dt * whitney.adjugate()(conduction(extrapolated_field))
+        )                                                                               # Scalar+[E]
+        potential_rate = (next_potential - potential) / dt                              # Scalar+[E]
+        middle_field = curl((next_potential + potential) / 2)                           # Magnetic+[T]
+        # Midpoint conduction 4-current balances Ampère's law between motional and inductive electric fields.
+        currents = conduction(((target_velocity & middle_field) ^ mv.t) + extrapolated_field - electric(potential_rate))  # Point-[T]
+        # Pairing the magnetic plane with the 4-current yields the Lorentz force 1-form on fluid velocities.
+        braking_rates = ((middle_field & currents) & mode_velocities).sites.sum()       # [n_modes] Scalar+
+        numerator_amplitudes = amplitudes + dt * (
+            1.5 * advection_rates - 0.5 * previous_rates + braking_rates + stirring_rates - damping * amplitudes / 2
+        )                                                                               # [n_modes] Scalar+
+        amplitudes = numerator_amplitudes / (1 + (dt / 2) * damping)                    # [n_modes] Scalar+
+        potential = next_potential                                                      # Scalar+[E]
+        previous_departure, previous_rates = departure_field, advection_rates
+        departure_field, advection_rates = flow_advection(
+            volumes, curl, mode_velocities, mode_vorticities, target_velocity, amplitudes, potential
+        )
         yield amplitudes, potential

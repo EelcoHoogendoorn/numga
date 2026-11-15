@@ -1,161 +1,160 @@
-"""Views of rigid-body normal modes and spring suspensions, drawn on the GPU in the plate's own algebra.
-
-The mechanics supplies infinitesimal mode displacements. Outlines and springs
-are displaced linearly and exaggerated for readability.
-"""
+"""GPU views render suspended plates and their rigid-body vibration modes in the plate's own algebra."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_rgb
 import numpy as np
 
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.panels import overlay, panel
 from numga import concatenate, stack
-from examples.mechanics.modes.core import ModeCase, Point, mv
+from numga.render import Camera, contours, drawing, simplices
+from numga.topology import Topology
+from examples.mechanics.modes.core import Point, Scalar, Twist, mv
 
 
-BODY, GHOST, SUPPORT, SPRING, PLATE = (to_rgb(colour) for colour in ("#254e70", "#929ba7", "#3a414b", "#5b6470", "#d4e3ed"))
-# Widths and radii in pixels; the reference outline dotted, dots of no length a few pixels apart.
-BODY_WIDTH, GHOST_WIDTH, SPRING_WIDTH = 2.0, 1.5, 1.5
-GHOST_DOTS = (0.0, 3.5)
-SUPPORT_RADIUS, ATTACHMENT_RADIUS = 2.6, 2.0
-# A spring's coil: its places along the spring as shares of its length, straight leads at both ends, and how far
-# each zigzags across it, to either side in turn.
+body_colour, ghost_colour, support_colour, spring_colour, plate_colour = (
+    to_rgb(colour) for colour in ("#254e70", "#929ba7", "#3a414b", "#5b6470", "#d4e3ed")
+)
+body_width, ghost_width, spring_width = 2.0, 1.5, 1.5
+ghost_dots = (0.0, 3.5)
+support_radius, attachment_radius = 2.6, 2.0
+peak_corner_excursion = 0.20
+
+# Each spring's coil path combines straight end leads with alternating transverse zigzags.
 n_coil_turns = 15
-coil_along = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, n_coil_turns), 0.84, 1.0]
-coil_across = np.r_[0.0, 0.0, 0.035 * (-1.0) ** np.arange(n_coil_turns), 0.0, 0.0]
+n_coil_points = n_coil_turns + 4
+coil_fractions = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, n_coil_turns), 0.84, 1.0]
+coil_offsets = np.r_[0.0, 0.0, 0.035 * (-1.0) ** np.arange(n_coil_turns), 0.0, 0.0]
 
 
 def coordinates(points: Point) -> np.ndarray:
-    """Coordinates of points of unit weight, and of directions, `[..., 2]`: their pairings with the planes x = 0 and
-    y = 0."""
+    """Pairing with the coordinate planes reads `[..., 2]` Cartesian coordinates of unit-weight points or directions."""
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
-def extent(points: list[Point]) -> tuple[np.ndarray, np.ndarray]:
-    """The lowest and the highest readings across and up of batches of points of unit weight, `[2]` each: their
-    pairings with the planes x = 0 and y = 0."""
-    readings = concatenate([stack((mv.x, mv.y))[:, None] & batch.reshape(-1) for batch in points], axis=-1)
+def bounding_box(point_batches: list[Point]) -> tuple[np.ndarray, np.ndarray]:
+    """Coordinate pairings across `point_batches` give the `[2]` lower and upper framing bounds."""
+    readings = concatenate([stack((mv.x, mv.y))[:, None] & batch.reshape(-1) for batch in point_batches], axis=-1)
     return readings.min(axis=-1).to_array(), readings.max(axis=-1).to_array()
 
 
 def spring_paths(starts: Point, ends: Point) -> Point:
-    """Coils with straight leads between pairs of endpoints `[springs]`, their places `[springs, coil]`."""
-    along = ends - starts                                                    # [springs] Point-
-    # Across each spring: its step turned a quarter turn in the plane, over its length, the size of the line through
-    # its ends.
-    across = along.commutator(mv.xy) / (starts & ends).norm()                # [springs] Point-
-    return starts[:, None] + along[:, None] * coil_along + across[:, None] * coil_across
+    """Straight end leads and alternating transverse offsets trace `[..., n_coil_points]` coil vertices (`Point-`) between `starts` and `ends`."""
+    spans = ends - starts                                                        # [...] Point-
+    # Commuting with the origin bivector turns each span a quarter turn, divided by the join line's Euclidean length.
+    transverse = spans.commutator(mv.xy) / (starts & ends).norm()                # [...] Point-
+    return starts[:, None] + spans[:, None] * coil_fractions + transverse[:, None] * coil_offsets
 
 
-def plate(n_corners: int) -> tuple[simplices.Topology, simplices.Topology]:
-    """A convex plate of `n_corners` corners as triangles fanning out from its first corner, and its rim, the fan's
-    boundary edges."""
-    corners = np.arange(n_corners)
-    surface = simplices.Topology(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), corners[1:-1], corners[2:]], -1))
-    return surface, surface.border
+def plate_surface(n_corners: int) -> Topology:
+    """Triangles fanning from the first vertex cover a convex `n_corners`-gon."""
+    indices = np.arange(n_corners)
+    return Topology(n_corners, np.stack([np.zeros(n_corners - 2, dtype=int), indices[1:-1], indices[2:]], -1))
 
 
-def suspension(camera: Camera, body: Point, anchors: Point, attachments: Point) -> list[np.ndarray]:
-    """The pictures of a plate on its springs: the plate filled and outlined, the springs, their anchors and the
-    attachments on the plate."""
-    surface, rim = plate(len(body))
-    paths = spring_paths(anchors, attachments).reshape(-1)                   # [springs * coil] Point-
-    coils = simplices.Topology.chains([len(coil_along)] * len(anchors))
-    return [contours.picture(body, surface, np.zeros(len(body)), PLATE, camera),
-            simplices.strokes(body, rim, BODY, BODY_WIDTH, camera),
-            simplices.markers(anchors, SUPPORT, SUPPORT_RADIUS, camera),
-            simplices.strokes(paths, coils, SPRING, SPRING_WIDTH, camera),
-            simplices.markers(attachments, BODY, ATTACHMENT_RADIUS, camera)]
+def suspension_layers(camera: Camera, corners: Point, anchors: Point, attachments: Point) -> list[np.ndarray]:
+    """Filled plate triangles, rim strokes, spring coils, and endpoint markers form the RGBA layers of one suspension."""
+    n_corners = len(corners)
+    n_springs = len(anchors)
+    surface = plate_surface(n_corners)
+    coil_points = spring_paths(anchors, attachments).reshape(-1)                 # [n_springs * n_coil_points] Point-
+    coils = Topology.chains([n_coil_points] * n_springs)
+    return [
+        contours.picture(corners, surface, np.zeros(n_corners), plate_colour, camera),
+        simplices.strokes(corners, surface.border, body_colour, body_width, camera),
+        simplices.markers(anchors, support_colour, support_radius, camera),
+        simplices.strokes(coil_points, coils, spring_colour, spring_width, camera),
+        simplices.markers(attachments, body_colour, attachment_radius, camera),
+    ]
 
 
-def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float) -> tuple[plt.Figure, list[list[plt.Axes]]]:
-    """A row of three mode panels per case, with `header` inches above them."""
-    n = len(cases)
-    fig, axes_grid = plt.subplots(n, 3, figsize=(9, 2.7 * n + header), dpi=75, facecolor="white", squeeze=False)
-    axes = axes_grid.tolist()
-
-    low, high = extent([points for case in cases for points in (case.body, case.anchors)])
-    lo, hi = low - 0.35, high + 0.25
-    for row in axes:
-        for ax in row:
-            ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
-            ax.set_aspect("equal")
-            ax.set_axis_off()
-
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=top, wspace=0.04, hspace=hspace)
+def mode_canvas(corners: Point, anchors: Point, dpi: int) -> tuple[plt.Figure, list[plt.Axes]]:
+    """Three equal-aspect axes in one row frame `corners` and `anchors`."""
+    fig, axes_row = plt.subplots(1, 3, figsize=(9, 2.7), dpi=dpi, facecolor="white")
+    low, high = bounding_box([corners, anchors])
+    lower, upper = low - 0.35, high + 0.25
+    axes = list(axes_row)
+    for ax in axes:
+        ax.set(xlim=(lower[0], upper[0]), ylim=(lower[1], upper[1]))
+        ax.set_aspect("equal")
+        ax.set_axis_off()
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, wspace=0.04, hspace=0.04)
     return fig, axes
 
 
-def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
-    """Draw one mode panel and return its phase-update function."""
-    camera = panel(ax, mv.x, mv.y, mv.w)
-    _, rim = plate(len(case.body))
-    reference = simplices.strokes(case.body, rim, GHOST, GHOST_WIDTH, camera, dashes=GHOST_DOTS)
-
-    # The largest offset of a corner drawn a fifth of a unit long; a direction's length is the size of the line
-    # through the origin square to it, its dual.
-    lengths = case.body_offsets[mode].dual().norm().reshape(-1)
-    scale = 0.20 / lengths.max()
-
-    def picture(phase: float) -> np.ndarray:
-        s = phase * scale
-        current_body = case.body + case.body_offsets[mode] * s
-        current_attachments = case.attachments + case.attachment_offsets[mode] * s
-        return simplices.composited([reference, *suspension(camera, current_body, case.anchors, current_attachments)])
-
-    image = simplices.overlay(ax, [picture(1.0)])
-
-    def update(phase: float):
-        image.set_data(picture(phase))
-        return [image]
-
-    return update
+def excursion_scales(corners: Point, mode_twists: Twist) -> Scalar:
+    """Display multipliers (`[3] Scalar+`) normalize each mode twist to a peak corner offset of `peak_corner_excursion`."""
+    corner_offsets = corners[None, :].commutator(mode_twists[:, None])           # [3, 4] Point-
+    return peak_corner_excursion / corner_offsets.antinorm().max(axis=1)
 
 
-def draw_modes(cases: list[ModeCase]) -> plt.Figure:
-    """The three mode panels of each suspension case, one row per case."""
-    fig, axes = _new_figure(cases, 0.0, 0.98, 0.04)
-    for case, row in zip(cases, axes):
-        for mode, ax in enumerate(row):
-            _draw_mode(ax, case, mode)
+def panel_layers(
+    camera: Camera,
+    reference: np.ndarray,
+    corners: Point,
+    anchors: Point,
+    attachments: Point,
+    twist: Twist,
+) -> np.ndarray:
+    """Displaced plate and spring layers composite over the dotted equilibrium `reference` outline for `twist` (`[] Twist+`)."""
+    displaced_corners = corners + corners.commutator(twist)                      # [4] Point-
+    displaced_attachments = attachments + attachments.commutator(twist)          # [...] Point-
+    return drawing.composited([reference, *suspension_layers(camera, displaced_corners, anchors, displaced_attachments)])
+
+
+def mode_figure(corners: Point, anchors: Point, attachments: Point, mode_twists: Twist) -> plt.Figure:
+    """Three side-by-side panels show the peak mode shapes against the dotted equilibrium plate."""
+    fig, axes = mode_canvas(corners, anchors, dpi=75)
+    rim = plate_surface(len(corners)).border
+    scaled_twists = excursion_scales(corners, mode_twists) * mode_twists         # [3] Twist+
+    for mode_index, ax in enumerate(axes):
+        camera = panel(ax, mv.x, mv.y, mv.w)
+        reference = simplices.strokes(corners, rim, ghost_colour, ghost_width, camera, dashes=ghost_dots)
+        overlay(ax, [panel_layers(camera, reference, corners, anchors, attachments, scaled_twists[mode_index])])
     return fig
 
 
-def animate_modes(cases: list[ModeCase], frames: int) -> Iterator[np.ndarray]:
-    """Release each isolated mode from rest in synchronized physical time."""
-    fig, axes = _new_figure(cases, 0.0, 0.98, 0.04)
-    fig.set_dpi(67)
-    updates = [_draw_mode(ax, case, mode)
-               for case, row in zip(cases, axes) for mode, ax in enumerate(row)]
-    frequencies = np.concatenate([case.frequencies.to_array() for case in cases])
-    duration = 2 / np.min(frequencies[frequencies > 0])
-
-    for time in np.linspace(0, duration, frames):
-        for update, phase in zip(updates, np.cos(2 * np.pi * frequencies * time)):
-            update(phase)
+def mode_frames(
+    corners: Point,
+    anchors: Point,
+    attachments: Point,
+    mode_twists: Twist,
+    states: Iterable[Twist],
+) -> Iterator[np.ndarray]:
+    """Yields RGB animation frames for a stream of three-mode twist `states` (`[3] Twist+`)."""
+    fig, axes = mode_canvas(corners, anchors, dpi=67)
+    rim = plate_surface(len(corners)).border
+    scales = excursion_scales(corners, mode_twists)                              # [3] Scalar+
+    cameras = [panel(ax, mv.x, mv.y, mv.w) for ax in axes]
+    references = [
+        simplices.strokes(corners, rim, ghost_colour, ghost_width, camera, dashes=ghost_dots)
+        for camera in cameras
+    ]
+    initial_twists = scales * mode_twists                                        # [3] Twist+
+    images = [
+        overlay(ax, [panel_layers(camera, reference, corners, anchors, attachments, initial_twists[mode_index])])
+        for mode_index, (ax, camera, reference) in enumerate(zip(axes, cameras, references))
+    ]
+    for state in states:
+        scaled_twists = scales * state                                           # [3] Twist+
+        for mode_index, (image, camera, reference) in enumerate(zip(images, cameras, references)):
+            image.set_data(panel_layers(camera, reference, corners, anchors, attachments, scaled_twists[mode_index]))
         yield capture(fig)
     plt.close(fig)
 
 
-def render_setup(
-    body: Point,
-    anchors: Point,
-    attachments: Point,
-) -> plt.Figure:
-    """The suspension at equilibrium: the plate, its springs and their anchors."""
+def setup_figure(corners: Point, anchors: Point, attachments: Point) -> plt.Figure:
+    """Equilibrium layers show the suspended plate, its springs, and their anchors in a single panel."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
-
-    low, high = extent([body, anchors])
-    lo, hi = low - 0.35, high + 0.35
-    ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
+    low, high = bounding_box([corners, anchors])
+    lower, upper = low - 0.35, high + 0.35
+    ax.set(xlim=(lower[0], upper[0]), ylim=(lower[1], upper[1]))
     ax.set_aspect("equal")
     ax.set_axis_off()
     fig.tight_layout()
-    simplices.overlay(ax, suspension(panel(ax, mv.x, mv.y, mv.w), body, anchors, attachments))
+    overlay(ax, suspension_layers(panel(ax, mv.x, mv.y, mv.w), corners, anchors, attachments))
     return fig

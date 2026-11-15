@@ -1,1 +1,1 @@
-"""The Meissner effect: a superconducting rod cooled in a magnetic field, on a mesh of triangles."""
+"""Spacetime electromagnetism on a triangulated cross-section models the Meissner effect and ring flux quantization."""

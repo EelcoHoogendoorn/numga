@@ -1,56 +1,6 @@
-"""Strain-preserving impulses, built from a symmetric reversal and its boosts.
+"""Spacetime worldline geometry models strain-preserving relativistic impulses and endpoint histories.
 
-An impulse changes a worldline's slope, not its position. In a fixed observer
-frame, the body's equal-time length cannot jump while its endpoint worldlines
-remain continuous. A sudden velocity change therefore cannot simply replace
-the body's length before the change with the relaxed Lorentz-contracted length
-of the motion after it. Arbitrary timing across the body generally leaves
-compression or stretch, which drives an internal response and may relax to a
-different length.
-Changing observer alone introduces no strain: Lorentz contraction compares
-different equal-time cuts of the same worldlines.
-
-Start in the symmetric frame: the rod reverses direction everywhere at once,
-keeping the same speed. Each end's incoming and outgoing worldline segments
-are mirror images across that instant, and the measured length is unchanged.
-Both motions have the same proper spacing, so there is no strain mismatch to
-relax. An open sandwich changes the observer of the entire drawing. The line
-joining the kinks tilts, becoming the spacelike hyperbolic bisector of the
-motions before and after. In the boosted drawing the observer-frame length
-changes continuously as the two ends reach their kinks at different times.
-
-Each material point makes one sharp jump between specified uniform velocities.
-For unequal velocities, unchanged proper spacing on both sides fixes this
-kink line up to translation: a strain-preserving, or constant-strain, impulse.
-The symmetric reversal, Lorentz transformation and continuity of worldlines
-are sufficient to construct it geometrically.
-
-Observers agree on the local impulse events, worldline continuity and material
-strain, while assigning different simultaneity slices and measured lengths.
-Impulses simultaneous across the body in one frame become a tilted sequence
-of events in another. That apparent travel is an ordering of distributed
-impulses, not propagation of a signal or sound wave. Both descriptions give
-the same physical strain outcome.
-
-Repeatedly applying one fixed boost followed by one fixed translation produces
-the train. Each application advances both worldlines to their next kinks.
-Events are evenly spaced on the left end's proper clock; their spacing in
-observer time grows as the body speeds up.
-
-This uniqueness concerns the prescribed single-step construction. Unchanged
-proper spacing and uniform outgoing motion leave no elastic mismatch to relax.
-The barn and spaceship examples illustrate compression and stretching from
-other timings, with the subsequent response depending on the material.
-
-This geometric presentation was developed independently of Moses Fayngold's
-algebraic treatment, but the finite strain-preserving timing is the same:
-M. Fayngold, "The Dynamics of Relativistic Length Contraction and the Ehrenfest
-Paradox", arXiv:0712.3891 (2007; revised 2020), Sec. 1(III),
-"Non-simultaneous braking", Eq. (9):
-https://arxiv.org/pdf/0712.3891v3#page=13
-
-Coordinates are time and position along `mv.t` and `mv.x`, in units where the
-speed of light and the proper rod length are both one.
+In the symmetric frame where a rod reverses velocity simultaneously across its length, incoming and outgoing worldlines have identical proper spacing without elastic mismatch. Boosting that reversal tilts the simultaneous impulse line onto the spacelike hyperbolic bisector of the incoming and outgoing four-velocities, defining a finite velocity step that preserves proper spacing across inertial frames; see M. Fayngold, arXiv:0712.3891 (2007; revised 2020), Section 1(III).
 """
 
 from __future__ import annotations
@@ -59,125 +9,78 @@ import numpy as np
 
 from numga import Algebra, NumpyContext, concatenate, stack
 
+ga = Algebra("x+t-")
+mv = NumpyContext(ga).multivector
 
-Spacetime = Algebra("x+t-")
-ctx = NumpyContext(Spacetime)
-mv = ctx.multivector
+Scalar = ga.gatype.scalar()                         # Scalar+
+Point = ga.gatype.antivector()                      # Antivector-
+Rotor = ga.gatype.rotor()                           # Rotor+
+PointMap = ga.gatype((Point, Point))                # Point- <- Point-
 
-Scalar = Spacetime.gatype.scalar()
-# Events and directions are antivectors, intrinsic like all geometry.
-Point = Spacetime.gatype.antivector()
-Rotor = Spacetime.gatype.rotor()
-PointMap = Spacetime.gatype((Point, Point))
-
-# The observer's direction in time, which pairs to one with its slice `mv.t`; the dual carries the minus of
-# t's square.
-time = -mv.t.dual()
-
-# Allow for the library's approximate bivector exp().
-GEOMETRY_ATOL = 1e-9
-# The rod's two ends, in units of its proper length.
-ends: Scalar = mv.scalar([[0.0], [1.0]])  # [end] Scalar
+time = -mv.t.dual()                                 # [] Point-
+space = mv.x.dual()                                 # [] Point-
+rod_ends = np.array([0, 1])
 
 
-def boost(rapidity: np.ndarray) -> PointMap:
-    """The Lorentz boost adding `rapidity` to every velocity, as a map on events and directions.
-
-    Normalizing removes exp's tiny scale error before the map is reused.
-    """
-    rotor: Rotor = (mv.xt * rapidity / 2).exp().normalized()
-    return rotor.transform(Point)
+def boost_map(rapidity: np.ndarray) -> PointMap:
+    """Hyperbolic turns in the spacetime plane build the Lorentz boost map (`[...] Point- <- Point-`)."""
+    rotor = (mv.xt * (rapidity / 2)).exp().normalized()                         # [...] Rotor+
+    return rotor >> Point                                                       # [...] Point- <- Point-
 
 
 def strain_preserving_kinks(before: Point, after: Point) -> Point:
-    """Join unit future timelike directions with a unit-proper-length step.
-
-    The summed directions give the midpoint observer's time axis. Its
-    spacelike perpendicular supplies the kink line; scale it so that both
-    rest frames measure the unit proper spacing. Anchor the left kink
-    at the origin. This construction is specific to the plane of `mv.t` and `mv.x`.
-    """
-    separation: Point = ((before + after) * mv.tx) / (1 + (-before.dual_inverse() & after))
-    return ends * separation
+    """Spacelike bisector separation places the two rod-end kinks (`[2] Point-`) at unit proper length."""
+    separation = ((before + after) * mv.tx) / (1 + (before | after))            # [] Point-
+    return rod_ends * separation                                                # [2] Point-
 
 
 def velocity_step(before_rapidity: float, after_rapidity: float) -> tuple[Point, Point]:
-    """A prescribed rigid-to-rigid step, anchored at the left endpoint's kink.
-
-    Return the two kink events and unit before/after directions. For unequal
-    specified velocities, a single sharp jump with unchanged proper spacing
-    uniquely fixes the kink surface up to translation. It is horizontal in
-    the rapidity-bisector frame, where the velocity reverses direction at the
-    same speed without a length change. Boosts supply the two directions;
-    their bisector supplies the kink events.
-
-    This kinematic construction represents no flexible modes or sound wave;
-    it does not establish uniqueness for general dynamical histories. The
-    proper rod length is 1.
-    """
-    directions: Point = boost(np.array([before_rapidity, after_rapidity]))(time)   # [step + 1] Point
+    """A single strain-preserving velocity jump places the endpoint kinks (`[2] Point-`) between incoming and outgoing tangents (`[2] Point-`)."""
+    directions = boost_map(np.array([before_rapidity, after_rapidity]))(time)   # [2] Point-
     return strain_preserving_kinks(directions[0], directions[1]), directions
 
 
-def small_impulses(final_rapidity: float, count: int, dt: float) -> tuple[Point, Point]:
-    """Compose one fixed boost-plus-translation to generate successive steps.
-
-    Return kink events with batch shape (step, end), and the directions
-    before, between and after the steps. dt is PROPER time between left-end
-    kinks. The same affine map advances the kink pair on every iteration;
-    its linear part advances the worldline directions. Negative steps need
-    sufficient spacing to keep the right-end events in chronological order.
-    """
-    step: PointMap = boost(final_rapidity / count)
-    before: Point = time
-    after: Point = step(before)
-    events: Point = strain_preserving_kinks(before, after)
-    offset: Point = dt * after
+def impulse_train(final_rapidity: float, n_steps: int, proper_step: float) -> tuple[Point, Point]:
+    """Repeated application of one boost and proper-time shift generates kink events (`[n_steps, 2] Point-`) and segment tangents (`[n_steps + 1] Point-`)."""
+    step_boost = boost_map(np.asarray(final_rapidity / n_steps))                # [] Point- <- Point-
+    before = time                                                               # [] Point-
+    after = step_boost(before)                                                  # [] Point-
+    events = strain_preserving_kinks(before, after)                             # [2] Point-
+    offset = proper_step * after                                                # [] Point-
 
     event_history = [events]
     direction_history = [before, after]
-    for _ in range(count - 1):
-        # Both the boost and the translation stay FIXED throughout the train.
-        events = step(events) + offset
-        after = step(after)
+    for _ in range(n_steps - 1):
+        events = step_boost(events) + offset                                    # [2] Point-
+        after = step_boost(after)                                               # [] Point-
         event_history.append(events)
         direction_history.append(after)
     return stack(event_history), stack(direction_history)
 
 
-def coasting(events: Point, direction: Point, times: Scalar) -> Point:
-    """The events at observer times `times` on the straight worldlines through `events` along `direction`."""
-    return events + direction * ((times - (mv.t & events)) / (mv.t & direction))
+def coasting_events(events: Point, direction: Point, observer_times: np.ndarray) -> Point:
+    """Straight worldlines through `events` along `direction` cross each observer time (`[...] Point-`)."""
+    return events + direction * ((observer_times - (mv.t & events)) / (mv.t & direction))  # [...] Point-
 
 
-def worldline_events(times: Scalar, kinks: Point, directions: Point) -> Point:
-    """Each end's event at observer times `times`, on its piecewise straight worldline: [..., end].
-
-    kinks has batch shape (step, end); directions (step + 1), the motion before,
-    between and after the steps. Start on the worldline before the first kink,
-    then add each velocity jump only after that end has crossed its kink.
-    """
-    # Velocities per unit observer time.
-    rates: Point = directions / (mv.t & directions)                      # [step + 1] Point
-    elapsed: Scalar = times.reshape(*times.shape, 1, 1) - (mv.t & kinks)  # [..., step, end]
-    jumps: Point = rates[1:] - rates[:-1]                               # [step]
+def worldline_events(observer_times: np.ndarray, kinks: Point, directions: Point) -> Point:
+    """Piecewise-linear endpoint worldlines cross each observer time (`[..., 2] Point-`)."""
+    rates = directions / (mv.t & directions)                                    # [...] Point-
+    elapsed = observer_times[..., None, None] - (mv.t & kinks)                  # [...] Scalar+
+    jumps = rates[1:] - rates[:-1]                                              # [...] Point-
     return kinks[0] + rates[0] * elapsed[..., 0, :] + (jumps[:, None] * elapsed.clip(0.0, np.inf)).sum(axis=-2)
 
 
-def worldlines(kinks: Point, directions: Point, span: Scalar) -> Point:
-    """Each end's worldline as a polyline over the observer times span [limit], through its kinks: [step + 2, end]."""
-    ends: Point = worldline_events(span, kinks, directions)             # [limit, end]
-    return concatenate((ends[:1], kinks, ends[1:]))
+def worldline_polylines(kinks: Point, directions: Point, time_bounds: np.ndarray) -> Point:
+    """Endpoint polylines connect the outer observer `time_bounds` through all intermediate `kinks` (`[..., 2] Point-`)."""
+    outer_ends = worldline_events(time_bounds, kinks, directions)               # [2, 2] Point-
+    return concatenate((outer_ends[:1], kinks, outer_ends[1:]))                 # [..., 2] Point-
 
 
-def ringing_length(times: np.ndarray, damping_ratio: float, natural_frequency: float) -> np.ndarray:
-    """Underdamped mode that starts at length 0.6 with zero rate of change and settles to length 1.
-
-    natural_frequency is the undamped angular frequency; both decay and
-    oscillation follow from it and the damping ratio.
-    """
+def ringing_lengths(observer_times: np.ndarray, damping_ratio: float, natural_frequency: float) -> np.ndarray:
+    """An underdamped harmonic mode relaxes from initial compressed length 0.6 toward unit rest length."""
     damping = damping_ratio * natural_frequency
     frequency = natural_frequency * np.sqrt(1.0 - damping_ratio**2)
-    return 1.0 - 0.4 * np.exp(-damping * times) * (
-        np.cos(frequency * times) + damping / frequency * np.sin(frequency * times)
+    return 1.0 - 0.4 * np.exp(-damping * observer_times) * (
+        np.cos(frequency * observer_times) + damping / frequency * np.sin(frequency * observer_times)
     )

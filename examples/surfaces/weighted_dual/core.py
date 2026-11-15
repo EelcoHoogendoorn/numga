@@ -1,121 +1,116 @@
-"""A convex polyhedron, its polar dual about the unit sphere, and both projected onto the sphere.
+"""Polar duality about the unit sphere relates polyhedral face planes, dual poles, dihedral folds, and radial vertex weights.
 
-Points anywhere in space around the centre span a convex hull. Each face lies in a plane, the one that pairs
-to one with every point of the face, and the dual of that plane about the unit sphere is the face's pole; the
-poles are the vertices of the polar dual. Seen from the centre, each point has an image on the sphere; the images of the hull are a
-triangle mesh on the sphere, and the images of the poles its dual vertices. How far a point lies from the
-centre does not move its image, but it tilts the faces around it, and with them the dual vertices. Along a
-fixed direction a point's weight is one over its distance, and every edge's fold is linear in the weights:
-the weights that keep every dual edge positive form a convex cone, found by a linear program.
+Points around the origin span a triangulated polyhedron whose face planes each pair to one with their three corners.
+Taking the dual of each face plane about the unit sphere yields the face pole, and projecting both radially onto the
+sphere pairs a spherical triangulation with its polar dual complex. Varying each vertex's inverse distance along its
+fixed ray tilts the incident faces while keeping both the dihedral folds and the face planes linear in those weights.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
-from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
-# Points, and directions from the centre, are antivectors.
+# Points and ray directions from the centre are intrinsic antivectors.
 Point = ga.gatype.antivector()                      # Antivector-
 
 
-# --- math -----------------------------------------------------------------------------
-def poles(topology: Topology, points: Point) -> Point:
-    """The pole of each face about the unit sphere is the dual of the face's plane, the plane that pairs to one
-    with each of its vertices: the planes through the centre and each edge, summed, over the volume of the
-    vertices."""
-    corners = topology.incidence[2, 0] * points                                # [corners] Point-[faces]
-    tails, heads = topology.incidence[1, 0] * points                           # Point-[edges], Point-[edges]
-    planes = (topology.d[1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])  # Plane+[faces]
-    return planes.dual()                                                       # Point-[faces]
+def spiral_directions(n_points: int, jitter: float, seed: int) -> Point:
+    """Unit ray directions (`Point-[V]`) follow a Fibonacci spiral perturbed by Gaussian angular jitter."""
+    turns = np.arange(n_points) + 0.5                                          # [n_points]
+    polar = np.arccos(1 - 2 * turns / n_points)                                # [n_points]
+    azimuth = np.pi * (1 + 5**0.5) * turns                                     # [n_points]
+    # Turn the north pole toward +x by the polar angle and around the z axis by the azimuth.
+    polar_rotors = (mv.zx * (-polar / 2)).exp()                                # [n_points] Rotor+
+    azimuth_rotors = (mv.xy * (-azimuth / 2)).exp()                            # [n_points] Rotor+
+    spiral = (azimuth_rotors * polar_rotors) >> mv.z.dual()                    # [n_points] Point-
+    nudges = mv.vector(np.random.default_rng(seed).normal(size=(n_points, 3))).dual()  # [n_points] Point-
+    return (spiral + jitter * nudges).normalized().field()                     # Point-[V]
 
 
-def sides(topology: Topology, points: Point, duals: Point) -> Scalar:
-    """Each of a face's three sides is positive where the face's pole, seen from the centre, lies on the face's
-    side of the plane through the centre and an edge, as the face's third vertex does; all three are positive
-    when the pole lands inside the face."""
-    corners = topology.incidence[2, 0] * points                                # [corners] Point-[faces]
-    tails, heads = topology.incidence[1, 0] * points                           # Point-[edges], Point-[edges]
-    # The plane through the centre and the edge facing each corner, turned as the face runs along the edge.
-    walls = topology.boundary[2, 1] * (tails & heads)                          # [corners] Plane-[faces]
-    return (walls & duals) * (walls & corners)                                 # [corners] Scalar+[faces]
+def face_poles(topology: Topology, points: Point) -> Point:
+    """Each face plane sums its three corner simplex gradients, and its dual about the unit sphere gives the face pole (`Point-[F]`)."""
+    corners = topology.incidence[2, 0] * points                                # [3] Point-[F]
+    opposite_corners = topology.off[2, 0] * points                             # [2, 3] Point-[F]
+    edge_planes = opposite_corners[0] & opposite_corners[1]                    # [3] Plane-[F]
+    gradients = edge_planes / (edge_planes & corners)                          # [3] Plane+[F]
+    return gradients.sum(axis=0).dual()                                        # Point-[F]
+
+
+def pole_sides(topology: Topology, points: Point, duals: Point) -> Scalar:
+    """Pairings with the three central edge planes (`[3] Scalar+[F]`) are all positive when each face pole projects inside its triangle."""
+    corners = topology.incidence[2, 0] * points                                # [3] Point-[F]
+    opposite_corners = topology.off[2, 0] * points                             # [2, 3] Point-[F]
+    walls = opposite_corners[0] & opposite_corners[1]                          # [3] Plane-[F]
+    return (walls & duals) * (walls & corners)                                 # [3] Scalar+[F]
+
+
+def breath_states(
+    topology: Topology, directions: Point, amplitude: float, phases: np.ndarray, n_frames: int
+) -> Iterator[tuple[Topology, Point, Point]]:
+    """Yields `(topology, points, duals)` across `n_frames` as vertices oscillate radially along fixed `directions` (`Point-[V]`)."""
+    for angle in np.linspace(0, 2 * np.pi, n_frames, endpoint=False):
+        radii = mv.scalar((1 + amplitude * np.sin(angle + phases))[:, None]).field()  # Scalar+[V]
+        points = directions * radii                                            # Point-[V]
+        yield topology, points, face_poles(topology, points)
+
+
+def edge_folds(topology: Topology, directions: Point, weights: Scalar) -> Scalar:
+    """Signed dihedral folds (`[...] Scalar+[E_interior]`) across interior edges vary linearly with the four incident vertex weights."""
+    interior = topology.reading(topology.interior[1], 1)                       # Scalar+[E_interior <- E]
+    # Gather each interior edge's endpoints together with the opposite corners of its left and right triangles.
+    ends = interior * topology.incidence[1, 0]                                 # [2] Scalar+[E_interior <- V]
+    opposites = topology.reading(topology.facet_opposites.T, 0)                # [2] Scalar+[E_interior <- V]
+    tail, head = ends * directions                                             # Point-[E_interior], Point-[E_interior]
+    left_corner, right_corner = opposites * directions                         # Point-[E_interior], Point-[E_interior]
+    left_volume = tail & head & left_corner                                    # Scalar-[E_interior]
+    volumes = stack([
+        head & left_corner & right_corner,
+        tail & left_corner & right_corner,
+        tail & head & right_corner,
+        left_volume,
+    ])                                                                         # [4] Scalar-[E_interior]
+    # Weight each three-ray volume with alternating signs so the four-point determinant stays linear in the weights.
+    corner_weights = concatenate([ends * weights[..., None], opposites * weights[..., None]], axis=-1)  # [..., 4] Scalar+[E_interior]
+    signs = np.array([-1, 1, -1, 1])                                           # [4]
+    return (volumes * (corner_weights * signs)).sum(axis=-1) * left_volume     # [...] Scalar+[E_interior]
+
+
+def pole_insides(topology: Topology, directions: Point, weights: Scalar) -> Scalar:
+    """Signed distances (`[..., 3] Scalar+[F]`) of each face pole inside its three central edge planes vary linearly with `weights`."""
+    corners = topology.incidence[2, 0] * directions                            # [3] Point-[F]
+    opposite_corners = topology.off[2, 0] * directions                         # [2, 3] Point-[F]
+    edge_planes = opposite_corners[0] & opposite_corners[1]                    # [3] Plane-[F]
+    gradients = edge_planes / (edge_planes & corners)                          # [3] Plane+[F]
+    duals = (gradients * (topology.incidence[2, 0] * weights[..., None])).sum(axis=-1).dual()  # [...] Point-[F]
+    walls = edge_planes.normalized()                                           # [3] Plane-[F]
+    corner_senses = walls & corners                                            # [3] Scalar-[F]
+    return (walls & duals[..., None]) * corner_senses / corner_senses.antinorm()  # [..., 3] Scalar+[F]
 
 
 def dual_lengths(topology: Topology, points: Point) -> Scalar:
-    """A dual edge's signed length, seen from the centre, is how much further the pole of the face on the right
-    of its edge lies to that side than the pole of the face on the left; it is negative where the two poles have
-    crossed over."""
-    inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
-    tails, heads = (inner * (topology.incidence[1, 0] * points)).batch()       # [inner] Point-, [inner] Point-
-    wall = tails & heads                                                       # [inner] Plane-
-    toward = wall & (topology.reading(topology.facet_opposites[:, 1], 0) * points).batch()  # [inner] Scalar-
-    # The poles summed back onto their faces' edges, each signed as its face runs along the edge, are the pole on
-    # the left less the pole on the right: the step across each edge from left to right is their negative.
-    crossing = -(inner * (~topology.d[1] * poles(topology, points))).batch()   # [inner] Point-
-    return (wall & crossing) * toward / toward.norm()                          # [inner] Scalar+
+    """Signed steps across interior edges (`Scalar+[E_interior]`) between adjacent face poles turn negative where dual edges cross."""
+    interior = topology.reading(topology.interior[1], 1)                       # Scalar+[E_interior <- E]
+    tails, heads = interior * (topology.incidence[1, 0] * points)              # Point-[E_interior], Point-[E_interior]
+    wall = tails & heads                                                       # Plane-[E_interior]
+    right_sense = wall & (topology.reading(topology.facet_opposites[:, 1], 0) * points)  # Scalar-[E_interior]
+    # Pulling face poles back by d[1].adjugate() gives left pole minus right pole, negated to step from left to right.
+    pole_steps = -(interior * (topology.d[1].adjugate() * face_poles(topology, points)))  # Point-[E_interior]
+    return (wall & pole_steps) * right_sense / right_sense.antinorm()          # Scalar+[E_interior]
 
 
-def folds(topology: Topology, directions: Point, weights: Scalar) -> Scalar:
-    """An edge's fold is how far it bends outward, as on a convex polyhedron, or inward where negative, for
-    points along the directions at the distances one over their weights: the volume of the edge's ends and the
-    two vertices across it, times their four weights. That is a sum over the four corners of each weight times
-    the volume of the other three directions, with alternating signs, so it is linear in the weights. Each fold
-    is scaled by the volume of the edge's ends and the vertex across it on the left, which sets the sense of the
-    centre."""
-    inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
-    # Each edge's ends, then the vertices across it on its left and on its right.
-    ends, across = inner * topology.incidence[1, 0], topology.reading(topology.facet_opposites.T, 0)  # [2] Scalar+[inner <- points], [2] Scalar+[inner <- points]
-    tail, head = (ends * directions).batch()                                   # [inner] Point-, [inner] Point-
-    left, right = (across * directions).batch()                                # [inner] Point-, [inner] Point-
-    face = tail & head & left                                                    # [inner] Scalar-
-    volumes = stack([head & left & right, tail & left & right, tail & head & right, face])   # [4, inner] Scalar-
-    # The four weights in the same order, on the second axis from the end, and the alternating signs of the sum.
-    corner_weights = concatenate([(ends * weights[..., None]).batch(),
-                                  (across * weights[..., None]).batch()], axis=-2)   # [..., 4, inner] Scalar+
-    alternating = np.array([-1, 1, -1, 1])[:, None]
-    return (volumes * (corner_weights * alternating)).sum(axis=-2) * face      # [..., inner] Scalar+
-
-
-def insides(topology: Topology, directions: Point, weights: Scalar) -> Scalar:
-    """The signed distances of a face's pole inside the planes through the centre and each of its edges are
-    positive on the face's side, all three when the pole lands inside the face. The face's plane is the corners'
-    weights times the face's reciprocal frame, the three planes that pair to one with their own corner's
-    direction and to zero with the other two, and the planes through the edges are fixed by the directions, so
-    the distances are linear in the weights."""
-    corners = topology.incidence[2, 0] * directions                            # [corners] Point-[faces]
-    tails, heads = topology.incidence[1, 0] * directions                       # Point-[edges], Point-[edges]
-    # The plane through the centre and the edge facing each corner, turned as the face runs along the edge.
-    edge_planes = topology.boundary[2, 1] * (tails & heads)                    # [corners] Plane-[faces]
-    frame = edge_planes / (corners[0] & corners[1] & corners[2])               # [corners] Plane+[faces]
-    # The weights at each face's corners, on the last axis.
-    duals = (frame * (topology.incidence[2, 0] * weights[..., None])).sum(axis=-1).dual()  # [...] Point-[faces]
-    walls = edge_planes.normalized()                                           # [corners] Plane-[faces]
-    facing = walls & corners                                                   # [corners] Scalar-[faces]
-    return (walls & duals[..., None]) * facing / facing.norm()                 # [..., corners] Scalar+[faces]
-
-
-# --- plumbing -------------------------------------------------------------------------
-def hull(points: Point) -> Topology:
-    """The convex hull of points around the centre has triangle faces, counter-clockwise seen from outside, which
-    scipy finds from the points' coordinates, one step outside the algebra."""
-    # Each point read by pairing it with the planes across x, y and z.
-    coordinates = (stack((mv.x, mv.y, mv.z), axis=-1) & points.batch()[..., None]).to_array()   # [points, 3]
-    topology, _ = shapes.convex_boundary(coordinates)
-    return topology
-
-
-def timing(frames: int) -> np.ndarray:
-    """Each frame is so far along the way: at a steady pace for three quarters of the frames, then closing in on
-    the end over the last quarter, the way left shrinking by so many e-folds, the pace continuous where it
-    starts closing in."""
-    closing_start, e_folds = 3 / 4, 3
-    rate = e_folds / (1 - closing_start)
-    # The way left where closing in starts.
-    left = 1 / (1 + closing_start * rate)
-    time = np.linspace(0, 1, frames)
-    return np.where(time < closing_start, time * left * rate, 1 - left * np.exp(-(time - closing_start) * rate))
+def rescue_states(
+    topology: Topology, directions: Point, start_weights: Scalar, target_weights: Scalar, schedule: np.ndarray
+) -> Iterator[tuple[Topology, Point, Point]]:
+    """Yields `(topology, points, duals)` as vertex weights (`Scalar+[V]`) interpolate linearly from `start_weights` to `target_weights`."""
+    for progress in schedule:
+        weights = start_weights + float(progress) * (target_weights - start_weights)  # Scalar+[V]
+        points = directions / weights                                          # Point-[V]
+        yield topology, points, face_poles(topology, points)

@@ -1,4 +1,4 @@
-# One star, several images
+# Gravitational lensing
 
 Open the notebook from the repository root:
 
@@ -6,8 +6,7 @@ Open the notebook from the repository root:
 jupyter lab examples/relativity/gravitational_lensing/gravitational_lensing.ipynb
 ```
 
-The notebook lays out the lens, its local map and the source's light in its own cells; drawing lives
-in `render.py`. To write the figures and the animation to `plots/` without opening the notebook:
+The notebook defines the binary lens deflection, its local derivative map, and the moving source brightness in its own cells, while `render.py` draws the critical curve, caustic, and sky images. Run `scenarios.py` to write the figure and animation to `plots/` directly:
 
 ```sh
 MPLBACKEND=Agg python -m examples.relativity.gravitational_lensing.scenarios

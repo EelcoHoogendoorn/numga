@@ -1,12 +1,6 @@
-"""A camera above a rotating black hole's disk, traced on the GPU at the window's own pixels, as fast as the GPU
-allows: the shader of the GPU notebook, its light exposed and drawn into the window without leaving the GPU.
+"""Interactive WebGPU window tracing a camera above a rotating Kerr black hole's accretion disk.
 
-Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]` to halve or double the integration
-step, the fraction of a ray's radius each Runge–Kutta step covers, space to stop or restart the disk's orbit, and `s`
-to stop or restart the spin, which sweeps from turning one way to turning the other and back, the disk orbiting with
-the hole and then against it. Against the hole the disk is far cooler and dimmer, a few hundredths of its light with
-it, so the exposure follows the brightest light of the last frame, as a camera's meter would; `e` holds it at the
-scenario's exposure instead, to compare brightness across spins. The terminal reports the frames per second, the step and the spin.
+Drag to orbit the camera around the hole, scroll to zoom in or out, press `[` and `]` to halve or double the integration step fraction, press space to pause or resume the disk's orbital flow, press `s` to pause or resume the black-hole spin sweep, and press `e` to toggle automatic exposure metering against the fixed scenario reference temperature.
 
     python -m examples.relativity.kerr.viewer
 """
@@ -21,22 +15,22 @@ from examples.relativity.kerr import core, gpu, render, scenarios
 
 mv = core.mv
 # The window's size at the start, in points; the image is traced at the screen's pixels behind them.
-WINDOW = (480, 320)
+window_size = (480, 320)
 # The camera's nearest and farthest distance from the hole, in masses, and how fast dragging and scrolling move it.
-NEAREST, FARTHEST = 8.0, 90.0
-TURN_PER_POINT, ZOOM_PER_SCROLL = 0.006, 0.0015
+nearest_distance, farthest_distance = 8.0, 90.0
+turn_per_point, zoom_per_scroll = 0.006, 0.0015
 # The step at the start, a fraction of the ray's radius, and the steps `[` and `]` move between: a step of 0.4
 # changes a few pixels by a few levels from one eight times finer.
-STEP, FINEST, COARSEST = 0.4, 0.05, 1.6
+initial_step, finest_step, coarsest_step = 0.4, 0.05, 1.6
 # The spin's largest size, in masses, and the seconds of one sweep there and back.
-LARGEST_SPIN, SPIN_PERIOD = 0.95, 12.0
+largest_spin, spin_period = 0.95, 12.0
 # Where a frame's brightest light sits, in mid-greys, when the exposure follows it: where it sits in the scenario's
 # still; and the share of the way each frame's exposure moves toward it.
-BRIGHTEST, FOLLOWING = 3.7, 0.3
+brightest_target, exposure_smoothing = 3.7, 0.3
 
-# The traced light, exposed as `render.develop` exposes it and added to the sky, drawn over the window by one
+# The traced light, exposed as `render.tone_mapped_frame` exposes it and added to the sky, drawn over the window by one
 # triangle: each pixel reads its sample from the tracer's output, `stride` numbers to a pixel.
-DISPLAY = """
+display_shader = """
 struct View {
     columns: u32,
     stride: u32,
@@ -91,18 +85,18 @@ fn fragment(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
 
 # --- math -----------------------------------------------------------------------------
 def luminance(temperature: float) -> float:
-    """A blackbody's luminance at a temperature, K, in the units of the traced light."""
+    """Gives a blackbody's linear sRGB luminance at `temperature` K."""
     return float(render.blackbody(np.array(temperature)) @ render.luminance_weights)
 
 
 def max_steps(step_fraction: float) -> int:
-    """Steps enough for a ray to cover what the scenario's step and count cover."""
+    """Scales the integration step count inversely with `step_fraction` to match the scenario ray budget."""
     return int(np.ceil(scenarios.camera_step_fraction * scenarios.n_camera_steps / step_fraction))
-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
+    """Opens a live WebGPU window and runs the interactive Kerr ray-tracing loop."""
     import wgpu
     from rendercanvas.glfw import RenderCanvas, loop
 
@@ -110,13 +104,14 @@ def main() -> None:
     device = tracer.device
     values = gpu.scene()
     state = dict(azimuth=0.0, inclination=scenarios.camera_inclination, distance=scenarios.camera_distance,
-                 step_fraction=STEP, flowing=True, elapsed=0.0, spinning=True, sweep=0.0, following=True, reference=luminance(scenarios.exposure_temperature), dragging=None)
+                 step_fraction=initial_step, flowing=True, elapsed=0.0, spinning=True, sweep=0.0, following=True,
+                 reference=luminance(scenarios.exposure_temperature), dragging=None)
 
-    canvas = RenderCanvas(size=WINDOW, title="Kerr", update_mode="continuous", max_fps=240, vsync=False)
+    canvas = RenderCanvas(size=window_size, title="Kerr", update_mode="continuous", max_fps=240, vsync=False)
     context = canvas.get_context("wgpu")
     context.configure(device=device, format="bgra8unorm")
 
-    module = device.create_shader_module(code=DISPLAY)
+    module = device.create_shader_module(code=display_shader)
     pipeline = device.create_render_pipeline(
         layout="auto", vertex={"module": module, "entry_point": "vertex", "buffers": []},
         fragment={"module": module, "entry_point": "fragment", "targets": [{"format": "bgra8unorm"}]},
@@ -125,7 +120,7 @@ def main() -> None:
     view = device.create_buffer(size=32, usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST)
     brightest = device.create_buffer(size=4, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC | wgpu.BufferUsage.COPY_DST)
     # Two readbacks of the brightest light, a frame apart, each read while the other's frame runs.
-    done = [device.create_buffer(size=4, usage=wgpu.BufferUsage.MAP_READ | wgpu.BufferUsage.COPY_DST) for _ in range(2)]
+    readback_buffers = [device.create_buffer(size=4, usage=wgpu.BufferUsage.MAP_READ | wgpu.BufferUsage.COPY_DST) for _ in range(2)]
     fixed = luminance(scenarios.exposure_temperature)
     sample = gpu_sample_layout(tracer)
 
@@ -138,15 +133,15 @@ def main() -> None:
             state["dragging"] = None
         elif kind == "pointer_move" and state["dragging"] is not None:
             x, y = state["dragging"]
-            state["azimuth"] -= TURN_PER_POINT * (event["x"] - x)
-            state["inclination"] = float(np.clip(state["inclination"] - TURN_PER_POINT * (event["y"] - y), 0.02, np.pi - 0.02))
+            state["azimuth"] -= turn_per_point * (event["x"] - x)
+            state["inclination"] = float(np.clip(state["inclination"] - turn_per_point * (event["y"] - y), 0.02, np.pi - 0.02))
             state["dragging"] = (event["x"], event["y"])
         elif kind == "wheel":
-            state["distance"] = float(np.clip(state["distance"] * np.exp(ZOOM_PER_SCROLL * event["dy"]), NEAREST, FARTHEST))
+            state["distance"] = float(np.clip(state["distance"] * np.exp(zoom_per_scroll * event["dy"]), nearest_distance, farthest_distance))
         elif kind == "key_down" and event["key"] == "[":
-            state["step_fraction"] = max(state["step_fraction"] / 2, FINEST)
+            state["step_fraction"] = max(state["step_fraction"] / 2, finest_step)
         elif kind == "key_down" and event["key"] == "]":
-            state["step_fraction"] = min(state["step_fraction"] * 2, COARSEST)
+            state["step_fraction"] = min(state["step_fraction"] * 2, coarsest_step)
         elif kind == "key_down" and event["key"] == " ":
             state["flowing"] = not state["flowing"]
         elif kind == "key_down" and event["key"] == "s":
@@ -158,22 +153,18 @@ def main() -> None:
 
     @canvas.request_draw
     def draw() -> None:
-        now = time.perf_counter()
-        # The disk's clock runs through one loop of its flow, as the animations' does, so that a change of spin turns
-        # its texture by at most a loop's worth.
+        current_time = time.perf_counter()
         if state["flowing"]:
-            state["elapsed"] = (state["elapsed"] + (now - clock["last"]) * scenarios.flow_time / 10) % scenarios.flow_time
+            state["elapsed"] = (state["elapsed"] + (current_time - clock["last"]) * scenarios.flow_time / 10) % scenarios.flow_time
         if state["spinning"]:
-            state["sweep"] += (now - clock["last"]) * 2 * np.pi / SPIN_PERIOD
-        clock["last"] = now
-        spin_size = LARGEST_SPIN * np.sin(state["sweep"])
+            state["sweep"] += (current_time - clock["last"]) * 2 * np.pi / spin_period
+        clock["last"] = current_time
+        spin_size = largest_spin * np.sin(state["sweep"])
         target = context.get_current_texture()
         columns, rows = target.size[0], target.size[1]
-        # The camera turned by its inclination from above the hole and by its azimuth around it, at its distance: the
-        # shader forms its orientation, and finds its eye and its rest frame.
-        frame = values | dict(azimuth=state["azimuth"], inclination=state["inclination"], distance=state["distance"],
+        frame = values | dict(
+            azimuth=state["azimuth"], inclination=state["inclination"], distance=state["distance"],
             spin=mv.xy.dual() * spin_size,
-            # The loop's waves faded into the last loop's as the clock runs round.
             elapsed=state["elapsed"],
             fade=np.pi / 2 * state["elapsed"] / scenarios.flow_time,
             step_fraction=state["step_fraction"], n_steps=max_steps(state["step_fraction"]))
@@ -203,29 +194,26 @@ def main() -> None:
         drawing.set_bind_group(0, group)
         drawing.draw(3)
         drawing.end()
-        encoder.copy_buffer_to_buffer(brightest, 0, done[clock["drawn"] % 2], 0, 4)
+        encoder.copy_buffer_to_buffer(brightest, 0, readback_buffers[clock["drawn"] % 2], 0, 4)
         device.queue.submit([encoder.finish()])
-        # The frame before this one, waited for by reading back its brightest light: at most two frames are on the GPU,
-        # the GPU never waits on the host, and the next exposure moves toward the one that puts that light where the
-        # scenario's still has it.
-        before = done[(clock["drawn"] + 1) % 2]
-        before.map_sync(wgpu.MapMode.READ, 0, 4)
-        light = float(np.frombuffer(before.read_mapped(0, 4), dtype=np.float32)[0])
-        before.unmap()
+        previous_buffer = readback_buffers[(clock["drawn"] + 1) % 2]
+        previous_buffer.map_sync(wgpu.MapMode.READ, 0, 4)
+        light = float(np.frombuffer(previous_buffer.read_mapped(0, 4), dtype=np.float32)[0])
+        previous_buffer.unmap()
         if light > 0:
-            state["reference"] *= (light / BRIGHTEST / state["reference"]) ** FOLLOWING
+            state["reference"] *= (light / brightest_target / state["reference"]) ** exposure_smoothing
         clock["frames"] += 1
         clock["drawn"] += 1
-        if now - clock["reported"] > 1:
-            print(f"{clock['frames'] / (now - clock['reported']):5.1f} frames a second at {columns} x {rows} pixels,"
+        if current_time - clock["reported"] > 1:
+            print(f"{clock['frames'] / (current_time - clock['reported']):5.1f} frames a second at {columns} x {rows} pixels,"
                   f" step {state['step_fraction']:.3g} of the radius, spin {spin_size:+.2f}")
-            clock["frames"], clock["reported"] = 0, now
+            clock["frames"], clock["reported"] = 0, current_time
 
     loop.run()
 
 
 def gpu_sample_layout(tracer) -> dict:
-    """Where the sky's colour begins in a traced pixel's sample, in numbers from its start."""
+    """Gives the 32-bit float word offset of the `sky` field inside `Sample`."""
     offsets = dict(zip([member for member, _ in tracer.program.structs["Sample"]], tracer.layout.offsets("Sample")))
     return dict(sky=offsets["sky"] // 4)
 

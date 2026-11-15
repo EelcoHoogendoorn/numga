@@ -1,50 +1,56 @@
-"""Extensor representations: blade charts for faithful Clifford actions on their smallest real state
-spaces."""
+"""Minimal faithful real representations of nondegenerate Clifford algebras act as extensors on projected blade charts."""
 
 from numga import Algebra, Extensor, GAType, Orientation
 
 
-# --- math -----------------------------------------------------------------------------
 def readout(representations: Extensor, state_map: Extensor, Space: GAType) -> Extensor:
-    """The element of Space whose representation is the orthogonal projection of a map on states
-    onto the representations of Space, under the trace pairing.
-
-    Each blade's coefficient is the map composed with the representation of that blade's inverse,
-    traced over the state and divided by the number of state components. The representation of an
-    element of Space returns that element, and a smaller Space reads out only its own blades, since
-    blades are orthogonal under the scalar product.
-    """
+    """Trace pairing against `representations` orthogonally projects `state_map` onto `Space` (`[] Space+`)."""
     pairing = Space.scalar_product(Space)                                # [] Scalar+ <- (Space+, Space+)
     n_state_components = len(representations.output_subspace)
-    # Composed with the representations and traced over the state, the map is the scalar product with
-    # the element sought, a form on Space; solving against the scalar product gives the element itself.
-    return pairing.solve(representations(Space, state_map).trace(0, 2) / n_state_components)   # [] Space+
+    # Composing with the representations and tracing over the state isolates the scalar product with the sought element.
+    return pairing.solve(representations(Space, state_map).trace(0, 2) / n_state_components)  # [] Space+
 
 
-# --- plumbing -------------------------------------------------------------------------
-def spinor_layout(algebra: Algebra) -> tuple[GAType, tuple[int, ...]]:
-    """The space of states of a nondegenerate algebra, one blade from each coset of the group that
-    its chosen commuting involutions generate, and those involutions.
-
-    Blade masks describe the layout only. Their products and signs come from the algebra; the
-    projector and its action are built from them as extensors.
-    """
+def state_layout(algebra: Algebra) -> tuple[GAType, tuple[int, ...]]:
+    """Commuting unit-square blades partition `algebra` into cosets whose representatives span the minimal real state space `State+`."""
     involutions = ()
-    span = {0}
-    split = algebra.dimension % 2 == 1 and algebra.pseudoscalar_squared == 1
+    coset_group = {0}
+    is_split = algebra.dimension % 2 == 1 and algebra.pseudoscalar_squared == 1
     for blade in algebra.blade_masks:
-        if blade in span or algebra.geometric_product(blade, blade).coefficient != 1:
+        if blade in coset_group or algebra.geometric_product(blade, blade).coefficient != 1:
             continue
-        if any(algebra.geometric_product(blade, other).coefficient
-               != algebra.geometric_product(other, blade).coefficient for other in involutions):
+        if any(
+            algebra.geometric_product(blade, other).coefficient
+            != algebra.geometric_product(other, blade).coefficient
+            for other in involutions
+        ):
             continue
-        # Fixing the central volume's sign would discard one of the two simple blocks.
-        if split and (blade ^ algebra.pseudoscalar_mask) in span:
+        # Leaving the central volume unconstrained retains both simple blocks of a split odd-dimensional algebra.
+        if is_split and (blade ^ algebra.pseudoscalar_mask) in coset_group:
             continue
         involutions += (blade,)
-        span |= {blade ^ other for other in span}
+        coset_group |= {blade ^ other for other in coset_group}
 
-    # Multiplying a chart blade by the projector fills its coset. Distinct cosets
-    # have disjoint support, so keeping one blade from each gives independent states.
-    representatives = {min(blade ^ other for other in span) for blade in algebra.blade_masks}
-    return algebra.gatype(algebra.subspace.from_masks(representatives), orientation=Orientation.extrinsic), involutions
+    # Right multiplication by the projector fills each coset, so one blade per coset gives independent state coordinates.
+    representatives = {min(blade ^ other for other in coset_group) for blade in algebra.blade_masks}
+    State = algebra.gatype(algebra.subspace.from_masks(representatives), orientation=Orientation.extrinsic)
+    return State, involutions
+
+
+def state_representations(algebra: Algebra) -> tuple[GAType, Extensor]:
+    """Left multiplication on the minimal projected left ideal represents `algebra` on `State+` (`[] State+ <- (Full+, State+)`)."""
+    mv = algebra.exact.multivector
+    Full = algebra.gatype.full()
+    State, involutions = state_layout(algebra)
+    n_coset_blades = 2 ** len(involutions)
+
+    # Commuting unit-square blades yield commuting projectors whose product selects their common positive ideal.
+    projector = mv.scalar()                                              # [] Scalar+
+    for blade in involutions:
+        projector = projector * (1 + mv.blade(blade)) / 2
+
+    # Left multiplication preserves the right ideal of the projector, and rescaling restores the projected weight.
+    state_embedding = State * projector                                  # [] Full+ <- State+
+    state_readout = (n_coset_blades * Full).cast(State)                  # [] State+ <- Full+
+    representations = state_readout(Full * state_embedding)              # [] State+ <- (Full+, State+)
+    return State, representations

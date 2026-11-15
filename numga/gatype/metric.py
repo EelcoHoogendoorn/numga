@@ -1,4 +1,17 @@
-"""What a axis's own metric is like, which decides how forms on that axis can be solved."""
+"""Every nullary `GAType` induces a canonical quadratic metric form from the scalar part of the
+symmetric reverse product `0.5 * (x * ~x + ~x * x)`. On grade-1 vectors this coincides with the
+inner product `V | V`, while on higher grades the reverse cancels the grade-dependent sign of blade
+squares so Euclidean bivectors and points acquire a positive-definite metric even where `S | S` is
+negative.
+
+Materializing the exact coefficient matrix of this form classifies the space into one of five
+`MetricKind` regimes, determining which eigensolvers and metric factorizations apply to forms and
+operators over that space. Identity metrics reduce generalized eigenproblems to standard Hermitian
+ones, positive-definite metrics admit Cholesky pencils, positive-semidefinite metrics (such as
+projective spaces with ideal null blades) restrict Hermitian eigensolvers to the measured subspace,
+and singular or indefinite metrics (such as Minkowski spacetime) require general non-Hermitian
+solvers.
+"""
 
 from __future__ import annotations
 
@@ -15,13 +28,8 @@ if TYPE_CHECKING:
 
 
 class MetricKind(Enum):
-    """A metric form, classified from its exact coefficients.
-
-    Against an identity a form solves as a plain eigenproblem; against a positive one it needs the
-    generalized pencil; against a semidefinite one, positive but blind to some blades as PGA's ideal
-    ones, it admits a Hermitian eigenproblem on the blades the metric measures; against singular and
-    indefinite ones it admits only the general eigenproblem.
-    """
+    """Exact eigenvalue regimes of a symmetric metric matrix select the solver strategy for forms
+    over a space."""
 
     IDENTITY = "identity"
     POSITIVE = "positive"
@@ -31,7 +39,8 @@ class MetricKind(Enum):
 
 
 class Metric:
-    """The metric of a nullary type, read as a axis: `axis.metric.default` and `axis.metric.kind`."""
+    """A nullary type's metric namespace caches its canonical symmetric-reverse form and spectral
+    classification."""
 
     __slots__ = ("_gatype", "__dict__")
 
@@ -40,25 +49,23 @@ class Metric:
 
     @cached_property
     def default(self) -> Extensor:
-        """This axis's metric as a symbolic form: the inner product of S with its reverse.
-
-        On vectors this is V | V. On other grades the reverse removes the sign of the blade's
-        square, so bivectors and Euclidean points get a positive metric where S | S is negative.
-        """
+        """The scalar part of the symmetric reverse product defines the space's canonical bilinear
+        metric form."""
         algebra = self._gatype.algebra
         return algebra.operator.symmetric_reverse_product(self._gatype).cast(algebra.subspace.scalar())
 
     @cached_property
     def kind(self) -> MetricKind:
-        """What this axis's default metric is like, from its exact coefficients."""
+        """Exact coefficient eigenvalues classify the space's default metric into a `MetricKind`."""
         return classify(self.default._kernel.materialize(np.float64)[0])
 
 
-def classify(matrix: np.ndarray) -> MetricKind:
-    """The kind of a metric form, from its exact coefficient matrix."""
-    if np.array_equal(matrix, np.eye(len(matrix))):
+def classify(metric_matrix: np.ndarray) -> MetricKind:
+    """Eigenvalues of a symmetric metric matrix distinguish identity, positive-definite,
+    positive-semidefinite, singular indefinite, and nonsingular indefinite forms."""
+    if np.array_equal(metric_matrix, np.eye(len(metric_matrix))):
         return MetricKind.IDENTITY
-    spectrum = np.linalg.eigvalsh(matrix)
+    spectrum = np.linalg.eigvalsh(metric_matrix)
     if np.any(np.abs(spectrum) < 1e-12):
         return MetricKind.SEMIDEFINITE if np.all(spectrum > -1e-12) else MetricKind.SINGULAR
     return MetricKind.POSITIVE if np.all(spectrum > 0) else MetricKind.INDEFINITE

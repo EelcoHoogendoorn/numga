@@ -1,4 +1,4 @@
-"""Triangle-mesh loading and volume quadrature for mesh-free deformation."""
+"""Triangulated surface loading and low-discrepancy volume quadrature for solid deformation."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from scipy.stats import qmc
 from numga import NumpyContext, stack
 from numga.algebras import VGA3D
 from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(VGA3D).multivector
 # Points are antivectors.
@@ -19,13 +19,12 @@ n_ray_batch = 256
 
 
 def coordinates(points: Antivector) -> np.ndarray:
-    """Cartesian positions `[..., 3]` for the samplers, read by pairing with the planes across the axes."""
+    """Pairing `points` with the three coordinate planes reads Cartesian positions (`[..., 3]`)."""
     return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
-def interior(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
-    """Classify points by the parity of their crossings with a closed surface of triangles, their corners
-    `[3, triangles, 3]`."""
+def interior_mask(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
+    """Ray-crossing parity classifies `points` (`[n_points, 3]`) against a closed triangulated surface (`[3, F, 3]`)."""
     origin = triangles[0]
     first = triangles[1] - origin
     second = triangles[2] - origin
@@ -47,29 +46,30 @@ def interior(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
 
 
 def volume_samples(topology: Topology, vertices: Antivector, n_samples: int) -> tuple[Antivector, np.ndarray]:
-    """Equal-volume quadrature from low-discrepancy samples inside a closed mesh."""
-    corners = topology.incidence[2, 0] * vertices                # [corners] Antivector-[faces]
-    # The enclosed volume: the cones the faces span from the origin, each the join of its corners, summed.
-    volume = abs((corners[0] & corners[1] & corners[2]).sites.sum().to_array()) / 6
-    places = coordinates(vertices.batch())                       # [vertices, 3]
+    """Low-discrepancy Sobol sampling inside the closed surface `topology` draws `n_samples` equal-volume quadrature points (`[n_samples] Antivector-`)."""
+    V, E, F = topology.n_elements
+    corners = topology.incidence[2, 0] * vertices                # [3] Antivector-[F]
+    # The enclosed volume equals one sixth of the summed three-corner joins from the origin.
+    volume = float((corners[0] & corners[1] & corners[2]).sites.sum().abs().to_array()) / 6
+    places = coordinates(vertices.batch())                       # [V, 3]
     lower, upper = places.min(axis=0), places.max(axis=0)
-    triangles = coordinates(corners.batch())                     # [3, faces, 3]
+    triangles = coordinates(corners.batch())                     # [3, F, 3]
     occupancy = volume / np.prod(upper - lower)
     n_candidates = 2 ** int(np.ceil(np.log2(1.2 * n_samples / occupancy)))
     sequence = qmc.Sobol(3, scramble=True, seed=0)
-    samples = []
+    accepted_batches = []
     n_inside = 0
     while n_inside < n_samples:
         candidates = lower + sequence.random(n_candidates) * (upper - lower)
-        accepted = candidates[interior(candidates, triangles)]
-        samples.append(accepted)
+        accepted = candidates[interior_mask(candidates, triangles)]
+        accepted_batches.append(accepted)
         n_inside += len(accepted)
-    positions = np.concatenate(samples)[:n_samples]
+    positions = np.concatenate(accepted_batches)[:n_samples]
     return mv.vector(positions).dual(), np.full(n_samples, volume / n_samples)
 
 
 def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
-    """Farthest-point coverage of the sampled volume, including thin extremities."""
+    """Farthest-point sampling over `points` selects `n_centers` indices covering the solid and its extremities (`[n_centers]`)."""
     indices = np.empty(n_centers, dtype=int)
     indices[0] = np.argmin(np.sum((points - points.mean(axis=0)) ** 2, axis=-1))
     distances = np.full(len(points), np.inf)
@@ -79,18 +79,19 @@ def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
     return indices
 
 
-def load(path: Path, height: float, n_quadrature: int,
-         n_centers: int) -> tuple[Topology, Antivector, Antivector, np.ndarray, Antivector]:
-    """A y-up triangular OBJ, upright on z=0 and `height` tall, its vertices a batch of points for the
-    deformation to move, with volume samples and kernel centers."""
+def load_solid(path: Path, height: float, n_quadrature: int,
+               n_centers: int) -> tuple[Topology, Antivector, Antivector, np.ndarray, Antivector]:
+    """Loading `path` scales and rotates the closed triangulated surface upright to `height` on `z = 0` alongside `n_quadrature` volume samples and `n_centers` kernel centers."""
     topology, vertex_coordinates = shapes.surface(path, height)
-    vertices = mv.vector(vertex_coordinates).dual().field()       # Antivector-[vertices]
-    # Each vertex's height, its pairing with the plane y = 0, and the extent of the heights.
-    heights = mv.y & vertices.batch()                            # [vertices] Scalar+
+    V, E, F = topology.n_elements
+    vertices = mv.vector(vertex_coordinates).dual().field()      # Antivector-[V]
+    # Pairing each vertex with the plane y = 0 reads its height and the vertical span.
+    heights = mv.y & vertices.batch()                            # [V] Scalar+
     extent = heights[heights.argmax()] - heights[heights.argmin()]   # [] Scalar+
-    # As tall as `height` along y, its lowest point lifted onto the plane y = 0.
-    vertices = vertices * (height / extent) + mv.y.dual() * (height / 2)  # Antivector-[vertices]
-    samples, weights = volume_samples(topology, vertices, n_quadrature)  # [samples] Antivector-, [samples]
-    centers = samples[center_indices(coordinates(samples), n_centers)]   # [centers] Antivector-
-    upright = (-mv.yz * (np.pi / 4)).exp()
-    return topology, upright >> vertices.batch(), upright >> samples, weights, upright >> centers
+    # Rescale to `height` along y and shift the base onto y = 0 before turning upright onto z = 0.
+    vertices = vertices * (height / extent) + mv.y.dual() * (height / 2)  # Antivector-[V]
+    samples, sample_volumes = volume_samples(topology, vertices, n_quadrature)  # [n_quadrature] Antivector-, [n_quadrature]
+    centers = samples[center_indices(coordinates(samples), n_centers)]          # [n_centers] Antivector-
+    upright_rotor = (-mv.yz * (np.pi / 4)).exp()                 # Rotor+
+    return (topology, upright_rotor >> vertices.batch(), upright_rotor >> samples,
+            sample_volumes, upright_rotor >> centers)

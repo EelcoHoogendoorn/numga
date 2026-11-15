@@ -1,9 +1,31 @@
-"""Specificity-aware dispatch over complete GAType values."""
+"""Every multivector, linear map, and multilinear form in `numga` shares the single Python class
+`Extensor`, while its algebraic structure (arity, intrinsic or extrinsic orientation, static blade
+subspaces, coupled field sites, and proven value traits such as `Versor` or `ReverseProductOne`)
+lives in its `GAType`. `GATypeDispatch` resolves implementations over tuples of operand `GAType`s
+in place of Python subclass hierarchies, and passing a nullary `GAType` as a call operand supplies
+its identity map automatically.
+
+Resolution checks three tiers in priority order. Operands carrying coupled field sites (`has_fields`)
+route first to `fields=True` predicates, falling back to site-by-site evaluation on nullary fields
+and refusing maps with site axes unless explicitly registered. Plain operands test callable `GAType`
+predicates in registration order for layout- or relation-dependent conditions such as
+`maps_equal_dimensions`, and otherwise select the unique maximally specific match among declarative
+patterns (`GAType`, `GATypePattern`, `Trait`, or `TraitSet`).
+
+Declarative registrations validate specificity at import time, rejecting exact duplicates and any
+specialization registered after a more general pattern, while emitting
+`AmbiguousGATypeDispatchWarning` when incomparable patterns overlap. Resolved callables are cached
+by concrete operand `GAType` tuple, applying `staged=True` kernel specialization on static `GAType`s
+and any method-wide `input_orientation` or `output_orientation` rules once per signature.
+Declarative and predicate registrations are illustrated in `docs/internals.md` (section 7), and
+orientation checks on extension methods in `docs/orientation.md`.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING
 import warnings
 
 import numga
@@ -23,46 +45,34 @@ from .traits import Trait, TraitSet
 if TYPE_CHECKING:
     from numga.algebra import Algebra
 
-_Implementation = TypeVar("_Implementation", bound=Callable[..., Any])
-
 
 class AmbiguousGATypeDispatchWarning(UserWarning):
-    """Two incomparable registrations overlap and use declared precedence."""
+    """Incomparable declarative patterns overlap, leaving declaration order as the tie-breaker."""
 
 
 @dataclass(frozen=True, slots=True)
 class _Registration:
     patterns: tuple[DispatchPattern, ...]
-    implementation: Callable[..., Any]
+    implementation: Callable
     staged: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class _PredicateRegistration:
-    predicate: Callable[..., object]
-    implementation: Callable[..., Any]
+    predicate: Callable
+    implementation: Callable
     staged: bool = False
 
 
 class GATypeDispatch:
-    """Declarative whole-GAType dispatch with an explicit low-level tier.
-
-    A dispatcher may be scoped to one concrete algebra or constructed with
-    ``algebra=None`` for cross-algebra semantic dispatch. Declarative patterns
-    use true specificity. Opaque predicate registrations are presumed to be
-    low-level specializations: matching predicates take priority over every
-    declarative registration and use their own list order as the tie-breaker.
-
-    A staged registration is called once per signature with the actual GATypes, and returns the
-    implementation for values of those types, which the cache keeps. A declared input orientation
-    is checked, and a declared output orientation applied, once per signature as well.
-    """
+    """An `algebra=None` dispatcher resolves across all algebras, whereas an `Algebra` argument
+    restricts registrations and operands to that algebra."""
 
     __slots__ = (
         "_name",
         "_takes",
         "_algebra",
-        "_operand_count",
+        "_n_operands",
         "_registrations",
         "_predicates",
         "_field_predicates",
@@ -75,26 +85,26 @@ class GATypeDispatch:
         self,
         name: str,
         algebra: Algebra | None,
-        operand_count: int,
+        n_operands: int,
         *,
         takes: str,
         input_orientation: Orientation | None = None,
         output_orientation: Orientation | None = None,
     ) -> None:
-        """`takes` says what the operands of the operation must be, in words: what a call whose types
-        match no case is told."""
+        """`takes` describes the accepted domain in plain words for refusal messages when no
+        registration matches."""
         if not isinstance(name, str) or not name:
             raise TypeError("a dispatcher name must be a non-empty string")
         if (
-            isinstance(operand_count, bool)
-            or not isinstance(operand_count, int)
-            or operand_count < 1
+            isinstance(n_operands, bool)
+            or not isinstance(n_operands, int)
+            or n_operands < 1
         ):
-            raise TypeError("dispatcher operand_count must be a positive integer")
+            raise TypeError("dispatcher n_operands must be a positive integer")
         object.__setattr__(self, "_name", name)
         object.__setattr__(self, "_takes", takes)
         object.__setattr__(self, "_algebra", algebra)
-        object.__setattr__(self, "_operand_count", operand_count)
+        object.__setattr__(self, "_n_operands", n_operands)
         object.__setattr__(self, "_registrations", [])
         object.__setattr__(self, "_predicates", [])
         object.__setattr__(self, "_field_predicates", [])
@@ -111,19 +121,20 @@ class GATypeDispatch:
         return self._algebra
 
     @property
-    def operand_count(self) -> int:
-        return self._operand_count
+    def n_operands(self) -> int:
+        return self._n_operands
 
     @property
-    def registrations(self) -> tuple[tuple[DispatchPattern, ...], ...]:
+    def registrations(self) -> tuple:
         return tuple(entry.patterns for entry in self._registrations)
 
     @property
-    def predicates(self) -> tuple[Callable[..., object], ...]:
+    def predicates(self) -> tuple[Callable, ...]:
         return tuple(entry.predicate for entry in self._predicates)
 
-    def position_of(self, implementation: Callable[..., Any]) -> int:
-        """Where a predicate-registered implementation sits in the order predicates are tried."""
+    def position_of(self, implementation: Callable) -> int:
+        """Locating an implementation in the predicate tier lets a narrower specialization insert
+        directly ahead of it via `position`."""
         return next(
             index for index, entry in enumerate(self._predicates)
             if entry.implementation is implementation
@@ -135,30 +146,19 @@ class GATypeDispatch:
 
     def register(
         self,
-        *patterns: DispatchPattern | Trait | TraitSet | Callable[..., object],
-        precedence: str | None = None,
+        *patterns: DispatchPattern | Trait | TraitSet | Callable,
         position: int | None = None,
         fields: bool = False,
         staged: bool = False,
-    ) -> Callable[[_Implementation], _Implementation]:
-        """Register a declarative signature or an opaque GAType predicate.
+    ) -> Callable:
+        """Predicates inspect concrete `GAType`s directly and take priority over all declarative
+        patterns. Among declarative signatures, specializations must be registered before more
+        general patterns so registration order never silently shadows a refinement."""
 
-        A sole callable is an escape hatch whose arguments are the complete
-        concrete GATypes, not Extensor values. Predicate registrations are
-        always tried before declarative ones; ``position`` controls order only
-        within that low-level tier.
-
-        Types with field axes dispatch only to predicates registered with
-        ``fields``. Without one, fields of values run the implementation over
-        blades at every site.
-        """
-
-        if precedence not in {None, "declaration"}:
-            raise ValueError("precedence must be None or 'declaration'")
         if fields:
             if not (len(patterns) == 1 and is_predicate(patterns[0])):
                 raise TypeError("a field implementation registers a predicate")
-            def decorate_fields(implementation: _Implementation) -> _Implementation:
+            def decorate_fields(implementation: Callable) -> Callable:
                 self._field_predicates.append(_PredicateRegistration(patterns[0], implementation, staged))
                 self._cache.clear()
                 return implementation
@@ -182,7 +182,6 @@ class GATypeDispatch:
             if (
                 not _signature_strictly_refines(earlier.patterns, normalized)
                 and _signatures_overlap(earlier.patterns, normalized)
-                and precedence is None
             ):
                 warnings.warn(
                     f"incomparable {self.name!r} registrations "
@@ -192,7 +191,7 @@ class GATypeDispatch:
                     stacklevel=2,
                 )
 
-        def decorate(implementation: _Implementation) -> _Implementation:
+        def decorate(implementation: Callable) -> Callable:
             if not callable(implementation):
                 raise TypeError("a dispatch implementation must be callable")
             self._registrations.append(_Registration(normalized, implementation, staged))
@@ -203,11 +202,11 @@ class GATypeDispatch:
 
     def _register_predicate(
         self,
-        predicate: Callable[..., object],
+        predicate: Callable,
         *,
-        position: int | None,
+        position: int | None = None,
         staged: bool = False,
-    ) -> Callable[[_Implementation], _Implementation]:
+    ) -> Callable:
         if position is not None and (
             isinstance(position, bool)
             or not isinstance(position, int)
@@ -219,7 +218,7 @@ class GATypeDispatch:
                 f"[0, {len(self._predicates)}]"
             )
 
-        def decorate(implementation: _Implementation) -> _Implementation:
+        def decorate(implementation: Callable) -> Callable:
             if not callable(implementation):
                 raise TypeError("a dispatch implementation must be callable")
             entry = _PredicateRegistration(predicate, implementation, staged)
@@ -232,9 +231,9 @@ class GATypeDispatch:
 
         return decorate
 
-    def resolve(self, *actual_gatypes: GAType) -> Callable[..., Any]:
-        """Return the highest-priority implementation matching actual types."""
-
+    def resolve(self, *actual_gatypes: GAType) -> Callable:
+        """Concrete operand `GAType`s resolve directly to their cached runtime implementation
+        without constructing `Extensor` values."""
         try:
             return self._cache[actual_gatypes]
         except (KeyError, TypeError):
@@ -243,9 +242,7 @@ class GATypeDispatch:
     def _resolve_uncached(
         self,
         actual_gatypes: tuple[GAType, ...],
-    ) -> Callable[..., Any]:
-        """Validate, select, stage and orient once for a previously unseen signature."""
-
+    ) -> Callable:
         actual = self._validate_actual_signature(actual_gatypes)
         if self._input_orientation is not None and actual[0].orientation is not self._input_orientation:
             raise GATypeError(
@@ -286,17 +283,15 @@ class GATypeDispatch:
         return maximal[0]
 
     @staticmethod
-    def _staged(entry: _Registration | _PredicateRegistration, actual: tuple[GAType, ...]) -> Callable[..., Any]:
+    def _staged(entry: _Registration | _PredicateRegistration, actual: tuple[GAType, ...]) -> Callable:
         return entry.implementation(*actual) if entry.staged else entry.implementation
 
-    def _oriented(self, implementation: Callable[..., Any]) -> Callable[..., Any]:
-        """The implementation with its result in the declared output orientation."""
-
+    def _oriented(self, implementation: Callable) -> Callable:
         orientation = self._output_orientation
         if orientation is None:
             return implementation
 
-        def oriented(*arguments: Any, **kwargs: Any) -> Any:
+        def oriented(*arguments, **kwargs):
             result = implementation(*arguments, **kwargs)
             gatype = result.gatype
             if gatype.orientation is orientation:
@@ -313,48 +308,47 @@ class GATypeDispatch:
         for entry in self._field_predicates:
             if entry.predicate(*actual):
                 return entry
-        # A map with sites is one map into or out of a field, not a map per site: maps per site are a batch.
+        # A map with field sites couples whole fields, whereas independent maps per site use a batch axis.
         if any(gatype.has_fields and gatype.arity for gatype in actual):
             raise GATypeError(f"{self._refusal(actual)}: a map with sites is one map into or out of a field")
-        return _PredicateRegistration(_always, numga.extensor.fields.site_by_site(self, self._operand_count))
+        return _PredicateRegistration(_always, numga.extensor.fields.site_by_site(self, self._n_operands))
 
-    def __call__(self, *arguments: Any, **kwargs: Any) -> Any:
-        count = self._operand_count
+    def __call__(self, *arguments, **kwargs):
+        n_operands = self._n_operands
         try:
-            if count == 1:
+            if n_operands == 1:
                 actual = (arguments[0].gatype,)
-            elif count == 2:
+            elif n_operands == 2:
                 actual = (arguments[0].gatype, arguments[1].gatype)
             else:
-                actual = tuple(operand.gatype for operand in arguments[:count])
+                actual = tuple(operand.gatype for operand in arguments[:n_operands])
             implementation = self._cache[actual]
         except (AttributeError, IndexError, KeyError, TypeError):
-            operands = arguments[:count]
-            # Only valid, fixed-arity signatures enter the cache. A hit already
-            # establishes these invariants without repeating type analysis.
-            if len(arguments) < self._operand_count:
+            operands = arguments[:n_operands]
+            # Only valid, fixed-arity signatures enter the cache, so a hit establishes these invariants.
+            if len(arguments) < n_operands:
                 raise TypeError(
                     f"{self.name!r} dispatch expects at least "
-                    f"{self._operand_count} positional operands, got {len(arguments)}"
+                    f"{n_operands} positional operands, got {len(arguments)}"
                 ) from None
-            # A bare nullary type operand is its identity map.
+            # Passing a nullary GAType as an operand supplies its identity map.
             operands = tuple(
                 operand._identity() if isinstance(operand, GAType) else operand
                 for operand in operands
             )
-            arguments = operands + arguments[self._operand_count:]
+            arguments = operands + arguments[n_operands:]
             actual = tuple(_operand_gatype(operand) for operand in operands)
             implementation = self._cache.get(actual) or self._resolve_uncached(actual)
-        # An implementation's own exceptions must never trigger resolution.
+        # Call the resolved implementation outside the cache block so its own exceptions propagate directly.
         return implementation(*arguments, **kwargs)
 
     def _validate_registration_signature(
         self,
         patterns: tuple[object, ...],
     ) -> tuple[DispatchPattern, ...]:
-        if len(patterns) != self.operand_count:
+        if len(patterns) != self.n_operands:
             raise TypeError(
-                f"{self.name!r} registration requires {self.operand_count} "
+                f"{self.name!r} registration requires {self.n_operands} "
                 f"patterns, got {len(patterns)}"
             )
         normalized = tuple(_normalize_pattern(pattern) for pattern in patterns)
@@ -381,9 +375,9 @@ class GATypeDispatch:
         self,
         actual: tuple[GAType, ...],
     ) -> tuple[GAType, ...]:
-        if len(actual) != self.operand_count:
+        if len(actual) != self.n_operands:
             raise TypeError(
-                f"{self.name!r} actual requires {self.operand_count} GATypes, "
+                f"{self.name!r} actual requires {self.n_operands} GATypes, "
                 f"got {len(actual)}"
             )
         if not all(isinstance(gatype, GAType) for gatype in actual):
@@ -409,8 +403,8 @@ def _always(*gatypes: GAType) -> bool:
 
 
 def is_predicate(pattern: object) -> bool:
-    """A callable registration pattern that is a condition, not a type: types are callable too, as
-    their identity maps."""
+    """`GAType` and pattern objects are themselves callable (as identity maps or constructors), so
+    predicate detection excludes them."""
     return callable(pattern) and not isinstance(pattern, (GAType, GATypePattern, Trait, TraitSet))
 
 
@@ -427,7 +421,7 @@ def _normalize_pattern(pattern: object) -> DispatchPattern:
             "TraitSet, or one callable predicate"
         )
 
-    possible_arities: set[int] | None = None
+    possible_arities = None
     for trait in traits:
         if trait.valid_arities is None:
             raise TypeError(
@@ -459,10 +453,10 @@ def _signature_matches(
 
 
 def _signature_refines(
-    left: tuple[DispatchPattern, ...],
-    right: tuple[DispatchPattern, ...],
+    specific: tuple[DispatchPattern, ...],
+    general: tuple[DispatchPattern, ...],
 ) -> bool:
-    return all(pattern_refines(first, second) for first, second in zip(left, right))
+    return all(pattern_refines(first, second) for first, second in zip(specific, general))
 
 
 def _signature_equivalent(
@@ -473,10 +467,10 @@ def _signature_equivalent(
 
 
 def _signature_strictly_refines(
-    left: tuple[DispatchPattern, ...],
-    right: tuple[DispatchPattern, ...],
+    specific: tuple[DispatchPattern, ...],
+    general: tuple[DispatchPattern, ...],
 ) -> bool:
-    return _signature_refines(left, right) and not _signature_refines(right, left)
+    return _signature_refines(specific, general) and not _signature_refines(general, specific)
 
 
 def _signatures_overlap(

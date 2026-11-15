@@ -1,40 +1,35 @@
-"""Modal extended position-based dynamics: flexible bodies joined by point constraints, in the projective
-geometric algebra of space.
+"""Modal extended position-based dynamics steps flexible girders joined by point constraints in the
+projective geometric algebra of space.
 
-Each body is a girder of bars. Its rigid motion is a motor and its deformation a combination of its
-lowest vibration modes, the eigenfields of its sparse stiffness against its masses. Bodies are
-connected by point constraints between anchor points. Time stepping is modal extended position-based
-dynamics: rigid bodies under compliant constraints, each mode one more constraint. For an anchor,
-`anchor.commutator(Twist)` maps a twist of its body to the anchor's displacement,
-`Displacement <- Twist`; over all constraints and bodies these maps form one map, and its
-adjugate maps forces at the constraints to forques on the bodies. Composed through the inverse
-inertia, with the modes' and constraints' compliance added, they give one sparse system for all
-constraints, solved once per step. Solving the constraints one at a time converges too slowly for
-stiff structures. Stiffness enters as compliance, so arbitrarily stiff modes and constraints stay
-well conditioned, down to the rigid limit of zero compliance, and modes too fast for the step are
-damped, not unstable.
+Each girder moves rigidly through a motor while deforming along its lowest vibration modes, computed
+as the eigenfields of its bar stiffness against its vertex masses. Point constraints link anchor
+points across girders. Within each time step, modal extended position-based dynamics treats every
+retained vibration mode as an additional compliant constraint on a rigid body. At each anchor, the
+commutator `anchor.commutator(Twist)` maps a body twist to the anchor's displacement
+(`Displacement- <- Twist+`), and the adjugate of the assembled joint map carries constraint forces
+back to body forques. Composing through the inverse inertia and adding the modal and joint
+compliances forms one sparse system over the joint forces alone, solved once per step. Because
+stiffness enters through compliance, stiff modes and rigid links (`0` compliance) remain well
+conditioned in the same solver, and modes faster than the step damp smoothly rather than diverging.
 
-Inertia is evaluated in the rest configuration and the coupling of rotation and vibration is
-neglected, which assumes rotation slow compared with the retained vibrations.
-
-In the notation of extended position-based dynamics the system reads as
-$S = J_b M_b^{-1} J_b^\\top + J_q W J_q^\\top + \\tilde\\alpha_p$, with
-$W = \\tilde\\alpha_m / (1 + \\tilde\\alpha_m)$.
+Inertia is evaluated in the rest configuration and gyroscopic coupling between rotation and
+vibration is omitted, assuming body rotation stays slow relative to the retained vibration
+frequencies.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 import numpy as np
 
 from numga import Algebra
 from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
+from numga.topology import Topology
 from examples.mechanics import lie_integrators as lie
-# A girder's bars and the constraints joining bodies are bond graphs, one-dimensional meshes.
-from examples.util.topology import Topology
+from examples.mechanics.modal_xpbd.scenarios import Bodies, Constraints, Shape, truss
 
 
-# Supplied by examples.instantiate: the algebra, PGA2D, and the context to compute in.
+# Supplied by `examples.instantiate`: the algebra (`PGA2D`) and backend context.
 ga: Algebra
 ctx: Context
 mv = ctx.multivector
@@ -43,216 +38,129 @@ Point = ga.gatype.antivector()                                             # Ant
 Twist = ga.gatype.bivector()                                               # Bivector+
 Forque = ga.gatype.antibivector()                                          # Antibivector-
 Motor = ga.gatype.rotor()                                                  # Rotor+
-# A displacement is a point at infinity, an antivector through the null direction w; a force is a plane through the
-# origin, a sum of x and y, and a force joined with a displacement, `force & displacement`, is the work done moving
-# that way.
+# A displacement is an ideal point through the null plane w, while a force is a plane through the
+# origin; pairing `force & displacement` evaluates the mechanical work along that displacement.
 Displacement = ga.gatype.antivector().derive.degenerate                    # Antivector-
 Force = ga.gatype.vector().derive.nondegenerate                            # Vector+
-Inertia = ga.gatype((Forque, Twist))                                       # Forque- <- Twist+
-InverseInertia = ga.gatype((Twist, Forque))                                # Twist+ <- Forque-
-
-
-# --- plumbing -------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Shape:
-    """A girder at rest and its retained vibrations."""
-    # Centred on its centre of mass.
-    rest: Point                                                             # Point-[vertices]
-    modes: Displacement                                                        # [modes] Displacement-[vertices]
-    # Inverse squared angular frequencies.
-    compliance: Scalar                                                      # [modes] Scalar+
-    masses: Scalar                                                          # Scalar+[vertices]
-    edges: np.ndarray                                                       # [edges, ends]
-    inertia: Inertia                                                        # [] Forque- <- Twist+
-
-
-@dataclass(frozen=True)
-class Bodies:
-    """Bodies in motion, batched over cases."""
-    motor: Motor                                                            # [...] Motor+[bodies]
-    # In each body's frame.
-    rate: Twist                                                             # [...] Twist+[bodies]
-    amplitudes: Scalar                                                      # [..., modes] Scalar+[bodies]
-    rates: Scalar                                                           # [..., modes] Scalar+[bodies]
-    # Zero for a rigid body.
-    compliance: Scalar                                                      # [..., modes] Scalar+[bodies]
-    # Damping ratios.
-    damping: Scalar                                                         # [..., modes] Scalar+[bodies]
-    masses: Scalar                                                          # [...] Scalar+[bodies]
-    inertia: Inertia                                                        # [...] (Forque- <- Twist+)[bodies]
-    # Zero for a fixed body.
-    inverse_inertia: InverseInertia                                         # [...] (Twist+ <- Forque-)[bodies]
-
-
-@dataclass(frozen=True)
-class Constraints:
-    """Point constraints between anchor points of two bodies."""
-    # The body at each side.
-    ends: SparseExtensor                                                    # [sides] Scalar+[constraints <- bodies]
-    anchors: Point                                                          # [sides] Point-[constraints]
-    modes: Displacement                                                        # [modes, sides] Displacement-[constraints]
-    compliance: Scalar                                                      # Scalar+[constraints]
-
-
-def truss(cells: int, length: float, height: float) -> tuple[Point, np.ndarray]:
-    """The girder's rest points and bars."""
-    stations = np.arange(cells + 1)
-    levels = np.array([-0.5, 0.5])
-    # The origin moved along x to each station and along y to each level.
-    positions = (mv.w.dual() + mv.x.dual() * (stations[:, None] * length / cells) + mv.y.dual() * (levels[None, :] * height)).reshape(-1).field()  # Point-[vertices]
-    lower = 2 * stations[:-1]
-    # Longitudinal bars, both diagonals, and one upright at every station.
-    edges = np.concatenate([
-        np.stack([lower, lower + 2], axis=-1),
-        np.stack([lower + 1, lower + 3], axis=-1),
-        np.stack([lower, lower + 3], axis=-1),
-        np.stack([lower + 1, lower + 2], axis=-1),
-        np.stack([2 * stations, 2 * stations + 1], axis=-1),
-    ])
-    return positions, edges
 
 
 # --- math -----------------------------------------------------------------------------
-# Leading ... axes hold independent cases.
-def girder(cells: int, length: float, height: float, stiffness: float, density: float, n_modes: int) -> Shape:
-    """A cross-braced girder, reduced to its lowest vibration modes."""
-    positions, edges = truss(cells, length, height)                         # Point-[vertices], [edges, ends]
-    vertices = positions.batch().shape[-1]
-    # Each bar's tail taken from its head: the bar as a displacement, its two points' weights cancelling.
-    ends = Topology(vertices, edges).d[0]                                   # Scalar+[edges <- vertices]
-    difference = (ends * positions).cast(Displacement)                      # Displacement-[edges]
-    # The metric enters once, turning each bar into the force along it; that force paired with the bar is its
-    # squared length.
-    pulls = difference.dual_inverse()                                       # Force+[edges]
-    lengths = (pulls & difference).square_root()                            # Scalar+[edges]
-    unit_forces = pulls / lengths                                           # Force+[edges]
-    # A bar reads its stretch by pairing its unit force with the relative displacement of its ends, and pulls back
-    # along itself.
-    bars = unit_forces * (unit_forces & Displacement) * stiffness / lengths  # (Force+ <- Displacement-)[edges]
-    # The relative displacements of the bars' ends.
-    stretching = ends * Displacement                                        # (Displacement- <- Displacement-)[edges <- vertices]
-    masses = mv.scalar(np.full((vertices, 1), density * length * height / vertices)).field()  # Scalar+[vertices]
-    # The masses as maps from accelerations to the forces that cause them.
-    weights = spdiag(masses * Displacement.dual_inverse())                  # (Force+ <- Displacement-)[vertices <- vertices]
-    # The girder's stiffness: the bars' forces, at the relative displacements of their ends, carried back to the vertices.
-    girder_stiffness = stretching.adjugate()(bars(stretching))              # (Force+ <- Displacement-)[vertices <- vertices]
-    # The stiffness against the masses; the three zero modes are rigid motions, carried by the motor.
-    values, modes = girder_stiffness.eigh(weights, 3 + n_modes)             # [3 + modes] Scalar+, [3 + modes] Displacement-[vertices]
-    values, modes = values[3:], modes[3:]                                   # [modes] Scalar+, [modes] Displacement-[vertices]
-    centre = (positions * masses).sites.sum() / masses.sites.sum()          # [] Point-
-    rest = positions - centre + mv.w.dual()                                 # Point-[vertices]
-    inertia = (rest.regressive(rest.commutator(Twist)) * masses).sites.sum()  # [] Forque- <- Twist+
-    # The modes' compliances, the inverses of their squared angular frequencies.
-    compliance = 1 / values                                                 # [modes] Scalar+
+# Leading `...` axes batch independent parameter cases.
+def girder(n_bays: int, length: float, height: float, stiffness: float, density: float, n_modes: int) -> Shape:
+    """Bar stiffness solved against lumped vertex masses reduces a girder of `n_bays` bays to its
+    `n_modes` lowest non-rigid vibration modes."""
+    positions, edges = truss(mv, n_bays, length, height)                   # Antivector-[V], [E, 2]
+    topology = Topology(positions.batch().shape[-1], edges)
+    V, E = topology.n_elements
+    # Subtracting each bar's tail from its head cancels unit point weights into an ideal displacement.
+    ends = topology.d[0]                                                   # Scalar+[E <- V]
+    bar_displacements = (ends * positions).cast(Displacement)              # Antivector-[E]
+    # Dualizing once with the Euclidean metric turns each bar displacement into the force plane along
+    # that bar, whose pairing with the displacement gives the squared bar length.
+    pulls = bar_displacements.dual_inverse()                               # Vector+[E]
+    lengths = (pulls & bar_displacements).square_root()                    # Scalar+[E]
+    unit_forces = pulls / lengths                                          # Vector+[E]
+    # Each bar measures axial stretch by pairing its unit force with relative end displacement and
+    # pulls back along the same line of action.
+    bars = unit_forces * (unit_forces & Displacement) * stiffness / lengths  # (Vector+ <- Antivector-)[E]
+    stretching = ends * Displacement                                       # (Antivector- <- Antivector-)[E <- V]
+    masses = mv.scalar(np.full((V, 1), density * length * height / V)).field()  # Scalar+[V]
+    weights = spdiag(masses * Displacement.dual_inverse())                 # (Vector+ <- Antivector-)[V <- V]
+    # Pull bar stiffnesses back to the vertices through the coboundary adjugate.
+    girder_stiffness = stretching.adjugate()(bars(stretching))             # (Vector+ <- Antivector-)[V <- V]
+    # Drop the three zero-frequency planar rigid motions carried by the body's motor.
+    squared_frequencies, modes = girder_stiffness.eigh(weights, 3 + n_modes)  # [3 + n_modes] Scalar+, [3 + n_modes] Antivector-[V]
+    squared_frequencies, modes = squared_frequencies[3:], modes[3:]        # [n_modes] Scalar+, [n_modes] Antivector-[V]
+    centre = (positions * masses).sites.sum() / masses.sites.sum()         # [] Antivector-
+    rest = positions - centre + mv.w.dual()                                # Antivector-[V]
+    inertia = (masses * rest).regressive(rest.commutator(Twist)).sites.sum()  # [] Antibivector- <- Bivector+
+    compliance = 1 / squared_frequencies                                   # [n_modes] Scalar+
     return Shape(rest=rest, modes=modes, compliance=compliance, masses=masses, edges=edges, inertia=inertia)
 
 
-def points(bodies: Bodies, shape: Shape) -> Point:
-    """The bodies' points in the world."""
-    # Each body's rest points moved by its modes, in its own frame.
-    local_points = shape.rest + (shape.modes[:, None] * bodies.amplitudes.batch()).sum(axis=-2)  # [..., bodies] Point-[vertices]
-    return bodies.motor.batch() >> local_points                                                  # [..., bodies] Point-[vertices]
+def world_points(bodies: Bodies, shape: Shape) -> Point:
+    """Modal superposition in each body frame followed by the body's motor places all girder
+    vertices in the world frame (`[..., n_bodies] Antivector-[V]`)."""
+    local_points = shape.rest + (shape.modes[:, None] * bodies.amplitudes.batch()).sum(axis=-2)  # [..., n_bodies] Antivector-[V]
+    return bodies.motor.batch() >> local_points                            # [..., n_bodies] Antivector-[V]
 
 
 def modal_terms(bodies: Bodies, previous_amplitudes: Scalar, dt: float) -> tuple[Scalar, Scalar, Scalar]:
-    """Each mode's compliance, residual and response to a unit load over the step."""
-    # The implicit dashpot relative to the spring: twice the damping ratio times the frequency, times the
-    # spring's compliance, over the step. A mode has unit mass, so its frequency times its compliance is the
-    # square root of the compliance, zero for a rigid body.
-    damping = 2 * bodies.damping * bodies.compliance.square_root() / dt     # [..., modes] Scalar+[bodies]
-    # The spring's compliance over the step squared, softened by the dashpot.
-    compliance = bodies.compliance / dt**2 / (1 + damping)                  # [..., modes] Scalar+[bodies]
-    # The mode's amplitude, with its change over the step weighted in by the dashpot.
-    residual = (bodies.amplitudes + damping * (bodies.amplitudes - previous_amplitudes)) / (1 + damping)  # [..., modes] Scalar+[bodies]
-    # A mode has unit mass, so a load on it moves it by 1 / (1 + compliance) of the load.
-    response = 1 / (1 + compliance)                                         # [..., modes] Scalar+[bodies]
+    """Implicit spring and dashpot weights over step `dt` determine each mode's effective
+    compliance, predictor residual, and unit-load response (`[..., n_modes] Scalar+[n_bodies]`)."""
+    # Unit modal mass gives omega * alpha == sqrt(alpha), vanishing cleanly on rigid bodies (alpha == 0).
+    damping = 2 * bodies.damping * bodies.compliance.square_root() / dt    # [..., n_modes] Scalar+[n_bodies]
+    compliance = bodies.compliance / dt**2 / (1 + damping)                 # [..., n_modes] Scalar+[n_bodies]
+    residual = (bodies.amplitudes + damping * (bodies.amplitudes - previous_amplitudes)) / (1 + damping)  # [..., n_modes] Scalar+[n_bodies]
+    response = 1 / (1 + compliance)                                        # [..., n_modes] Scalar+[n_bodies]
     return compliance, residual, response
 
 
 def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, Displacement]:
-    """The sparse maps from the bodies' rigid motion and modes to the constraint gaps, and the gaps."""
-    # The motors of the two bodies each constraint joins.
-    motor = constraints.ends * bodies.motor[..., None]                     # [..., sides] Motor+[constraints]
-    # The constraint's anchor on each of the two bodies, in that body's frame, moved by its modes.
-    local_anchors = constraints.anchors + (constraints.modes * (constraints.ends * bodies.amplitudes[..., None])).sum(axis=-2)  # [..., sides] Point-[constraints]
-    # A gap is the second anchor's position minus the first's.
-    signs = np.array([-1, 1])
-    # How each anchor moves for a twist of its body: its commutator with the space of twists, in the world frame.
-    # The body's motion is a twist, extrinsic, and the anchor's displacement under it intrinsic, so a force at the
-    # anchor is extrinsic: its work is `force & displacement`, the regressive product of the two kinds.
-    anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs     # [..., sides] (Displacement- <- Twist+)[constraints]
-    # How each anchor moves for each mode amplitude of its body: the mode's shape at the anchor, in the world frame.
-    anchor_modes = (motor[..., None, :] >> constraints.modes) * signs      # [..., modes, sides] Displacement-[constraints]
-    # Each constraint's gap in the world frame, the second anchor's position minus the first's.
-    gap = ((motor >> local_anchors) * signs).sum(axis=-1)                  # [...] Displacement-[constraints]
-    # The change in each gap for the bodies' twists: each side's anchor motion, read off the body at that side,
-    # summed over the two sides.
-    rigid = (spdiag(anchor_motion) * constraints.ends).sum(axis=-1)       # [...] (Displacement- <- Twist+)[constraints <- bodies]
-    # The change in each gap for the bodies' amplitudes of each mode, one map per mode.
-    modal = (spdiag(anchor_modes) * constraints.ends).sum(axis=-1)        # [..., modes] Displacement-[constraints <- bodies]
-    # The load on each mode of each body for forces at the constraints, one map per mode: each force paired with
-    # the mode's displacement at its anchor, `force & displacement`, the work it does per unit of amplitude, carried
-    # back to the body at each side by the incidence run back.
-    modal_load = (~constraints.ends * spdiag(Force & anchor_modes)).sum(axis=-1)   # [..., modes] (Scalar+ <- Force+)[bodies <- constraints]
+    """Anchor kinematics and constraint incidence assemble the sparse rigid and modal gap maps, the
+    modal load pullback, and the current world-frame gaps."""
+    motor = constraints.ends * bodies.motor[..., None]                     # [..., 2] Rotor+[n_constraints]
+    local_anchors = constraints.anchors + (constraints.modes * (constraints.ends * bodies.amplitudes[..., None])).sum(axis=-2)  # [..., 2] Antivector-[n_constraints]
+    signs = np.array([-1, 1])                                              # [2]
+    # Commuting each local anchor with `Twist` maps body-frame twists to intrinsic anchor
+    # displacements, which `motor` sandwiches into the world frame.
+    anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs     # [..., 2] (Antivector- <- Bivector+)[n_constraints]
+    anchor_modes = (motor[..., None, :] >> constraints.modes) * signs      # [..., n_modes, 2] Antivector-[n_constraints]
+    gap = ((motor >> local_anchors) * signs).sum(axis=-1)                  # [...] Antivector-[n_constraints]
+    rigid = (spdiag(anchor_motion) * constraints.ends).sum(axis=-1)        # [...] (Antivector- <- Bivector+)[n_constraints <- n_bodies]
+    modal = (spdiag(anchor_modes) * constraints.ends).sum(axis=-1)         # [..., n_modes] Antivector-[n_constraints <- n_bodies]
+    # Pairing extrinsic constraint forces with intrinsic modal anchor displacements measures virtual
+    # work per unit modal amplitude and pulls it back across `ends.adjugate()`.
+    modal_load = (constraints.ends.adjugate() * spdiag(Force & anchor_modes)).sum(axis=-1)  # [..., n_modes] (Scalar+ <- Vector+)[n_bodies <- n_constraints]
     return rigid, modal, modal_load, gap
 
 
-def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scalar, mode_reactions: Scalar, dt: float) -> tuple[Bodies, Scalar]:
-    """The bodies displaced to satisfy all constraints, and the modes' reactions."""
-    compliance, residual, response = modal_terms(bodies, previous_amplitudes, dt)  # [..., modes] Scalar+[bodies], Scalar+[bodies], Scalar+[bodies]
+def project_constraints(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scalar, mode_reactions: Scalar, dt: float) -> tuple[Bodies, Scalar]:
+    """Solving the joint Schur complement closes all constraint gaps at once while updating body
+    motors, modal amplitudes, and accumulated modal reactions."""
+    compliance, residual, response = modal_terms(bodies, previous_amplitudes, dt)  # [..., n_modes] Scalar+[n_bodies], Scalar+[n_bodies], Scalar+[n_bodies]
     rigid, modal, modal_load, gap = coupling(bodies, constraints)
-    # The load of each mode's spring, less the reactions it has already received this step.
-    spring_load = -(residual + compliance * mode_reactions)                 # [..., modes] Scalar+[bodies]
-    # How far each mode moves under its spring alone.
-    unconstrained_step = response * spring_load                             # [..., modes] Scalar+[bodies]
-    # How far each mode moves under a unit load from a constraint, its spring holding back the rest.
-    mobility = spdiag(response * compliance)                               # [..., modes] Scalar+[bodies <- bodies]
-    # Each constraint's own compliance over the step squared, as a map from force to gap.
-    constraint_compliance = constraints.compliance / dt**2 * Force.dual()  # (Displacement- <- Force+)[constraints]
-    # The adjugate reads the work pairing backwards: `rigid.adjugate()(force) & twist == force & rigid(twist)`
-    # for every force and twist, so it turns forces at the anchors, extrinsic, into the forques they exert on the
-    # bodies, intrinsic. This is the principle of virtual work, with no transpose and no metric.
-    # The change in the gaps for forces at the constraints: through the bodies' rigid motion, through
-    # their modes, summed over the modes, and through the constraints' own compliance.
-    system = rigid(bodies.inverse_inertia(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance  # [...] (Displacement- <- Force+)[constraints <- constraints]
-    # The reactions at the constraints that close every gap, given how far the modes move on their own.
-    # They are position-level, force times the step squared, so through an inverse inertia they give a
-    # displacement.
-    reactions = system.solve((-gap - (modal * unconstrained_step).sum(axis=-1)).cast(Displacement))  # [...] Force+[constraints]
-    # Each body's twist, from the forques the reactions exert on it: the forces carried back to the bodies by
-    # the adjugate, then turned into motion by the inverse inertia.
-    displacement = bodies.inverse_inertia(rigid.adjugate()(reactions))      # [...] Twist+[bodies]
-    # Each mode's load from the reactions, and its spring's reaction to the whole.
-    mode_loads = modal_load(reactions[..., None])                           # [..., modes] Scalar+[bodies]
-    reaction_change = response * (spring_load - mode_loads)                 # [..., modes] Scalar+[bodies]
-    # The motors moved by the twists, the modes by their loads and the change in their reactions.
+    spring_load = -(residual + compliance * mode_reactions)                # [..., n_modes] Scalar+[n_bodies]
+    unconstrained_step = response * spring_load                            # [..., n_modes] Scalar+[n_bodies]
+    mobility = spdiag(response * compliance)                               # [..., n_modes] Scalar+[n_bodies <- n_bodies]
+    constraint_compliance = constraints.compliance / dt**2 * Force.dual()  # (Antivector- <- Vector+)[n_constraints]
+    # Because `rigid.adjugate()(force) & twist == force & rigid(twist)`, the adjugate maps joint
+    # forces directly to body forques without a coordinate transpose or metric on twists.
+    system = rigid(bodies.inverse_inertia(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance  # [...] (Antivector- <- Vector+)[n_constraints <- n_constraints]
+    reactions = system.solve((-gap - (modal * unconstrained_step).sum(axis=-1)).cast(Displacement))  # [...] Vector+[n_constraints]
+    twist_step = bodies.inverse_inertia(rigid.adjugate()(reactions))       # [...] Bivector+[n_bodies]
+    mode_loads = modal_load(reactions[..., None])                          # [..., n_modes] Scalar+[n_bodies]
+    reaction_change = response * (spring_load - mode_loads)                # [..., n_modes] Scalar+[n_bodies]
+    stepped_motor = bodies.motor * (twist_step * -0.5).exp()               # [...] Rotor+[n_bodies]
     constrained_bodies = replace(
         bodies,
-        motor=bodies.motor * (displacement * -0.5).exp(),
+        motor=stepped_motor,
         amplitudes=bodies.amplitudes + mode_loads + reaction_change,
     )
-    # The reactions the modes have received this step.
-    mode_reactions = mode_reactions + reaction_change                       # [..., modes] Scalar+[bodies]
+    mode_reactions = mode_reactions + reaction_change                      # [..., n_modes] Scalar+[n_bodies]
     return constrained_bodies, mode_reactions
 
 
 def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Displacement) -> Bodies:
-    """The bodies one time step later."""
+    """Free rigid-body prediction under `gravity` followed by simultaneous modal and joint
+    projection advances `bodies` by one step `dt`."""
     previous = bodies
 
     def weight(motor: Motor, rate: Twist) -> Forque:
-        # Gravity acts at each body's centre of mass, the origin of its frame.
-        return (mv.w.dual() & (motor << gravity)) * bodies.masses            # [...] Forque-[bodies]
+        # Gravity acts at each body's centre of mass, placed at the origin of the body frame.
+        return (mv.w.dual() & (motor << gravity)) * bodies.masses          # [...] Antibivector-[n_bodies]
 
-    # Predict the rigid motion from the rigid-body equations under gravity, and move the modes by their rates.
     motor, _ = lie.explicit_rk4(bodies.motor, bodies.rate, bodies.inertia, bodies.inverse_inertia, dt, weight)
     bodies = replace(bodies, motor=motor, amplitudes=bodies.amplitudes + bodies.rates * dt)
-    # Relax each mode's spring on its own.
-    _, residual, response = modal_terms(bodies, previous.amplitudes, dt)           # [..., modes] Scalar+[bodies], Scalar+[bodies], Scalar+[bodies]
-    mode_reactions = -residual * response                                   # [..., modes] Scalar+[bodies]
-    # Displace the bodies so that every constraint holds, the springs relaxing with them.
-    bodies, _ = project(replace(bodies, amplitudes=bodies.amplitudes + mode_reactions), constraints, previous.amplitudes, mode_reactions, dt)
-    # The rates are the change over the step, the motor's by the logarithm of its change.
+    _, residual, response = modal_terms(bodies, previous.amplitudes, dt)   # [..., n_modes] Scalar+[n_bodies], Scalar+[n_bodies], Scalar+[n_bodies]
+    mode_reactions = -residual * response                                  # [..., n_modes] Scalar+[n_bodies]
+    bodies, _ = project_constraints(
+        replace(bodies, amplitudes=bodies.amplitudes + mode_reactions),
+        constraints,
+        previous.amplitudes,
+        mode_reactions,
+        dt,
+    )
     return replace(
         bodies,
         rate=(~previous.motor * bodies.motor).log() * (-2 / dt),

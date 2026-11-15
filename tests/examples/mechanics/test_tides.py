@@ -1,5 +1,4 @@
-"""Tides: the geometric derivative of gravity is Poisson's equation; and the flyby takes a step on a coarse field and
-draws."""
+"""Coverage tests verify Poisson's equation, tidal spread evolution, and flyby rendering on a coarse grid."""
 
 from __future__ import annotations
 
@@ -8,16 +7,26 @@ import numpy as np
 from examples.mechanics.tides import core, render, scenarios
 
 
-def test_the_geometric_derivative_of_gravity_is_minus_four_pi_times_the_density():
-    masses, _, _ = scenarios.setting()
-    points = core.grid(1.0, 1.0, 5, 5)                                       # [rows, columns] Point
-    derivative = core.derivative(masses.tidal(points))                       # [rows, columns] Even
-    softened = points.scalar_norm_squared() + scenarios.MASS_CORE**2
-    density = 3 * scenarios.MASS * scenarios.MASS_CORE**2 / (4 * np.pi) / (softened * softened * softened.square_root())
-    np.testing.assert_allclose((derivative + 4 * np.pi * density).kernel, 0.0, atol=1e-10)
+def test_gravity_derivative_recovers_plummer_density_with_zero_curl():
+    points = core.sample_grid(1.0, 1.0, 5, 5)                                # [5, 5] Point-
+    tides = core.tidal_map(points, scenarios.mass_centres, scenarios.mass_values, scenarios.mass_core)  # [5, 5] Plane+ <- Point-
+    field_derivative = core.gravity_derivative(tides)                        # [5, 5] Even+
+    softened_squares = points.scalar_norm_squared() + scenarios.mass_core**2  # [5, 5] Scalar+
+    plummer_density = (
+        3 * scenarios.mass_values[0] * scenarios.mass_core**2 / (4 * np.pi)
+        / (softened_squares * softened_squares * softened_squares.square_root())
+    )                                                                        # [5, 5] Scalar+
+    assert (field_derivative.select[2].norm() < 1e-10).all()
+    assert ((field_derivative.select[0] + 4 * np.pi * plummer_density).abs() < 1e-10).all()
 
 
-def test_the_flyby_takes_a_step_and_draws():
-    points, _, density = scenarios.field(4, 4)
-    drawn = ((stars, *scenarios.outline(stars, shape)) for stars, shape in scenarios.flyby(2, 1))
-    list(render.animate(points, density, drawn))
+def test_flyby_steps_and_renders_frames():
+    points, _, mass_density = scenarios.density_field(4, 4)
+    states = list(scenarios.flyby(2, 1))
+    positions, star_centre, predicted_spread = states[-1]
+    moment = core.cluster_moment(positions, star_centre)                     # [] Point- <- Plane+
+    assert ((core.mv.x & moment(core.mv.x)) > 0).all()
+    snapshot = render.flyby_frame(points, mass_density, positions, star_centre, predicted_spread)
+    frames = list(render.flyby_frames(points, mass_density, states))
+    assert snapshot.ndim == 3
+    assert len(frames) == 2

@@ -1,15 +1,15 @@
-"""Quantum process tomography: learning a qubit's noisy evolution from prepared states and measured
-probabilities, with the states of a qubit as the points of a ball in projective space.
+"""Quantum process tomography recovers a qubit's noisy channel from prepared states and measured outcome probabilities.
 
-Every outcome probability is an affine function of the state, and an affine function on space is a plane. A state
-is modelled as a point of weight one, its weight read by the plane at infinity, `mv.w & state`; an effect is a
-plane, and an outcome's probability is the pairing `effect & state`. A channel is a map from points to points: a
-coherent turn is a rotor about the centre, and noise mixes a state with its images, linearly in the point.
+Every outcome probability depends affinely on the state, and an affine function on three-dimensional projective space
+is a plane. A qubit state is modelled as a unit-weight point inside the Bloch ball whose weight is read by the plane
+at infinity `w & state`, a detector outcome is modelled as an effect plane, and its Born probability is the pairing
+`effect & state`. Coherent turns act by rotors around the centre, while dephasing and relaxation act linearly on the
+projective point.
 
-Four preparations in general position determine such a map. Each outcome's dual is the point where the other three
-outcomes' planes meet, each preparation's dual the plane through the other three preparations: the reciprocal
-frames are meets and joins, and no scalar product enters. The recovered outputs times the readings of their
-preparations' dual planes are dyads, and their sum is the whole channel.
+Four preparations in general position span the ball and determine the linear channel everywhere. Each outcome's dual
+point is the meet of the other three outcome planes, and each preparation's dual plane is the join of the other three
+preparations, so reciprocal frames arise from meets and joins without any metric inner product. Summing the dyads of
+recovered output states against dual preparation planes gives the channel directly as a `Point <- Point` map.
 """
 
 from __future__ import annotations
@@ -20,77 +20,73 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples.util.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
+Antiscalar = ga.gatype.antiscalar()                                          # Antiscalar-
 Bivector = ga.gatype.bivector()                                              # Bivector+
-# A state is a point of the Bloch ball, of weight one; an effect is a plane, which reads states.
+# A state is a unit-weight point of the Bloch ball; an effect is a plane that reads states.
 Point = ga.gatype.antivector()                                               # Antivector-
 Effect = ga.gatype.vector()                                                  # Vector+
-Channel = ga.gatype((Point, Point))                                          # Point- <- Point-
-# The join of two states, the line through them.
 Line = ga.gatype.antibivector()                                              # Antibivector-
+Channel = ga.gatype((Point, Point))                                          # Point- <- Point-
 
-# The centre of the ball, the completely mixed state, and the north pole, towards which relaxation pulls.
+# The centre of the ball (the completely mixed state) and the north pole toward which relaxation pulls.
 centre = mv.point([0, 0, 0])                                                 # [] Point-
 north = mv.point([0, 0, 1])                                                  # [] Point-
-# Each of four preparations or outcomes, with the indices of the other three.
-other_idx = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
+# Indices of the complementary triple for each of four spanning preparations or outcomes.
+other_indices = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
 
 
 # --- math -----------------------------------------------------------------------------
 def noisy_gate(
     angles: np.ndarray, phase_flip: np.ndarray, loss: np.ndarray, rotation_plane: Bivector,
 ) -> Channel:
-    """A coherent turn after independent phase noise and relaxation towards the north pole."""
-    # With probability phase_flip, the state is replaced by its half turn about the field.
-    dephasing = Point + phase_flip * ((mv.xy >> Point) - Point)              # [channels] Point- <- Point-
-    # A decayed state is at north: the plane at infinity reads the state's weight, and north receives it.
+    """Independent phase noise, relaxation toward the north pole, and a coherent turn form a gate channel (`[...] Point- <- Point-`)."""
+    # Phase flip replaces the state with its half turn about the z axis with probability phase_flip.
+    dephasing = (1 - phase_flip) * Point + phase_flip * (mv.xy >> Point)     # [...] Point- <- Point-
+    # Relaxation sends decayed weight to the north pole, read off by pairing with the plane at infinity.
     decay = north * (mv.w & Point)                                           # [] Point- <- Point-
-    # The part of a state across the field: the part a half turn about the field reverses.
+    # A half turn about the z axis reverses the transverse spin components while fixing the axis.
     transverse = (Point - (mv.xy >> Point)) / 2                              # [] Point- <- Point-
-    # A fraction loss of the way to north; an unobserved decay keeps the amplitude sqrt(1 - loss) of the coherence
-    # across the field, more than the 1 - loss a mixture of decayed and untouched states would keep.
-    damping = Point + loss * (decay - Point) + (np.sqrt(1 - loss) - (1 - loss)) * transverse  # [channels] Point- <- Point-
-    rotations = (rotation_plane * (-angles / 2)).exp()                       # [channels] Rotor+
-    # A map applied to another map composes them; the rotor then turns every output.
-    return rotations >> damping(dephasing)                                   # [channels] Point- <- Point-
+    # Unobserved decay retains transverse coherence amplitude sqrt(1 - loss) rather than classical 1 - loss.
+    damping = (1 - loss) * Point + loss * decay + (np.sqrt(1 - loss) - (1 - loss)) * transverse  # [...] Point- <- Point-
+    rotations = (rotation_plane * (-angles / 2)).exp()                       # [...] Rotor+
+    return rotations >> damping(dephasing)                                   # [...] Point- <- Point-
 
 
-def probabilities(device: Channel, prepared: Point, effects: Effect) -> Scalar:
-    """Each outcome's probability for each preparation passed through each channel."""
-    outputs = device[..., None](prepared)                                    # [channels, preparations] Point-
-    return effects & outputs[..., None]                                      # [channels, preparations, outcomes] Scalar+
+def outcome_probabilities(channel: Channel, states: Point, effects: Effect) -> Scalar:
+    """Pairing `effects` against mapped `states` gives the Born outcome probabilities (`[...] Scalar+`)."""
+    outputs = channel[..., None](states)                                     # [...] Point-
+    return effects & outputs[..., None]                                      # [...] Scalar+
 
 
-def reconstruct(prepared: Point, effects: Effect, measured: Scalar) -> Channel:
-    """The channel that gives the measured probabilities on four preparations in general position, extended to every
-    state by linearity."""
-    # The point where the other three effects' planes meet, scaled so its own effect reads one there.
-    meets = effects[other_idx[:, 0]] ^ effects[other_idx[:, 1]] ^ effects[other_idx[:, 2]]   # [outcomes] Antivector+
-    measurement_dual = meets / (effects & meets)                             # [outcomes] Point-
-    outputs = (measured * measurement_dual).sum(axis=-1)                     # [channels, preparations] Point-
-    # The plane through the other three preparations, scaled to read one on its own preparation.
-    joins = prepared[other_idx[:, 0]] & prepared[other_idx[:, 1]] & prepared[other_idx[:, 2]]   # [preparations] Vector-
-    preparation_dual = joins / (joins & prepared)                            # [preparations] Effect+
-    return (outputs * (preparation_dual & Point)).sum(axis=-1)               # [channels] Point- <- Point-
+def reconstructed_channel(preparations: Point, effects: Effect, measurements: Scalar) -> Channel:
+    """Reciprocal meets of `effects` and joins of `preparations` recover the linear channel (`[...] Point- <- Point-`)."""
+    # Each outcome's dual point lies on the meet of the other three effect planes, scaled so its own effect reads one.
+    meets = effects[other_indices[:, 0]] ^ effects[other_indices[:, 1]] ^ effects[other_indices[:, 2]]  # [4] Antivector+
+    measurement_dual = meets / (effects & meets)                             # [4] Point-
+    recovered_outputs = (measurements * measurement_dual).sum(axis=-1)       # [..., 4] Point-
+    # Each preparation's dual plane joins the other three preparations, scaled to read one on its own preparation.
+    joins = preparations[other_indices[:, 0]] & preparations[other_indices[:, 1]] & preparations[other_indices[:, 2]]  # [4] Vector-
+    preparation_dual = joins / (joins & preparations)                        # [4] Effect+
+    return (recovered_outputs * (preparation_dual & Point)).sum(axis=-1)     # [...] Point- <- Point-
 
 
-def powers(device: Channel, n_uses: int) -> Iterator[Channel]:
-    """One use of the channel, then two, three, and so on, as composed maps."""
-    combined = device                                                        # [channels] Point- <- Point-
+def channel_powers(channel: Channel, n_uses: int) -> Iterator[Channel]:
+    """Yields the composed channels (`[...] Point- <- Point-`) for one through `n_uses` applications of `channel`."""
+    channel_power = channel                                                  # [...] Point- <- Point-
     for _ in range(n_uses):
-        yield combined
-        combined = device(combined)                                          # [channels] Point- <- Point-
+        yield channel_power
+        channel_power = channel(channel_power)                               # [...] Point- <- Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
-def sphere(n_latitudes: int, n_longitudes: int) -> Point:
-    """Pure states on a closed latitude-longitude mesh of the Bloch sphere: north, tilted down and turned about the
-    field."""
+def pure_sphere(n_latitudes: int, n_longitudes: int) -> Point:
+    """Inclination tilts and azimuthal turns sweep `north` across a closed sphere grid (`[n_latitudes + 1, n_longitudes] Point-`)."""
     inclinations = np.linspace(0, np.pi, n_latitudes + 1)
     azimuths = np.linspace(0, 2 * np.pi, n_longitudes, endpoint=False)
-    tilts = (mv.zx * (-inclinations / 2)).exp()                              # [latitudes + 1] Rotor+
-    turns = (mv.xy * (-azimuths / 2)).exp()                                  # [longitudes] Rotor+
-    return turns[None, :] >> (tilts[:, None] >> north)                       # [latitudes + 1, longitudes] Point-
+    tilts = (mv.zx * (-inclinations / 2)).exp()                              # [n_latitudes + 1] Rotor+
+    turns = (mv.xy * (-azimuths / 2)).exp()                                  # [n_longitudes] Rotor+
+    meridian = tilts >> north                                                # [n_latitudes + 1] Point-
+    return turns[None, :] >> meridian[:, None]                               # [n_latitudes + 1, n_longitudes] Point-

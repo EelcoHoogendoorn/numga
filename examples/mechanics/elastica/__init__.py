@@ -1,1 +1,1 @@
-"""The elastica of Euler and Kirchhoff: elastic rods bent and twisted by loads at their ends."""
+"""Elastic rods bend, coil, and swing under end loads and inertia in the elastica of Euler and Kirchhoff."""

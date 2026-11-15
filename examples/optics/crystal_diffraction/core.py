@@ -1,19 +1,16 @@
-"""A crystal's atoms and its diffraction peaks carried through a deformation, in the algebra of spacetime.
+"""Spacetime deformations carry a crystal's atoms and its reciprocal diffraction peaks while
+preserving wave phases.
 
-Events are antivectors and wavevectors vectors, and the phase of a wave at an event is their pairing, `k & x`.
-The deformation, a map on events, the identity `Antivector` plus a stretch, a shear and a turn, moves the atoms
-and leaves the observer's time alone; its adjugate is the map it induces on wavevectors,
-`deformation.adjugate()(k) & x == k & deformation(x)`, so solving through it moves the wavevectors so that every
-phase is kept, without the metric. The incident light is circularly polarized: as it advances, its field turns in the
-plane of its wavefront, `mv.xy`, and each atom scatters it turned by the atom's phase, the rotor
-`(mv.xy * (phases / 2)).exp()`, whose sense is the light's helicity. The brightness is the energy density
-of the summed field that the observer measures, the observer's slice of space read against the energy current,
-`0.5 * (mv.t & (field >> time))`.
+Spacetime events are intrinsic antivectors and wavevectors are extrinsic vectors whose pairing
+`k & x` measures the wave phase at an event. A planar stretch, shear, and rotation maps atom
+events forward while leaving observer time unchanged, and solving through the map's adjugate
+carries wavevectors forward without invoking the spacetime metric because
+`deformation.adjugate()(k) & x == k & deformation(x)`. Circularly polarized incident light turns
+in its wavefront plane as it advances, so each atom scatters the incident field rotated by half
+its phase, and an observer at rest reads the scattered brightness from the field's energy density.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -22,73 +19,68 @@ from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
-# A wavevector: the slice whose pairing with an event is the phase there.
-Vector = ga.gatype.vector()                                                  # Vector+
-# Events are antivectors with intrinsic orientation.
-Antivector = ga.gatype.antivector()                                          # Antivector-
-Bivector = ga.gatype.bivector()                                              # Bivector+
-Linear = ga.gatype((Antivector, Antivector))                                 # Antivector- <- Antivector-
-# The plane of the incident light's wavefront, in which its circularly polarized field turns as it advances.
-wavefront_plane = mv.xy                                                      # [] Bivector+
-# The observer at rest with the crystal: its direction in time, which pairs to one with its slice of space
-# `mv.t`; the dual carries the minus of t's square.
-time = -mv.t.dual()                                                          # [] Antivector-
-# A field's sandwich of the observer's direction in time is twice the energy current it carries, and the
-# observer's slice of space reads the energy density from it.
-energy_density = 0.5 * (mv.t & (Bivector >> time))                           # [] Scalar+ <- (Bivector+, Bivector+)
+Wavevector = ga.gatype.vector()                                              # Vector+
+Event = ga.gatype.antivector()                                               # Antivector-
+Field = ga.gatype.bivector()                                                 # Bivector+
+Deformation = ga.gatype((Event, Event))                                      # Antivector- <- Antivector-
+# Circularly polarized light propagating along z turns its field in the xy wavefront plane.
+wavefront_plane = mv.xy                                                      # [] Field+
+# Rest-frame time direction pairing to +1 with the spatial slice `mv.t` under `t-` signature.
+time = -mv.t.dual()                                                          # [] Event-
+# Sandwiching `time` by a field gives twice its energy current, read against the observer's `mv.t` slice.
+energy_density = 0.5 * (mv.t & (Field >> time))                              # [] Scalar+ <- (Field+, Field+)
 
 
 # --- math -----------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Crystal:
-    positions: Antivector
-    reciprocal: Vector
-
-    def carried(self, deformation: Linear) -> Crystal:
-        """The atoms moved, and the wavevectors moved so that every phase measured at those atoms is kept."""
-        positions = deformation[..., None](self.positions)                  # [..., atoms] Antivector-
-        # The adjugate pulls a wavevector back through the deformation; solving through it keeps every pairing.
-        adjugate = deformation.adjugate()                                    # [...] Vector+ <- Vector+
-        reciprocal = adjugate[..., None].solve(self.reciprocal)              # [..., reflections] Vector+
-        return Crystal(positions, reciprocal)
-
-    def scattered(self, transfers: Vector, incident: Bivector) -> Bivector:
-        """The field equal atoms scatter to each transfer of a [rows, columns] grid, the incident wave turned by
-        each atom's phase and summed; an in-phase peak carries the incident field.
-
-        The transfer is the outgoing wavevector less the incoming one; no polarization factor is included.
-        """
-        # Light scattered without a change of frequency has a transfer with no part along the observer's time,
-        # so the time of an atom's event does not enter its phase.
-        phases = transfers[..., None] & self.positions[..., None, None, :]  # [..., rows, columns, atoms] Scalar+
-        # The circularly polarized wave, turned in its wavefront by how far it has advanced: the sense of the turn
-        # is its helicity.
-        turns = (wavefront_plane * (phases / 2)).exp()                       # [..., rows, columns, atoms] Rotor+
-        waves = turns >> incident                                            # [..., rows, columns, atoms] Bivector+
-        return waves.sum(axis=-1) / self.positions.shape[-1]                 # [..., rows, columns] Bivector+
+def layer_deformation(
+    stretches: np.ndarray, shears: np.ndarray, angles: np.ndarray
+) -> Deformation:
+    """Planar stretches along x, shears from y into x, and xy rotations form spacetime event maps
+    (`[...] Event- <- Event-`) that leave observer time fixed."""
+    local_map = (
+        Event
+        + (stretches - 1) * mv.x.dual() * (mv.x & Event)
+        + shears * mv.x.dual() * (mv.y & Event)
+    )                                                                        # [...] Event- <- Event-
+    # A positive angle rotates x toward y in the layer plane.
+    rotors = (mv.xy * (-angles / 2)).exp()                                   # [...] Rotor+
+    return rotors >> local_map                                               # [...] Event- <- Event-
 
 
-def deformation(stretch: np.ndarray, shear: np.ndarray, angle: np.ndarray) -> Linear:
-    """The layer stretched along x, its horizontal rows slid along x and the whole turned in the plane xy; the
-    observer's time stays where it is."""
-    local = (Antivector + (stretch - 1) * mv.x.dual() * (mv.x & Antivector)
-             + shear * mv.x.dual() * (mv.y & Antivector))                    # [...] Antivector- <- Antivector-
-    # A positive angle turns x toward y.
-    turns = (mv.xy * (-angle / 2)).exp()                                     # [...] Rotor+
-    return turns >> local
+def scattered_field(
+    positions: Event, transfers: Wavevector, incident: Field
+) -> Field:
+    """Coherent scattering from equal atoms (`[..., n_atoms] Event-`) across `transfers`
+    (`[..., n_rows, n_columns] Wavevector+`) sums the phase-turned `incident` wave into
+    `[..., n_rows, n_columns] Field+`."""
+    n_atoms = positions.shape[-1]
+    # Elastic momentum transfers have no part along observer time, so event times drop out of the phase.
+    phases = transfers[..., None] & positions[..., None, None, :]            # [..., n_atoms] Scalar+
+    # Advancing a circularly polarized wave rotates its field in the wavefront plane with sense set by helicity.
+    phase_rotors = (wavefront_plane * (phases / 2)).exp()                    # [..., n_atoms] Rotor+
+    atom_waves = phase_rotors >> incident                                    # [..., n_atoms] Field+
+    return atom_waves.sum(axis=-1) / n_atoms                                 # [...] Field+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def square(shells: int, orders: int, spacing: float) -> Crystal:
-    """A finite square layer of events at the observer's time zero, and its reciprocal lattice."""
-    atoms = np.arange(-shells, shells + 1)
-    reflections = np.arange(-orders, orders + 1)
-    positions = (mv.x * atoms[None, :] + mv.y * atoms[:, None]).reshape(-1).dual() * spacing
-    reciprocal = (mv.x * reflections[None, :] + mv.y * reflections[:, None]).reshape(-1) * (2 * np.pi / spacing)
-    return Crystal(positions, reciprocal)
+def square_lattice(
+    n_shells: int, n_orders: int, spacing: float
+) -> tuple[Event, Wavevector]:
+    """A square layer of `(2 * n_shells + 1) ** 2` atom events at observer time zero (`[n_atoms] Event-`)
+    pairs with `(2 * n_orders + 1) ** 2` reciprocal wavevectors (`[n_reflections] Wavevector+`)."""
+    shell_indices = np.arange(-n_shells, n_shells + 1)
+    order_indices = np.arange(-n_orders, n_orders + 1)
+    atoms = (
+        mv.x * shell_indices[None, :] + mv.y * shell_indices[:, None]
+    ).reshape(-1).dual() * spacing
+    lattice = (
+        mv.x * order_indices[None, :] + mv.y * order_indices[:, None]
+    ).reshape(-1) * (2 * np.pi / spacing)
+    return atoms, lattice
 
 
-def transfer_grid(half_width: float, pixels: int) -> Vector:
-    """A square section of momentum transfers in the plane of the layer, one per pixel."""
-    samples = np.linspace(-half_width, half_width, pixels)
-    return mv.x * samples[None, :] + mv.y * samples[:, None]
+def transfer_grid(half_width: float, n_pixels: int) -> Wavevector:
+    """Uniformly spaced momentum transfers span `[-half_width, half_width]` across
+    `[n_pixels, n_pixels] Wavevector+` in the crystal plane."""
+    samples = np.linspace(-half_width, half_width, n_pixels)
+    return mv.x * samples[None, :] + mv.y * samples[:, None]                 # [n_pixels, n_pixels] Wavevector+

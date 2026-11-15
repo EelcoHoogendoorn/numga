@@ -1,15 +1,13 @@
-"""Two cylinders heated alike, one latched at fixed volume and one under a weight at fixed pressure, beside the gas's
-two charts.
+"""Renders two gas cylinders heated side by side, one latched at fixed volume and one loaded at fixed pressure, beside
+three thermodynamic charts.
 
-The temperature–entropy chart holds lines of equal volume, green, and of equal pressure, purple; the heat a
-reversible change takes in is the area under its path down to zero temperature, so equal heat shades equal areas. The
-pressure–volume chart holds isotherms, red, and adiabats, lines of equal entropy, teal; the work
-the loaded piston does is the area under its path. On both, an arrow at each cylinder's state points along its heating
-direction. The third chart is each cylinder's temperature against the heat it has taken in: straight lines whose
-slopes are one over the heat capacities.
+The temperature–entropy chart draws isochores in green and isobars in purple; reversible heating takes in heat equal
+to the area under its path down to zero temperature, so equal added heat shades equal areas. The pressure–volume chart
+draws isotherms in red and adiabats in teal, and the loaded piston does work equal to the area under its path. On both
+charts, an arrow at each cylinder's state points along its heating direction. The third chart plots each cylinder's
+temperature against the cumulative heat added as straight lines whose slopes equal the reciprocal heat capacities.
 
-The charts' lines are where the gas's temperature or pressure, functions the notebook hands over, take their levels
-over the plane of states; this module only samples them.
+Level curves on the charts are contoured by sampling the gas's temperature and pressure callables over a grid of states.
 """
 from __future__ import annotations
 
@@ -20,43 +18,44 @@ import numpy as np
 
 from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
-from examples.util.wgsl import solids
+from numga.render import solids
 from examples.thermodynamics.state_space import core
 
 mv = core.mv
-Reading = Callable[[Extensor], Extensor]
+Observable = Callable[[Extensor], Extensor]
 
-# The charts' size in pixels and their ranges: entropy and temperature, volume and pressure.
+# Pixel dimensions and axis ranges for the entropy–temperature and volume–pressure charts.
 n_rows, n_columns = 300, 320
 entropy_range, temperature_range = (-0.4, 2.0), (0.0, 3.0)
 volume_range, pressure_range = (0.0, 2.4), (0.0, 3.0)
-# The levels of the charts' families: volumes, pressures, temperatures and entropies.
+# Contour levels for constant volume, pressure, temperature, and entropy.
 isochores = np.array([0.5, 0.7, 1.0, 1.4, 2.0])
 isobars = np.array([0.5, 0.7, 1.0, 1.4, 2.0, 2.8])
 isotherms = np.array([0.5, 1.0, 1.5, 2.0, 2.5])
 adiabats = np.array([-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0])
-# The plane of states sampled for the levels: entropies, and volumes by equal ratios.
+# Sample grid of entropies and logarithmically spaced volumes over state space.
 state_entropies = np.linspace(-2.5, 3.0, 120)
 state_volumes = np.geomspace(0.2, 4.0, 120)
-# The two cylinders' colours on the charts; the cylinders' pictures, pixels across, and the height of a unit of volume.
+# Cylinder colours, panel width in pixels, and piston height per unit volume.
 case_colours = np.stack([art.blue, art.orange])
+n_cylinders = len(case_colours)
 cylinder_pixels, height_per_volume = 130, 0.9
-# How far along a heating direction its arrow looks, in the state's units, and its length in pixels.
+# Step along each heating direction in state units and arrow length in pixels.
 arrow_step, arrow_pixels = 0.05, 26.0
-# The heat taken in, across the third chart.
+# Horizontal range of cumulative heat on the third chart.
 heat_range = (0.0, 2.6)
 
 
 def feet(points: art.Point) -> art.Point:
-    """The feet of chart points `[...]` on the plane where the quantity up vanishes: the line through each along the
-    quantity up, met with it."""
+    """Projections of chart points onto the horizontal axis where the vertical coordinate vanishes, met along vertical
+    lines through each point."""
     return (points & art.mv.y.dual()) ^ art.mv.y
 
 
 class Charts:
-    """The two charts' families of lines, sampled once from the gas's functions, and the drawing of states on them."""
+    """Samples the state-space contour families once and draws cylinder trajectories on the three charts."""
 
-    def __init__(self, temperature_of: Reading, pressure_of: Reading, blades) -> None:
+    def __init__(self, temperature_of: Observable, pressure_of: Observable, blades) -> None:
         self.temperature_of, self.pressure_of = temperature_of, pressure_of
         self.entropy_temperature = art.Diagram(entropy_range, temperature_range, (entropy_range[0], 0.0), n_rows,
                                                n_columns, ("S", "T"), (art.mv.x, art.mv.y), (art.mv.w, 0.0))
@@ -78,25 +77,24 @@ class Charts:
     def points(self, states: Extensor) -> art.GasPoints:
         return art.gas_points(self.temperature_of, self.pressure_of, states)
 
-    def pictures(self, path: list[art.GasPoints], toward: art.GasPoints, pointed: bool) -> list[np.ndarray]:
-        """The two charts with the cylinders' paths so far, each step's states `[cylinders]` on both charts, the heat
-        and the work they took in shaded, and, if pointed, arrows from their present states toward where their heating
-        directions lead `[cylinders]`."""
+    def pictures(self, path: list[art.GasPoints], toward: art.GasPoints, show_arrows: bool) -> list[np.ndarray]:
+        """Renders the temperature–entropy and pressure–volume charts with the cylinders' trajectories, shaded heat and
+        work areas, and optional arrows along their heating directions."""
         layers = []
         for diagram, lines, steps, aims in [
                 (self.entropy_temperature, self.temperature_lines, [step.entropy_temperature for step in path],
                  toward.entropy_temperature),
                 (self.volume_pressure, self.pressure_lines, [step.volume_pressure for step in path],
                  toward.volume_pressure)]:
-            traced = stack(steps)                                            # [steps, cylinders] Point-
-            now = traced[-1]                                                 # [cylinders] Point-
-            # The area under each path down to zero: the heat on the temperature–entropy chart, the work on the other.
-            shaded = [art.between(diagram, traced[:, case], feet(traced[:, case]), case_colours[case], 0.16)
-                      for case in range(2) if len(path) > 1]
-            paths = [stroke for case in range(2) for stroke in
-                     art.polylines(diagram, [traced[:, case]], art.bold, case_colours[case], 1.0, art.SOLID)]
-            layers.append(shaded + lines + paths
-                          + (art.arrows(diagram, now, aims, arrow_pixels, art.medium, art.ink) if pointed else [])
+            trajectory = stack(steps)                                         # [..., n_cylinders] Point-
+            now = trajectory[-1]                                              # [n_cylinders] Point-
+            # Shade the area under each curve down to zero for heat on S-T and piston work on V-p.
+            areas = [art.between(diagram, trajectory[:, case], feet(trajectory[:, case]), case_colours[case], 0.16)
+                     for case in range(n_cylinders) if len(path) > 1]
+            paths = [stroke for case in range(n_cylinders) for stroke in
+                     art.polylines(diagram, [trajectory[:, case]], art.bold, case_colours[case], 1.0, art.SOLID)]
+            layers.append(areas + lines + paths
+                          + (art.arrows(diagram, now, aims, arrow_pixels, art.medium, art.ink) if show_arrows else [])
                           + art.dots(diagram, now, case_colours))
         lines = self.lines
         temperature_names = [art.Floating(art.along(lines.isochores.entropy_temperature, 8), "V = const",
@@ -112,12 +110,12 @@ class Charts:
                 art.floated(self.volume_pressure, art.picture(self.volume_pressure, layers[1], []), pressure_names)]
 
     def heating_curves(self, heats: np.ndarray, temperatures: art.Scalar) -> np.ndarray:
-        """Each cylinder's temperature against the heat it has taken in so far `[steps, cylinders]`."""
+        """Renders each cylinder's temperature against the cumulative heat added."""
         diagram = self.heat_temperature
-        curves = art.chart_points(heats[:, None], temperatures)               # [steps, cylinders] Point-
-        now = curves[-1]                                                     # [cylinders] Point-
+        curves = art.chart_points(heats[:, None], temperatures)               # [..., n_cylinders] Point-
+        now = curves[-1]                                                      # [n_cylinders] Point-
         layers = []
-        for case in range(2):
+        for case in range(n_cylinders):
             layers += art.polylines(diagram, [curves[:, case]], art.bold, case_colours[case], 1.0, art.SOLID)
         layers += art.dots(diagram, now, case_colours)
         labels = [art.Label(now[0], "fixed volume", case_colours[0], art.text_size, "rb", (-6, 6)),
@@ -125,10 +123,9 @@ class Charts:
         return art.picture(diagram, layers, labels)
 
 
-def heating(temperature_of: Reading, pressure_of: Reading,
+def heating(temperature_of: Observable, pressure_of: Observable,
             stages: Iterator[tuple[Extensor, Extensor, float]]) -> Iterator[np.ndarray]:
-    """Each stage of the heating as it comes, the two cylinders' states `[cylinders]`, latched then loaded, their
-    heating directions and the heat each has taken in: the cylinders beside the three charts."""
+    """Yields animation frames placing the two cylinders beside the three thermodynamic charts at each stage."""
     first = next(stages)
     charts, path, heats, temperatures = Charts(temperature_of, pressure_of, mv), [], [], []
     for states, directions, heat in chain([first], stages):
@@ -138,20 +135,21 @@ def heating(temperature_of: Reading, pressure_of: Reading,
         toward = charts.points(states + directions * arrow_step)
         heights = solids.context.include_from_algebra(mv.v & states) * height_per_volume
         pictures = [art.gas_cylinder(heights[case], float((temperatures[-1][case] / temperature_range[1]).to_array()), case == 0,
-                                     solids.mv.scalar([volume_range[1] * height_per_volume]), cylinder_pixels) for case in range(2)]
+                                     solids.mv.scalar([volume_range[1] * height_per_volume]), cylinder_pixels)
+                    for case in range(n_cylinders)]
         yield art.beside(pictures + charts.pictures(path, toward, True)
                          + [charts.heating_curves(np.array(heats), stack(temperatures))])
 
 
-def draw_charts(temperature_of: Reading, pressure_of: Reading, states: Extensor):
-    """The two charts with the cylinders' states."""
+def draw_charts(temperature_of: Observable, pressure_of: Observable, states: Extensor):
+    """Draws the temperature–entropy and pressure–volume charts with the cylinders' states marked."""
     charts = Charts(temperature_of, pressure_of, mv)
     here = charts.points(states)
     return art.figure(art.beside(charts.pictures([here], here, False)))
 
 
-def draw_directions(temperature_of: Reading, pressure_of: Reading, states: Extensor, directions: Extensor):
-    """The two charts with the cylinders' states and arrows along their heating directions."""
+def draw_directions(temperature_of: Observable, pressure_of: Observable, states: Extensor, directions: Extensor):
+    """Draws the temperature–entropy and pressure–volume charts with arrows along the cylinders' heating directions."""
     charts = Charts(temperature_of, pressure_of, mv)
     return art.figure(art.beside(charts.pictures([charts.points(states)],
                                                  charts.points(states + directions * arrow_step), True)))
