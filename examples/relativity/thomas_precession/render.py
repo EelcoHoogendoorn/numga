@@ -1,5 +1,4 @@
-"""Drawing for Thomas precession: velocities in the Poincaré disk, a particle bouncing in a box, a
-storage ring, and the anomalous precession rate against the electric field."""
+"""Poincaré-disc projections, storage-ring animations, and precession-rate charts visualize relativistic spin transport."""
 
 from __future__ import annotations
 
@@ -11,203 +10,263 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
+from numga.render import Camera, contours, drawing, simplices
+from numga.topology import Topology
 
+from examples.relativity.thomas_precession import core
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import contours, simplices
-from examples.util.wgsl.camera import Camera, offset_panel
-from examples.relativity.thomas_precession import core
+from examples.util.panels import offset_panel, overlay
 
-INK, FAINT, FILL, SPIN = "#1e293b", "#cbd5e1", "#dbeafe", "#ea580c"
+ink_colour = "#1e293b"
+faint_colour = "#cbd5e1"
+fill_colour = "#dbeafe"
+spin_colour = "#ea580c"
 orbit_colours = ("#0f766e", "#2563eb", "#7c3aed")
 line_colours = ("#64748b", "#ea580c")
-# Arrow lengths: in the Poincaré disk, around the orbits, and as a share of the box's or ring's half
-# width; the view's half width around the orbits.
-DISK_ARROW, ORBIT_ARROW, SCENE_ARROW = 0.16, 0.09, 0.3
+
+disk_arrow = 0.16
+orbit_arrow = 0.09
+scene_arrow = 0.3
 orbit_half_width = 0.66
-# The window of the disk on the rocket's triangle at its largest: the centre, and its half width.
-TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH = (0.5, 0.2), 0.62
-FRAME_INCHES, DPI = 10 / 3, 90
-# In pixels: the outlines' widths, thin, regular and bold; the arrows' widths and the length of the strokes of the
-# chevrons at their tips; the dots' radii, small and for a particle. The samples round the disk's rim.
-THIN, LINE, BOLD = 1.0, 1.25, 1.6
-ARROW_WIDTH, CHEVRON_LENGTH = 2.5, 10.0
-DOT, PARTICLE = 1.9, 3.1
-N_RIM_SAMPLES = 199
+triangle_centre = (0.5, 0.2)
+triangle_half_width = 0.62
+frame_inches = 10 / 3
+frame_dpi = 90
+
+thin_width = 1.0
+line_width = 1.25
+bold_width = 1.6
+arrow_width = 2.5
+chevron_length = 10.0
+dot_radius = 1.9
+particle_radius = 3.1
+n_rim_samples = 199
 
 
 # --- plumbing -------------------------------------------------------------------------
-def disk(velocities: core.Antivector) -> core.Antivector:
-    """Velocities as points of the Poincaré disk: where the line from minus the lab's time through each
-    velocity meets the lab's slice of space, a share `1 / (1 + (mv.t & velocity))` of the way."""
+def disk_points(velocities: core.Antivector) -> core.Antivector:
+    """Stereographic projection from `-time` maps unit four-velocities (`[...] Antivector-`) onto the Poincaré disc in the laboratory spatial slice."""
     return (velocities + core.time) / (1 + (core.mv.t & velocities)) - core.time   # [...] Antivector-
 
 
-def unit(directions: core.Antivector) -> core.Antivector:
-    """The part of directions and velocities in the lab's slice of space, at unit length: a spatial
-    direction squares to a positive scalar."""
+def unit_directions(directions: core.Antivector) -> core.Antivector:
+    """Projecting into the laboratory spatial slice and dividing by the intrinsic norm normalizes spatial directions (`[...] Antivector-`)."""
     spatial = directions - (core.mv.t & directions) * core.time                    # [...] Antivector-
-    return spatial / spatial.squared().square_root()                               # [...] Antivector-
+    return spatial / spatial.antinorm()                                            # [...] Antivector-
 
 
 def unit_spins(spins: core.Spin) -> core.Spin:
-    """The spins at unit size: a patch of a plane of space squares to a positive scalar."""
-    return spins / spins.squared().square_root()                                # [...] Spin-
+    """Dividing by the intrinsic norm normalizes spatial spin patches (`[...] Spin-`)."""
+    return spins / spins.antinorm()                                                # [...] Spin-
 
 
 def spin_arrows(spins: core.Spin) -> core.Antivector:
-    """The arrow of each spin in the plane: its pairings with the planes yz and zx, the planes its patch turns in when
-    it points along x and along y, as its steps along x and along y."""
+    """Pairing `spins` (`[...] Spin-`) with the vertical coordinate planes reads out their horizontal rotation-axis vectors (`[...] Antivector-`)."""
     mv = core.mv
-    steps = stack((mv.x.dual(), mv.y.dual()))                                  # [2] Antivector-
+    steps = stack((mv.x.dual(), mv.y.dual()))                                      # [2] Antivector-
     return ((stack((mv.yz, mv.zx)) & spins[..., None]) * steps).sum(axis=-1)       # [...] Antivector-
 
 
-def ink(colour: str) -> np.ndarray:
-    """A colour's red, green and blue."""
+def rgb_colour(colour: str) -> np.ndarray:
+    """Converts a hex colour string into a three-component RGB float array."""
     return np.array(to_rgb(colour))
 
 
-def arrows(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, camera: Camera) -> np.ndarray:
-    """Arrows from the tails by the steps `[arrows]`, each in its colour, a stroke ending in a chevron: their
-    picture."""
-    tips = tails + steps                                                      # [arrows] Antivector-
-    ends = stack((tails, tips), axis=-1).reshape(-1)                          # [arrows * 2] Antivector-
+def arrow_layer(tails: core.Antivector, steps: core.Antivector, colours: np.ndarray, camera: Camera) -> np.ndarray:
+    """Renders `n_arrows` chevron-tipped strokes from `tails` along `steps` (`[n_arrows] Antivector-`)."""
     n_arrows = tails.shape[0]
-    return simplices.strokes(ends, simplices.Topology.chains([2] * n_arrows), colours, ARROW_WIDTH, camera,
-                             chevrons=np.ones(n_arrows), chevron=CHEVRON_LENGTH, cap=simplices.Cap.BUTT)
+    tips = tails + steps                                                           # [n_arrows] Antivector-
+    ends = stack((tails, tips), axis=-1).reshape(-1)                               # [n_arrows * 2] Antivector-
+    return simplices.strokes(
+        ends,
+        Topology.chains([2] * n_arrows),
+        colours,
+        arrow_width,
+        camera,
+        chevrons=np.ones(n_arrows),
+        chevron=chevron_length,
+        cap=simplices.Cap.BUTT,
+    )
 
 
-def dots(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
-    """Dots in ink at points `[points]`: their picture."""
-    return simplices.markers(points, ink(INK), radius, camera)
+def dot_layer(points: core.Antivector, radius: float, camera: Camera) -> np.ndarray:
+    """Renders circular markers of `radius` at `points` (`[...] Antivector-`)."""
+    return simplices.markers(points, rgb_colour(ink_colour), radius, camera)
 
 
-def outline(points: core.Antivector, colour: str, width: float, camera: Camera, opacity: float = 1.0) -> np.ndarray:
-    """The closed polyline through points `[points]`, the last joined back to the first: its picture."""
-    return simplices.strokes(points, simplices.Topology.loops([points.shape[0]]), ink(colour), width, camera,
-                             opacity=opacity)
+def loop_layer(points: core.Antivector, colour: str, width: float, camera: Camera) -> np.ndarray:
+    """Renders a closed polyline through `points` (`[...] Antivector-`) in `colour`."""
+    return simplices.strokes(points, Topology.loops([points.shape[0]]), rgb_colour(colour), width, camera)
 
 
-def canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, plt.Axes, Camera]:
-    """A square view of half width `half_width` about `centre`, and its camera, looking down on x and y."""
-    figure, ax = plt.subplots(figsize=(FRAME_INCHES, FRAME_INCHES), dpi=DPI)
-    ax.set(xlim=(centre[0] - half_width, centre[0] + half_width), ylim=(centre[1] - half_width, centre[1] + half_width),
-           aspect="equal")
+def planar_canvas(centre: tuple[float, float], half_width: float) -> tuple[plt.Figure, plt.Axes, Camera]:
+    """Creates a borderless square figure, axes, and planar camera of `half_width` around `centre`."""
+    figure, ax = plt.subplots(figsize=(frame_inches, frame_inches), dpi=frame_dpi)
+    ax.set(
+        xlim=(centre[0] - half_width, centre[0] + half_width),
+        ylim=(centre[1] - half_width, centre[1] + half_width),
+        aspect="equal",
+    )
     ax.set_axis_off()
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     return figure, ax, offset_panel(ax, core.mv.x, core.mv.y)
 
 
-def rim(camera: Camera) -> np.ndarray:
-    """The rim of the Poincaré disk, the speed of light: its picture."""
-    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
-    return outline(turns >> core.mv.x.dual(), FAINT, LINE, camera)
+def disk_rim(camera: Camera) -> np.ndarray:
+    """Renders the light-speed boundary circle of the Poincaré disc."""
+    turns = (core.mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples, endpoint=False) / 2)).exp()   # [n_rim_samples] Rotor+
+    rim_points = turns >> core.mv.x.dual()                                         # [n_rim_samples] Antivector-
+    return loop_layer(rim_points, faint_colour, line_width, camera)
 
 
-def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, core.Antivector]]) -> Iterator[np.ndarray]:
-    """Each frame: the triangle of velocities `[samples]`, rest to the first boost to the second and
-    straight back; its corners `[3]`, with the rocket's first axis at each as the observer at rest
-    reads it `[3]`, and at the last corner that axis as the straight boost from rest would carry it."""
-    # The disk set up once, the triangle and its arrows drawn for each frame.
-    figure, ax, camera = canvas(TRIANGLE_CENTRE, TRIANGLE_HALF_WIDTH)
-    edge = rim(camera)
-    shown = simplices.overlay(ax, [edge])
-    # The straight boost from rest keeps the rocket's x axis along the lab's.
-    straight_axis = DISK_ARROW * core.mv.x.dual()                             # [] Antivector-
-    for loop, corners, axes in frames:
-        outline_points, tails = disk(loop), disk(corners)                      # [samples] Antivector-, [3] Antivector-
-        # The triangle filled as a fan from rest, its first point, which its two straight sides leave from.
-        n_samples = outline_points.shape[0]
-        fan = contours.Topology(n_samples, np.stack((np.zeros(n_samples - 2, dtype=int), np.arange(1, n_samples - 1),
-                                                 np.arange(2, n_samples)), axis=-1))
-        shown.set_data(simplices.composited([
-            edge,
-            contours.picture(outline_points, fan, np.zeros(n_samples), ink(FILL), camera),
-            outline(outline_points, INK, LINE, camera),
-            arrows(tails[-1:], straight_axis[None], ink(FAINT), camera),
-            arrows(tails, DISK_ARROW * unit(axes), ink(SPIN), camera),
-            dots(tails, DOT, camera)]))
+def two_boosts_animation(
+    states: Iterable[tuple[core.Antivector, core.Antivector, core.Antivector]],
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames showing the hyperbolic velocity triangle, its corners, and the Wigner-rotated rocket axis."""
+    figure, ax, camera = planar_canvas(triangle_centre, triangle_half_width)
+    rim_picture = disk_rim(camera)
+    shown = overlay(ax, [rim_picture])
+    straight_axis = disk_arrow * core.mv.x.dual()                                  # [] Antivector-
+    for loop, corners, axes in states:
+        n_samples = loop.shape[0]
+        outline_points = disk_points(loop)                                         # [n_samples] Antivector-
+        tails = disk_points(corners)                                               # [3] Antivector-
+        fan = Topology(
+            n_samples,
+            np.stack(
+                (
+                    np.zeros(n_samples - 2, dtype=int),
+                    np.arange(1, n_samples - 1),
+                    np.arange(2, n_samples),
+                ),
+                axis=-1,
+            ),
+        )
+        shown.set_data(drawing.composited([
+            rim_picture,
+            contours.picture(outline_points, fan, np.zeros(n_samples), rgb_colour(fill_colour), camera),
+            loop_layer(outline_points, ink_colour, line_width, camera),
+            arrow_layer(tails[-1:], straight_axis[None], rgb_colour(faint_colour), camera),
+            arrow_layer(tails, disk_arrow * unit_directions(axes), rgb_colour(spin_colour), camera),
+            dot_layer(tails, dot_radius, camera),
+        ]))
         yield capture(figure)
     plt.close(figure)
 
 
-def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Spin]]) -> Iterator[np.ndarray]:
-    """The circles of velocities `[steps + 1, orbits]`, and each frame's velocities and spins as the
-    observer at rest reads them `[orbits]`, the first frame's spins kept faint at the start."""
-    outlines = disk(loops)                                                     # [steps + 1, orbits] Antivector-
-    n_samples, n_orbits = outlines.shape
-    colours = np.stack([ink(colour) for colour in orbit_colours])
-    states = iter(states)
-    first = next(states)
-    # The disk, the orbits and the first frame's spins set up once; the spins and the dots drawn for each frame.
-    figure, ax, camera = canvas((0, 0), orbit_half_width)
-    by_orbit = outlines[np.arange(n_samples)[None, :], np.arange(n_orbits)[:, None]].reshape(-1)   # [orbits * samples] Antivector-
-    beneath = [rim(camera),
-               simplices.strokes(by_orbit, simplices.Topology.chains([n_samples] * n_orbits),
-                                 np.repeat(colours, n_samples - 1, axis=0), THIN, camera, opacity=0.5),
-               arrows(disk(first[0]), spin_arrows(ORBIT_ARROW * unit_spins(first[1])), ink(FAINT), camera)]
-    shown = simplices.overlay(ax, beneath)
-    for velocities, spins in chain([first], states):
-        points = disk(velocities)                                              # [orbits] Antivector-
-        shown.set_data(simplices.composited(beneath + [
-            arrows(points, spin_arrows(ORBIT_ARROW * unit_spins(spins)), colours, camera), dots(points, DOT, camera)]))
+def orbits_animation(
+    loops: core.Antivector,
+    states: Iterable[tuple[core.Antivector, core.Spin]],
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames of circular velocity orbits (`[n_samples, n_orbits] Antivector-`) and their precessing laboratory spins."""
+    n_samples, n_orbits = loops.shape
+    outlines = disk_points(loops)                                                  # [n_samples, n_orbits] Antivector-
+    colours = np.stack([rgb_colour(colour) for colour in orbit_colours])
+    state_stream = iter(states)
+    initial_state = next(state_stream)
+    figure, ax, camera = planar_canvas((0, 0), orbit_half_width)
+    by_orbit = outlines[np.arange(n_samples)[None, :], np.arange(n_orbits)[:, None]].reshape(-1)   # [n_orbits * n_samples] Antivector-
+    beneath = [
+        disk_rim(camera),
+        simplices.strokes(
+            by_orbit,
+            Topology.chains([n_samples] * n_orbits),
+            np.repeat(colours, n_samples - 1, axis=0),
+            thin_width,
+            camera,
+            opacity=0.5,
+        ),
+        arrow_layer(
+            disk_points(initial_state[0]),
+            spin_arrows(orbit_arrow * unit_spins(initial_state[1])),
+            rgb_colour(faint_colour),
+            camera,
+        ),
+    ]
+    shown = overlay(ax, beneath)
+    for velocities, spins in chain([initial_state], state_stream):
+        points = disk_points(velocities)                                           # [n_orbits] Antivector-
+        shown.set_data(drawing.composited(beneath + [
+            arrow_layer(points, spin_arrows(orbit_arrow * unit_spins(spins)), colours, camera),
+            dot_layer(points, dot_radius, camera),
+        ]))
         yield capture(figure)
     plt.close(figure)
 
 
-def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tuple[core.Antivector, core.Spin]]
-                ) -> Iterator[np.ndarray]:
-    """A square box, the diamond its particle bounces along between the midpoints of its `walls`
-    `[4]`, and each frame's position and spin as the observer at rest reads it."""
-    # The box's corners, a corner on the diagonal turned by quarter turns to each of the four; the box and the diamond
-    # each a closed loop of four.
-    quarters = (core.mv.xy * (-np.arange(4) * np.pi / 4)).exp()                 # [corners] Rotor+
-    corners = quarters >> (half_width * (core.mv.x.dual() + core.mv.y.dual()))  # [corners] Antivector-
-    square = simplices.Topology.loops([4])
-    # The box and the diamond set up once; the spin and the particle drawn for each frame.
-    figure, ax, camera = canvas((0, 0), 1.15 * half_width)
-    beneath = [simplices.strokes(walls, square, ink(FAINT), THIN, camera),
-               simplices.strokes(corners, square, ink(INK), BOLD, camera)]
-    shown = simplices.overlay(ax, beneath)
+def box_animation(
+    half_width: float,
+    wall_midpoints: core.Antivector,
+    states: Iterable[tuple[core.Antivector, core.Spin]],
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames of a particle bouncing between `wall_midpoints` (`[4] Antivector-`) inside a square box with its precessing spin."""
+    quarter_turns = (core.mv.xy * (-np.arange(4) * np.pi / 4)).exp()               # [4] Rotor+
+    corners = quarter_turns >> (half_width * (core.mv.x.dual() + core.mv.y.dual()))   # [4] Antivector-
+    square = Topology.loops([4])
+    figure, ax, camera = planar_canvas((0, 0), 1.15 * half_width)
+    beneath = [
+        simplices.strokes(wall_midpoints, square, rgb_colour(faint_colour), thin_width, camera),
+        simplices.strokes(corners, square, rgb_colour(ink_colour), bold_width, camera),
+    ]
+    shown = overlay(ax, beneath)
     for position, spin in states:
-        shown.set_data(simplices.composited(beneath + [
-            arrows(position[None], spin_arrows(SCENE_ARROW * half_width * unit_spins(spin))[None], ink(SPIN), camera),
-            dots(position[None], PARTICLE, camera)]))
+        shown.set_data(drawing.composited(beneath + [
+            arrow_layer(
+                position[None],
+                spin_arrows(scene_arrow * half_width * unit_spins(spin))[None],
+                rgb_colour(spin_colour),
+                camera,
+            ),
+            dot_layer(position[None], particle_radius, camera),
+        ]))
         yield capture(figure)
     plt.close(figure)
 
 
-def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, core.Antivector, core.Spin]]) -> Iterator[np.ndarray]:
-    """The ring `[samples]`, and each frame's position, velocity and spin as the observer at rest reads
-    it: the momentum's direction faint, the spin solid."""
-    # The ring's radius: its points lie in the lab's slice, where they square to their squared distance from the axis.
-    radii = ring.squared().square_root()
-    radius = radii.max()
-    # The ring set up once; the momentum, the spin and the particle drawn for each frame.
-    figure, ax, camera = canvas((0, 0), float((1.3 * radius).to_array()))
-    beneath = [outline(ring, FAINT, BOLD, camera)]
-    shown = simplices.overlay(ax, beneath)
+def ring_animation(
+    ring_points: core.Antivector,
+    states: Iterable[tuple[core.Antivector, core.Antivector, core.Spin]],
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames of a muon circulating around `ring_points` (`[...] Antivector-`) with momentum and spin arrows."""
+    radii = ring_points.antinorm()                                                 # [...] Scalar+
+    radius = radii.max()                                                           # [] Scalar+
+    figure, ax, camera = planar_canvas((0, 0), float((1.3 * radius).to_array()))
+    beneath = [loop_layer(ring_points, faint_colour, bold_width, camera)]
+    shown = overlay(ax, beneath)
     for position, velocity, spin in states:
-        shown.set_data(simplices.composited(beneath + [
-            arrows(position[None], (SCENE_ARROW * radius * unit(velocity))[None], ink(line_colours[0]), camera),
-            arrows(position[None], spin_arrows(SCENE_ARROW * radius * unit_spins(spin))[None], ink(SPIN), camera),
-            dots(position[None], PARTICLE, camera)]))
+        shown.set_data(drawing.composited(beneath + [
+            arrow_layer(
+                position[None],
+                (scene_arrow * radius * unit_directions(velocity))[None],
+                rgb_colour(line_colours[0]),
+                camera,
+            ),
+            arrow_layer(
+                position[None],
+                spin_arrows(scene_arrow * radius * unit_spins(spin))[None],
+                rgb_colour(spin_colour),
+                camera,
+            ),
+            dot_layer(position[None], particle_radius, camera),
+        ]))
         yield capture(figure)
     plt.close(figure)
 
 
 @charts.style()
-def draw_magic(electric: np.ndarray, ratios: core.Scalar) -> plt.Figure:
-    """The anomalous precession rate over the anomaly times the magnetic field `[gammas, fields]`,
-    against the electric field's strength."""
-    # Half the column: two lines of dots, and the height the long vertical label needs.
+def magic_momentum_figure(electric: np.ndarray, rate_ratios: core.Scalar) -> plt.Figure:
+    """Plots normalized anomalous precession `rate_ratios` (`[n_gammas, n_fields] Scalar+`) against the electric-to-magnetic field ratio."""
     figure, ax = charts.subplots(420, 300, layout="constrained")
-    for values, colour in zip(ratios.to_array(), line_colours):
+    for values, colour in zip(rate_ratios.to_array(), line_colours):
         ax.plot(electric, values, "o-", color=colour)
-    ax.axhline(1.0, color=FAINT, linewidth=charts.FRAME_WIDTH, zorder=0)
-    # The rate from zero, and one, where the magic Lorentz factor holds it, the only value marked.
-    ax.set(ylim=(0, None), xticks=[], yticks=[1.0], xlabel="electric field over magnetic field",
-           ylabel="anomalous rate over anomaly × field")
+    ax.axhline(1.0, color=faint_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
+    ax.set(
+        ylim=(0, None),
+        xticks=[],
+        yticks=[1.0],
+        xlabel="electric field over magnetic field",
+        ylabel="anomalous rate over anomaly × field",
+    )
     ax.spines[["top", "right"]].set_visible(False)
     return figure

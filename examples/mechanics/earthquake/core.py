@@ -1,28 +1,10 @@
-"""Earthquake focal mechanisms: the moment of a slip on a fault, the waves it sends out, and the
-beachball that seismologists draw of it, in the geometric algebra of three-dimensional space.
+"""Earthquake focal mechanisms represent the moment of a fault slip, its seismic waves, and its beachball diagram in three-dimensional geometric algebra.
 
-Space is north, east and down. A fault's orientation is one rotor, three turns: by the rake within
-the fault plane, by the dip about the strike, and by the strike from north. It carries the level ground
-onto the fault plane, and the prime vertical, the upright plane facing north, onto the auxiliary plane,
-the plane across the slip; the metric turns the two into the fault's normal and its slip, the direction
-the far side moves.
+Space uses north, east and down axes. A fault orientation is modelled as one rotor composed from three turns by the rake within the fault plane, the dip about the strike, and the strike from north. That rotor carries the level ground onto the fault plane and carries the prime vertical onto the auxiliary plane across the slip, while the metric turns the two planes into the fault normal and slip direction.
 
-A slip on a fault acts on the ground as a moment, a map from directions to the planes that read them,
-`Moment = Plane <- Point`: the auxiliary plane weighted by a direction's reading by the fault,
-`auxiliary * (fault & Point)`, plus the fault weighted by its reading by the auxiliary plane. The first
-term alone is a single couple, which would turn the ground; the second, its mirror, cancels the turning,
-and the curl of the sum, `(Plane ^ moment(Point)).trace(1, 2)`, vanishes. The sum is symmetric in the
-fault and the auxiliary plane: the two give the same moment, and no record of the waves can tell them
-apart.
+A fault slip acts on the surrounding rock as a moment map from directions to reading planes (`Plane+ <- Point-`), formed as `auxiliaries * (faults & Point) + faults * (auxiliaries & Point)`. A single couple `auxiliaries * (faults & Point)` would set the ground turning with curl `(Plane ^ moment(Point)).trace(1, 2)` equal to `faults ^ auxiliaries`, whereas adding the mirrored couple cancels that net torque and makes the moment symmetric between the fault plane and the auxiliary plane.
 
-Along a direction the P wave's first motion is the moment's reading of it, `moment(direction) & direction`:
-a push away from the source where it is positive, a pull where it is negative. Over the lower half of
-the sphere of directions, flattened by an equal-area projection, the pushes are shaded: the beachball.
-Its two nodal lines are the fault and the auxiliary plane, and the eigenvectors of the moment's reading
-against the metric are the pressure and tension axes, from which the two planes come back.
-
-In the tensor notation of seismology the moment reads as $M_{ij} = M_0\\,(n_i s_j + n_j s_i)$, and
-the P wave's amplitude along the unit direction $\\gamma$ as $\\gamma_i M_{ij}\\gamma_j$.
+Along a direction, the first motion of the P wave equals the quadratic form `moment(direction) & direction`, positive for an outward push and negative for an inward pull. Plotting the shaded push regions over an equal-area projection of the lower hemisphere produces the seismological beachball, whose nodal lines trace the fault and auxiliary planes and whose metric eigenvectors give the pressure, null and tension axes.
 """
 
 from __future__ import annotations
@@ -34,81 +16,69 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-# Directions are antivectors with intrinsic orientation; faults are planes, with extrinsic orientation.
+# Directions are intrinsic antivectors; fault and auxiliary planes are extrinsic vectors.
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-Moment = ga.gatype((Plane, Point))                         # Plane+ <- Point-
+Moment = ga.gatype((Plane, Point))                                            # Plane+ <- Point-
 
-north, east, down = mv.basis().dual()                      # [] Point-, Point-, Point-
-# The level ground, facing up, and the prime vertical, the upright plane facing north: a fault's frame
-# turns them onto the fault plane and the auxiliary plane.
-ground, prime_vertical = -mv.z, mv.x                       # [] Plane+, Plane+
-# The planes the fault's frame turns in, from one direction towards another: their commutator.
-# The horizontal plane, its sense from north towards east.
-horizontal = east.commutator(north)                        # [] Bivector+
-# The upright plane through east, its sense from east towards down.
-upright = down.commutator(east)                            # [] Bivector+
+north, east, down = mv.basis().dual()                                         # [] Point-, Point-, Point-
+# Level ground faces up and the prime vertical faces north before the fault rotor turns them.
+ground, prime_vertical = -mv.z, mv.x                                          # [] Plane+, Plane+
+# Reference bivectors orient the horizontal turn from north toward east and the dip turn from east toward down.
+horizontal = east.commutator(north)                                           # [] Bivector+
+upright = down.commutator(east)                                               # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
 def fault_frame(strikes: np.ndarray, dips: np.ndarray, rakes: np.ndarray) -> Rotor:
-    """The orientation of each fault, from its strike, dip and rake: the turn by the rake in the
-    horizontal plane, then the dip about north, then the strike from north towards east. It carries
-    north onto the slip and up onto the fault's normal, so the prime vertical onto the auxiliary plane
-    and the level ground onto the fault plane, and the fault dips to the right of its strike."""
-    # The rake turns north towards -east, the dip east towards down, and the strike north towards east.
+    """Three successive turns by `rakes`, `dips` and `strikes` (`[...]`) orient each fault (`[...] Rotor+`), carrying level ground onto the fault plane and north onto the slip direction."""
+    # Rake turns north toward -east, dip turns east toward down, and strike turns north toward east.
     rake = (horizontal * (rakes / 2)).exp()                                   # [...] Rotor+
     dip = (upright * (-dips / 2)).exp()                                       # [...] Rotor+
     strike = (horizontal * (-strikes / 2)).exp()                              # [...] Rotor+
     return strike * dip * rake                                                # [...] Rotor+
 
 
-def double_couple(faults: Plane, auxiliaries: Plane, moments: np.ndarray) -> Moment:
-    """The moment of each slip, from its fault plane and its auxiliary plane, across the slip: the
-    slip's couple across the fault, and the mirrored couple that keeps the ground from turning."""
-    return moments * (auxiliaries * (faults & Point) + faults * (auxiliaries & Point))   # [...] Moment
+def double_couple(faults: Plane, auxiliaries: Plane, moments: float) -> Moment:
+    """Adding the fault slip couple and its mirror across `faults` and `auxiliaries` (`[...] Plane+`) forms a torque-free seismic moment (`[...] Plane+ <- Point-`)."""
+    return moments * (auxiliaries * (faults & Point) + faults * (auxiliaries & Point))   # [...] Plane+ <- Point-
 
 
 def curl(moment: Moment) -> Bivector:
-    """How much a moment would turn the ground: zero for any symmetric moment."""
-    # Each plane the moment gives, wedged with the plane that reads its direction: the trace pairs the
-    # open plane with the moment's input, plane against direction, with no metric between them.
-    return (Plane ^ moment(Point)).trace(1, 2)                               # [...] Bivector+
+    """Wedging each output plane of `moment` with its dual input plane traces out the net rotational couple (`[...] Bivector+`), which vanishes for any symmetric moment."""
+    # Tracing wedges the output plane against the input plane without invoking the metric.
+    return (Plane ^ moment(Point)).trace(1, 2)                                # [...] Bivector+
 
 
 def radiation(moment: Moment, directions: Point) -> tuple[Scalar, Point]:
-    """Along each direction, the P wave's first motion, positive for a push away from the source,
-    and the S wave's, the part of the moment's response across the direction."""
+    """Evaluating `moment` along unit `directions` (`[...] Point-`) separates the radial P-wave push (`[...] Scalar+`) from the transverse S-wave motion (`[...] Point-`)."""
     reading = moment(directions)                                              # [...] Plane+
     push = reading & directions                                               # [...] Scalar+
-    # The metric turns the moment's reading into the motion it drives.
+    # Dualizing the reading plane converts force traction into motion before projecting out the radial P component.
     return push, reading.dual() - directions * push
 
 
 def principal_axes(moment: Moment) -> tuple[Scalar, Point]:
-    """The principal values and axes, from pressure through the null axis to tension: the eigenvectors
-    of the moment's reading of directions, against the metric, the dot of the planes across them."""
-    return (moment(Point) & Point).eigh(Point.dot(Point))                    # [..., 3] Scalar+, [..., 3] Point-
+    """Diagonalizing `moment(Point) & Point` against the metric yields the pressure, null and tension eigenvalues (`[..., 3] Scalar+`) and unit axes (`[..., 3] Point-`)."""
+    return (moment(Point) & Point).eigh(Point.dot(Point))                     # [..., 3] Scalar+, [..., 3] Point-
 
 
 def fault_planes(moment: Moment) -> tuple[Plane, Plane]:
-    """The two faults with this moment, from its pressure and tension axes: their fault and auxiliary
-    planes `[..., 2]`, each fault's auxiliary plane the other's fault."""
-    # The principal axes, in order: pressure, null and tension.
+    """Bisecting the tension and pressure axes of `moment` recovers the two indistinguishable nodal plane pairs (`[..., 2] Plane+`)."""
+    # Eigenvalues from `eigh` ascend from pressure through the null axis to tension.
     _, axes = principal_axes(moment)                                          # [..., 3] Point-
     pressure, tension = axes[..., 0], axes[..., 2]                            # [...] Point-, Point-
-    # The two planes' normals, which the metric turns into the planes across them.
-    first = ((tension + pressure) / np.sqrt(2)).dual_inverse()               # [...] Plane+
-    second = ((tension - pressure) / np.sqrt(2)).dual_inverse()              # [...] Plane+
-    return stack([first, second], axis=-1), stack([second, first], axis=-1)   # [..., 2] Plane+
+    # Sum and difference bisect the principal axes at 45 degrees; inverse duality maps normals back to planes.
+    first = ((tension + pressure) / np.sqrt(2)).dual_inverse()                # [...] Plane+
+    second = ((tension - pressure) / np.sqrt(2)).dual_inverse()               # [...] Plane+
+    return stack([first, second], axis=-1), stack([second, first], axis=-1)   # [..., 2] Plane+, [..., 2] Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
-def directions(polar: np.ndarray, azimuths: np.ndarray) -> Point:
-    """Directions on the sphere `[rings, spokes]`, by two turns: away from straight down towards
-    north by each polar angle, then about the vertical from north towards east by each azimuth."""
-    tilt = (north.commutator(down) * (-polar[:, None] / 2)).exp()             # [rings, 1] Rotor+
-    spin = (horizontal * (-azimuths[None, :] / 2)).exp()                      # [1, spokes] Rotor+
-    return (spin * tilt) >> down                                              # [rings, spokes] Point-
+def sphere_directions(polar: np.ndarray, azimuths: np.ndarray) -> Point:
+    """Tilting away from `down` toward `north` by `polar` (`[n_polar]`) and spinning around the vertical by `azimuths` (`[n_azimuths]`) samples a spherical grid of unit directions (`[n_polar, n_azimuths] Point-`)."""
+    tilt = (north.commutator(down) * (-polar[:, None] / 2)).exp()             # [n_polar, 1] Rotor+
+    spin = (horizontal * (-azimuths[None, :] / 2)).exp()                      # [1, n_azimuths] Rotor+
+    return (spin * tilt) >> down                                              # [n_polar, n_azimuths] Point-

@@ -1,82 +1,97 @@
-"""Four identical ellipsoids along the line of sight on the 3-sphere, and an eye walking towards them."""
+"""Scene setup and checks for four identical quadric ellipsoids along a geodesic on the 3-sphere."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from examples.quadrics.s3_raytracer.core import (
-    Plane, direction, mv, origin, outlines, pixel_chart, project, reproject,
+    direction,
+    mv,
+    origin,
+    outlines,
+    pixel_chart,
+    placed_ellipsoids,
+    project,
+    reproject,
+    walk_frames,
 )
 
-# The ellipsoid's angular half-widths along its axes; how far each copy lies along the line of sight, and
-# its offset sideways and upward, by angle; its turn; and its colour.
-HALF_WIDTHS = np.array([0.2, 0.28, 0.15])
-DISTANCES = np.array([0.7, 1.4, 2.1, 2.6])
-SIDEWAYS = np.array([-0.4, 0.4, -0.4, 0.4])
-UPWARD = np.array([-0.3, -0.3, 0.3, 0.3])
-TURN = 0.8
-COLOURS = np.array([[0.9, 0.3, 0.3], [0.3, 0.8, 0.4], [0.3, 0.5, 0.95], [0.95, 0.8, 0.3]])
-# The light's direction, the field of view, and how far the eye walks along the line of sight.
-LIGHT = np.array([-0.4, 0.6, 0.7])
-FIELD_OF_VIEW = np.radians(80.0)
-WALK = 1.2
-# The frames of the walk, the image's pixels, and the duration of a frame in
-# milliseconds; the coarser chart the checks run on, and every how many covered pixels a hit is checked.
-N_FRAMES = 96
-SHAPE = (360, 480)
-FRAME_DURATION = 40
-CHECK_SHAPE = (90, 120)
-CHECK_STRIDE = 10
+# Principal angular half-widths, geodesic distances along the line of sight, lateral and vertical offsets, spin angle, and RGB colours.
+n_bodies = 4
+half_widths = np.array([0.2, 0.28, 0.15])
+distances = np.array([0.7, 1.4, 2.1, 2.6])
+sideways = np.array([-0.4, 0.4, -0.4, 0.4])
+upward = np.array([-0.3, -0.3, 0.3, 0.3])
+turn = 0.8
+colours = np.array([[0.9, 0.3, 0.3], [0.3, 0.8, 0.4], [0.3, 0.5, 0.95], [0.95, 0.8, 0.3]])
+
+# Light direction coordinates, vertical field of view, and total arc walked along the forward geodesic.
+light_coordinates = np.array([-0.4, 0.6, 0.7])
+field_of_view = np.radians(80.0)
+walk_distance = 1.2
+
+# Animation frame count, pixel grid dimensions, frame duration, and coarse pixel grid for projection checks.
+n_frames = 96
+image_shape = (360, 480)
+frame_duration_ms = 40
+coarse_shape = (90, 120)
+check_stride = 10
 
 
-# --- math -----------------------------------------------------------------------------
-def walk(n_frames: int):
-    """The eye's frames along the walk, the bodies as maps from points to their polar planes, their
-    colours, the light and the field of view."""
-    # An ellipsoid: the dual quadric with the origin as centre, principal half-widths along the basis
-    # directions, each the tangent of an angular half-width, and the -1 on the centre that closes it.
-    axes = direction(np.eye(3))                                                # [3] Point-
-    ellipsoid = (axes * (axes & Plane) * np.tan(HALF_WIDTHS) ** 2).sum(axis=0) - origin * (origin & Plane)   # [] Point- <- Plane+
-    # Four copies of one shape, carried to increasing angular distances along x, offset so they don't overlap.
-    to_distance = (mv.xw * (DISTANCES / 2)).exp()                              # [bodies] Motor+
-    to_side = (mv.yw * (SIDEWAYS / 2)).exp()                                   # [bodies] Motor+
-    to_height = (mv.zw * (UPWARD / 2)).exp()                                   # [bodies] Motor+
-    spin = (mv.xy * (TURN / 2)).exp()                                          # [] Motor+
-    placements = to_distance * to_side * to_height * spin                      # [bodies] Motor+
-    bodies = placements >> ellipsoid(placements << Plane)                      # [bodies] Point- <- Plane+
-    # The eye walks along the x geodesic; the scene stays fixed in the world.
-    eye_frames = (mv.xw * (np.linspace(0.0, WALK, n_frames, endpoint=False) / 2)).exp()   # [frames] Motor+
-    return eye_frames, bodies.inverse(), COLOURS, direction(LIGHT), FIELD_OF_VIEW
+def scene_setup():
+    """Four placed ellipsoid quadrics (`[4] Plane+ <- Point-`), RGB colours (`[4, 3]`), light point (`[] Point-`), and field of view form the static scene."""
+    surfaces = placed_ellipsoids(half_widths, distances, sideways, upward, turn)  # [4] Plane+ <- Point-
+    light = direction(light_coordinates)                                       # [] Point-
+    return surfaces, colours, light, field_of_view
 
 
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    """Renders the initial view and geodesic walk animation to `plots/` and verifies the conic projection."""
     from examples.quadrics.s3_raytracer import render
+    from examples.util.animation import save_animation, save_figure
 
-    scene = walk(N_FRAMES)
-    save_figure(render.draw_walk(*scene, SHAPE), "s3_raytracer")
-    save_animation(render.frames(*scene, SHAPE), "s3_raytracer", FRAME_DURATION)
+    surfaces, body_colours, light, fov = scene_setup()
+    recorded_frames: list = []
+
+    def streaming_walk():
+        for frame in walk_frames(walk_distance, n_frames):
+            recorded_frames.append(frame)
+            yield frame
+
+    save_animation(
+        render.walk_animation(surfaces, body_colours, light, fov, image_shape, streaming_walk()),
+        "s3_raytracer",
+        frame_duration_ms,
+    )
+    save_figure(
+        render.walk_figure(recorded_frames[0], surfaces, body_colours, light, fov, image_shape),
+        "s3_raytracer",
+    )
 
     # checks
-    # A ray is inside a body's outline cone exactly when its great circle `origin + chart * t` meets the
-    # body, its quadratic `a * t**2 + 2 * b * t + c` having real roots; compared away from the outline
-    # itself. The screen conic is that discriminant, and reprojected hits lie on their surfaces.
-    _, surfaces, _, _, _ = scene
-    chart = pixel_chart(FIELD_OF_VIEW, CHECK_SHAPE)
-    cones = outlines(mv.rotor(), surfaces).reshape(-1, 1)
-    covered = (chart & cones(chart)) >= 0.0
-    at_eye, along = surfaces.reshape(-1, 1)(origin), surfaces.reshape(-1, 1)(chart)
-    a, b, c = (chart & along).to_array(), (chart & at_eye).to_array(), (origin & at_eye).to_array()
-    discriminant = b * b - a * c
-    clear = np.abs(discriminant) > 1e-3 * np.abs(discriminant).max(axis=1, keepdims=True)
-    assert np.array_equal(covered[clear], (discriminant >= 0.0)[clear])
-    conics, polars = project(mv.rotor(), surfaces)
-    np.testing.assert_allclose(conics.reshape(-1, 1)(chart, chart).to_array(), -discriminant / c**2, atol=1e-8)
-    for body in range(len(DISTANCES)):
-        pixels = np.nonzero(covered[body])[0][::CHECK_STRIDE]
-        hit = (origin * reproject(conics[body], polars[body], chart[pixels]) + chart[pixels]).normalized()
-        np.testing.assert_allclose((hit & surfaces[body](hit)).to_array(), 0.0, atol=1e-8)
+    # A pixel lies inside a body's tangent outline cone whenever its great circle `origin + chart * t` meets
+    # the surface with positive quadratic discriminant; the screen conic matches that normalized discriminant
+    # and every reprojected hit lies on its quadric surface.
+    n_coarse_pixels = coarse_shape[0] * coarse_shape[1]
+    chart = pixel_chart(fov, coarse_shape)                                     # [n_coarse_pixels] ScreenPoint-
+    cones = outlines(recorded_frames[0], surfaces).reshape(-1, 1)              # [n_bodies, 1] Plane+ <- Point-
+    covered = (chart & cones(chart)) >= 0                                      # [n_bodies, n_coarse_pixels]
+    eye_polars = surfaces.reshape(-1, 1)(origin)                               # [n_bodies, 1] Plane+
+    ray_polars = surfaces.reshape(-1, 1)(chart)                                # [n_bodies, n_coarse_pixels] Plane+
+    quad_a = chart & ray_polars                                                # [n_bodies, n_coarse_pixels] Scalar+
+    quad_b = chart & eye_polars                                                # [n_bodies, n_coarse_pixels] Scalar+
+    quad_c = origin & eye_polars                                               # [n_bodies, 1] Scalar+
+    discriminant = quad_b * quad_b - quad_a * quad_c                           # [n_bodies, n_coarse_pixels] Scalar+
+    clear = discriminant.abs() > 1e-3 * discriminant.abs().max(axis=1, keepdims=True)
+    assert np.array_equal(covered[clear], (discriminant >= 0)[clear])
+    conics, polars = project(recorded_frames[0], surfaces)                     # [n_bodies] Scalar+ <- (ScreenPoint-, ScreenPoint-), Scalar+ <- ScreenPoint-
+    conic_residual = conics.reshape(-1, 1)(chart, chart) + discriminant / (quad_c * quad_c)  # [n_bodies, n_coarse_pixels] Scalar+
+    assert (conic_residual.abs() < 1e-6).all()
+    for body_index in range(n_bodies):
+        hit_indices = np.nonzero(covered[body_index])[0][::check_stride]
+        depths = reproject(conics[body_index], polars[body_index], chart[hit_indices])  # [...] Scalar+
+        hits = (origin * depths + chart[hit_indices]).normalized()             # [...] Point-
+        assert ((hits & surfaces[body_index](hits)).abs() < 1e-6).all()
 
 
 if __name__ == "__main__":

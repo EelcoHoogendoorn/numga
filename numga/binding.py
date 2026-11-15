@@ -1,4 +1,28 @@
-"""Value-free planning for Extensor binding."""
+"""Binding feeds operands into selected input axes of a target extensor to evaluate linear maps,
+partially evaluate multilinear forms, or compose operators. Each bind is planned from `GAType`
+metadata alone without touching runtime coefficient arrays. For each bound input slot,
+`AxisTransform` compares the operand's output `SubSpace` against the target's required input
+`SubSpace`. Equal layouts (`EXACT`), blade reorderings or sign flips (`RELAYOUT`), and zero-padded
+embeddings into a wider support (`EMBED`) are lossless and accepted implicitly during binding,
+whereas support projections (`PROJECT`), partially overlapping supports (`REFRAME`), and
+cross-algebra pairs (`INCOMPATIBLE`) are rejected unless requested through an explicit `cast`.
+
+`BindingPlan` combines these per-axis transforms, verifies that every operand's output orientation
+matches the target input orientation, and splices the remaining input axes in input-axis order. An
+unbound target input stays in place, a nullary operand consumes its slot, and a positive-arity
+operand splices its own input subspaces and orientations into the slot it fills
+(`result_input_splices`). Because `from_types` caches plans by static type signature and never
+retains array values, repeated calls with the same operand types share one plan across numerical
+backends and traced executions.
+
+When the same nullary `Extensor` object enters multiple input slots simultaneously (such as a versor
+`v` bound into both outer slots of a ternary sandwich `T(v, x, v)`), `nullary_identity_groups`
+records those shared-argument groups on the plan. `bind_subspaces` and `TypeRules.bind` then
+propagate certified output-support restrictions (narrowing `execution_gatype` and `output_indices`
+before contraction) together with algebraic traits onto the resulting `GAType`. Binding plans,
+lossless coordinate conversions, and repeated-argument trait propagation are detailed in
+`docs/internals.md` (section 5) and `docs/tutorial/extensors/02-binding.md`.
+"""
 
 from __future__ import annotations
 
@@ -27,12 +51,8 @@ class AxisTransformKind(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class AxisTransform:
-    """Executable coordinate relationship from one output axis to another.
-
-    ``target_from_source[j]`` is the source coordinate copied into target
-    coordinate ``j``, or ``None`` when that target coordinate is a structural
-    zero. Orientation changes are folded into the cached coordinate matrix.
-    """
+    """For each target blade slot `j`, `target_from_source[j]` stores the matching source blade
+    index or `None` for a structural zero, while `coordinate_matrix` folds in relative blade signs."""
 
     source: SubSpace
     target: SubSpace
@@ -40,7 +60,9 @@ class AxisTransform:
     target_from_source: tuple[int | None, ...]
 
     @classmethod
-    def plan(cls, source: SubSpace, target: SubSpace) -> "AxisTransform":
+    def plan(cls, source: SubSpace, target: SubSpace) -> AxisTransform:
+        """Comparing `source` and `target` blade supports classifies and indexes the coordinate
+        mapping from `source` into `target`."""
         return _plan_axis_transform(source, target)
 
     @property
@@ -60,11 +82,9 @@ class AxisTransform:
         return self.is_lossless
 
     @property
-    def coordinate_matrix(self) -> tuple[tuple[int, ...], ...]:
-        """Dense target-by-source transform in exact integer coordinates.
-
-        Fold orientation signs into the permutation/projection/embedding.
-        """
+    def coordinate_matrix(self) -> tuple:
+        """The target-by-source integer matrix folds relative blade orientation signs into the
+        coordinate permutation, embedding, or projection."""
         return _axis_transform_coordinate_matrix(self)
 
 
@@ -90,9 +110,7 @@ def _plan_axis_transform(source: SubSpace, target: SubSpace) -> AxisTransform:
 
 
 @lru_cache(maxsize=None)
-def _axis_transform_coordinate_matrix(
-    transform: AxisTransform,
-) -> tuple[tuple[int, ...], ...]:
+def _axis_transform_coordinate_matrix(transform: AxisTransform) -> tuple:
     return tuple(
         tuple(
             int(source_index == candidate)
@@ -108,7 +126,8 @@ def _axis_transform_coordinate_matrix(
 
 @dataclass(frozen=True, slots=True)
 class BoundAxis:
-    """One value-free binding entry, indexed in the original target."""
+    """Each bound entry pairs an input axis index of the target `GAType` with the bound operand
+    `GAType` and its `AxisTransform`."""
 
     axis: int
     operand_gatype: GAType
@@ -117,40 +136,41 @@ class BoundAxis:
 
 @dataclass(frozen=True, slots=True)
 class BindingPlan:
-    """Deterministic, value-free metadata for an atomic bind."""
+    """Static type metadata fixes the per-axis coordinate transforms, spliced result axes, and
+    shared-operand equality groups of an atomic bind."""
 
     target_gatype: GAType
     bindings: tuple[BoundAxis, ...]
     result_subspaces: tuple[SubSpace, ...]
     result_orientations: tuple[Orientation, ...]
-    equality_groups: tuple[tuple[int, ...], ...]
+    equality_groups: tuple
 
     @classmethod
     def build(
         cls,
         target_gatype: GAType,
         operands_by_axis: Mapping[int, HasGAType],
-    ) -> "BindingPlan":
-        normalized = tuple(sorted(operands_by_axis.items()))
+    ) -> BindingPlan:
+        ordered = tuple(sorted(operands_by_axis.items()))
         return cls.from_types(
             target_gatype,
-            tuple((axis, operand.gatype) for axis, operand in normalized),
-            nullary_identity_groups(normalized),
+            tuple((axis, operand.gatype) for axis, operand in ordered),
+            nullary_identity_groups(ordered),
         )
 
     @classmethod
     def from_types(
         cls,
         target_gatype: GAType,
-        operands_by_axis: tuple[tuple[int, GAType], ...],
-        equality_groups: tuple[tuple[int, ...], ...] = (),
-    ) -> "BindingPlan":
+        operands_by_axis: tuple,
+        equality_groups: tuple = (),
+    ) -> BindingPlan:
         return _binding_plan_from_types(target_gatype, operands_by_axis, equality_groups)
 
     @property
     def execution_gatype(self) -> GAType:
-        """Target axes after any certified output restriction."""
-
+        """Certified output-support restrictions narrow the target output axis before contraction
+        while leaving its input axes intact."""
         return self.target_gatype.algebra.gatype.oriented(
             (self.result_subspaces[0],) + self.target_gatype.input_subspaces,
             self.target_gatype.orientations,
@@ -158,8 +178,8 @@ class BindingPlan:
 
     @property
     def output_indices(self) -> tuple[int, ...]:
-        """Target rows retained by a certified output-support restriction."""
-
+        """Indices into `target_gatype.output_subspace` select the output blades retained in
+        `result_subspaces[0]`."""
         indices = {
             mask: index for index, mask in enumerate(self.target_gatype.output_subspace.masks)
         }
@@ -174,17 +194,12 @@ class BindingPlan:
         return tuple(binding.operand_gatype for binding in self.bindings)
 
     @property
-    def result_input_splices(self) -> tuple[tuple[int, ...], ...]:
-        """Result axes contributed by each original target input.
-
-        An unbound axis contributes one axis, a nullary operand contributes
-        none, and a positive-arity operand contributes its inputs in place.
-        The mapping is computed in structural order, independently of the
-        backend's contraction order.
-        """
-
+    def result_input_splices(self) -> tuple:
+        """Each target input axis maps to the range of result input axes it produces. Unbound inputs
+        keep one axis, nullary operands contribute none, and positive-arity operands splice their
+        own inputs in place independently of backend contraction order."""
         bindings = {binding.axis: binding for binding in self.bindings}
-        splices: list[tuple[int, ...]] = []
+        splices = []
         next_output_axis = 0
         for axis in range(self.target_gatype.arity):
             binding = bindings.get(axis)
@@ -198,8 +213,8 @@ class BindingPlan:
 
     @property
     def type_signature(self) -> tuple[object, ...]:
-        """Backend-free key suitable for result-type inference caches."""
-
+        """Combining the target type, axis transforms, input splices, and equality groups forms a
+        value-free cache key."""
         return (
             self.target_gatype,
             tuple(
@@ -215,12 +230,10 @@ class BindingPlan:
 @lru_cache(maxsize=None)
 def _binding_plan_from_types(
     target_gatype: GAType,
-    operands_by_axis: tuple[tuple[int, GAType], ...],
-    equality_groups: tuple[tuple[int, ...], ...] = (),
+    operands_by_axis: tuple,
+    equality_groups: tuple = (),
 ) -> BindingPlan:
-    """Plan once per static signature, never retaining coefficient arrays."""
-
-    entries: list[BoundAxis] = []
+    entries = []
 
     for axis, operand in operands_by_axis:
         if axis < 0 or axis >= target_gatype.arity:
@@ -242,8 +255,8 @@ def _binding_plan_from_types(
         entries.append(BoundAxis(axis, operand, transform))
 
     by_axis = dict(operands_by_axis)
-    result_axes: list[SubSpace] = [target_gatype.output_subspace]
-    result_orientations: list[Orientation] = [target_gatype.orientation]
+    result_axes = [target_gatype.output_subspace]
+    result_orientations = [target_gatype.orientation]
     for axis, (target_axis, target_orientation) in enumerate(
         zip(target_gatype.input_subspaces, target_gatype.input_orientations)
     ):
@@ -270,11 +283,8 @@ def _binding_plan_from_types(
 
 
 class TypeRules:
-    """Structural first-epoch type inference hooks.
-
-    Trait-aware implementations can replace these rules without changing
-    contraction code.
-    """
+    """Cached result-type inference combines a `BindingPlan`'s spliced subspaces, orientations, and
+    propagated traits into the output `GAType`."""
 
     @staticmethod
     @lru_cache(maxsize=None)
@@ -286,24 +296,21 @@ class TypeRules:
         )
 
 
-def normalize_bind_arguments(
-    arity: int,
-    args: tuple[HasGAType | Mapping[int, HasGAType], ...],
-) -> dict[int, HasGAType]:
-    """Normalize ``bind(mapping)`` or ``bind(arg0, ...)`` syntax."""
-
-    if len(args) == 1 and isinstance(args[0], Mapping):
-        return dict(args[0])
-    if len(args) > arity:
-        raise ValueError(f"received {len(args)} operands for arity-{arity} extensor")
-    return dict(enumerate(args))
+def normalize_bind_arguments(arity: int, operands: tuple) -> dict[int, HasGAType]:
+    """Normalizing positional arguments or an explicit `{axis: operand}` mapping produces an
+    axis-indexed dictionary."""
+    if len(operands) == 1 and isinstance(operands[0], Mapping):
+        return dict(operands[0])
+    if len(operands) > arity:
+        raise ValueError(f"received {len(operands)} operands for arity-{arity} extensor")
+    return dict(enumerate(operands))
 
 
-def nullary_identity_groups(
-    normalized: tuple[tuple[int, HasGAType], ...],
-) -> tuple[tuple[int, ...], ...]:
-    axes_by_identity: dict[int, list[int]] = {}
-    for axis, operand in normalized:
+def nullary_identity_groups(operands_by_axis: tuple) -> tuple:
+    """Grouping input axes that receive the identical nullary operand object records
+    repeated-argument identities for `BindingPlan`."""
+    axes_by_identity = {}
+    for axis, operand in operands_by_axis:
         if operand.gatype.arity == 0:
             axes_by_identity.setdefault(id(operand), []).append(axis)
     return tuple(

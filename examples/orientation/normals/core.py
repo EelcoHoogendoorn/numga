@@ -1,12 +1,11 @@
-"""Surface normals distinguish a chosen side from the winding of ordered vertices.
+"""Surface normals distinguish a chosen side of a surface from the winding of its ordered vertices.
 
-Projective geometric algebra represents both by planes. A plane supplied as a boundary
-carries extrinsic orientation; joining three points gives it intrinsic orientation. A line
-through two points lying in a mirror is its own mirror image: reflecting it with `>>` leaves
-its direction, while the plain sandwich `mirror * line * mirror.inverse()` reverses it. The
-same line, built as the meet of two planes that are each other's mirror images, comes out of the
-mirror negated: the reflected planes swap places, and the outer product of the swapped pair is
-minus the original.
+Projective geometric algebra represents both by planes of grade 1 with opposite orientations. A
+boundary plane carries extrinsic orientation, whereas joining three ordered points gives a plane
+with intrinsic orientation. Joining two points in a mirror gives a line with intrinsic orientation
+that reflection with `>>` preserves, whereas the plain sandwich `mirror * line * mirror.inverse()`
+reverses it. Intersecting two planes symmetric across the mirror gives the same geometric line with
+extrinsic orientation, and reflection swaps the two planes so their outer product changes sign.
 """
 
 from __future__ import annotations
@@ -18,8 +17,8 @@ ga = PGA3D
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()                                                  # Antivector-
 Plane = ga.gatype.vector()                                                      # Vector+
-Surface = ga.gatype.antitrivector()                                             # Antitrivector-
-# A line oriented along itself, as the join of two points is, and one oriented around itself, as the meet of two
-# planes is: a spear and an axis, in Dorst's names.
+Surface = ga.gatype(Point & Point & Point)                                      # Antitrivector-
+# Joining two points orients a line along itself (a spear in Dorst's terminology),
+# whereas intersecting two planes orients a line around itself (an axis).
 Spear = ga.gatype(Point & Point)                                                # Antibivector-
 Axis = ga.gatype(Plane ^ Plane)                                                 # Bivector+

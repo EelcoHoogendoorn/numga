@@ -1,8 +1,6 @@
 """Nonassociative numbers drawn as the Fano plane, their Clifford actions, and fourteen multiplication-preserving
 rotations."""
 
-import numpy as np
-
 from numga import stack
 from examples.math.octonions import core
 
@@ -16,17 +14,19 @@ def main() -> None:
     from examples.util.animation import save_figure
     from examples.math.octonions import render
 
-    save_figure(render.draw_fano(core.cycles), "octonions")
+    save_figure(render.fano_figure(core.cycles), "octonions")
     mv, Octonion = core.mv, core.Octonion
     first, second, third = mv.a, mv.b, mv.d
-    left_action = core.multiply(first, Octonion)                               # [] Octonion+ <- Octonion+
-    generators = core.symmetry_generators(tolerance)                           # [generators] Bivector+
+    left_action = core.product(first, Octonion)                             # [] Octonion+ <- Octonion+
+    generators = core.symmetry_generators(tolerance)                        # [...] Bivector+
     # Keep the part of an ordinary rotation that belongs to the symmetry space.
-    rotation_plane = mv.ab                                                     # [] Bivector+
+    rotation_plane = mv.ab                                                  # [] Bivector+
     symmetry = (generators * generators.reverse().scalar_product(rotation_plane)).sum(axis=0)   # [] Bivector+
-    rotations = (stack([rotation_plane, symmetry]) * (angle / 2)).exp()        # [cases] Rotor+
+    rotations = (stack([rotation_plane, symmetry]) * (angle / 2)).exp()     # [2] Rotor+
     # Rotate the product, or multiply the rotated factors: their difference.
-    defects = (rotations >> core.multiply(first, third)) - core.multiply(rotations >> first, rotations >> third)   # [cases] Octonion+
+    rotated_product = rotations >> core.product(first, third)               # [2] Octonion+
+    product_of_rotated = core.product(rotations >> first, rotations >> third)   # [2] Octonion+
+    defects = rotated_product - product_of_rotated                          # [2] Octonion+
 
     print("Left multiplication by a")
     print(left_action.coefficient_table())
@@ -35,13 +35,14 @@ def main() -> None:
     print(f"{len(generators)} of {len(core.Bivector.output_subspace)} rotation generators preserve multiplication.")
     print("Ordinary rotation: rotate the product minus multiply the rotated factors")
     print(defects[0].coefficient_table())
-    print("G₂ rotation: the same difference")
+    print("G2 rotation: the same difference")
     print(defects[1].coefficient_table())
 
     # checks
-    np.testing.assert_allclose((left_action(left_action) + Octonion).kernel, 0, atol=tolerance)
-    np.testing.assert_allclose((core.associator(first, second, third) - 2 * mv.g).kernel, 0, atol=tolerance)
-    np.testing.assert_allclose(defects[1].kernel, 0, atol=tolerance)
+    assert len(generators) == 14
+    assert ((left_action(left_action) + Octonion).svdvals() < tolerance).all()
+    assert (core.associator(first, second, third) - 2 * mv.g).scalar_norm_squared().abs() < tolerance
+    assert defects[1].symmetric_conjugate_product().abs() < tolerance
     assert defects[0].symmetric_conjugate_product() > 0.1
 
 

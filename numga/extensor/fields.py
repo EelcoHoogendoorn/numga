@@ -1,16 +1,27 @@
-"""Binding over field axes.
+"""A field axis ranges over discrete sites alongside its blade subspace. Binding assigns a site
+label to every field axis and unifies paired axes: binding a field into a field-valued input pairs
+their sites and sums over them, binding a field into a blade-only input acts site by site, and
+composing maps carries the argument map's input sites into the result. Before blade-level binding
+runs, each participant aligns its site axes into a shared trailing batch frame with size-one axes
+wherever a site label is absent.
 
-A field axis ranges over sites as well as blades. Binding treats every site axis as a batch axis
-with a label: a field bound into a field axis pairs its sites with the axis's and sums over them,
-a field bound into a axis over blades alone is acted on site by site, and composition preserves
-the sites of the argument map's inputs. The labels are aligned as trailing batch axes, and the
-ordinary bind runs over them. Where sites are summed, the values contract by their labels instead,
-each summed label within the contraction of the operand that carries it, so that no term per pair
-of sites is ever held and a dense field map applies as a matrix product.
+When concrete operands sum over paired sites, materializing an intermediate array with one entry per
+pair of sites would square memory traffic. Summed field bindings instead contract batch, site, and
+structural blade axes together across pairwise `einsum` steps, squeezing size-one axes and summing
+each contracted site axis as soon as the last operand carrying it enters so applying a dense field
+map reduces directly to a matrix product.
+
+An extensor without site axes represents the same algebraic element at every site. Adding a
+site-free or output-only field map to a `(sites <- sites)` map promotes it onto the site diagonal
+via `on_diagonal()` so `(A + B)(f) == A(f) + B(f)`. Blade-level extensions wrapped with
+`site_by_site` align the site axes of their leading operands onto a single trailing batch axis and
+restore `.field()` on results matching that site count. The user-facing model of fields, coupled
+maps, derivatives, and sparse storage is developed in `docs/fields.md`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache, partial
 from math import prod
 from string import ascii_letters
@@ -30,22 +41,23 @@ if TYPE_CHECKING:
 
 
 def bind_fields(target: Extensor, operands: dict[int, Extensor]) -> Extensor:
-    """Bind operands, by input from 0, into a target where either side has field axes."""
+    """Binding operands by zero-based input index aligns shared site axes and contracts summed site
+    pairs."""
     axes = tuple(sorted(operands))
     plan = _plan(target.gatype, tuple((axis, operands[axis].gatype) for axis in axes))
-    lowered: dict[tuple[int, tuple[int, ...]], Extensor] = {}
+    lowered = {}
 
-    def lower(value: Extensor, positions: tuple[int, ...]) -> Extensor:
-        # One lowered view per value and placement keeps the evidence that two axes hold one value.
-        key = (id(value), positions)
+    def lower(extensor: Extensor, positions: tuple[int, ...]) -> Extensor:
+        # Caching by object identity and site placement preserves shared-operand identity groups.
+        key = (id(extensor), positions)
         if key not in lowered:
-            lowered[key] = _aligned(value, positions, plan.sizes)
+            lowered[key] = _aligned(extensor, positions, plan.sizes)
         return lowered[key]
 
     plain_target = lower(target, plan.target)
     plain_operands = {axis: lower(operands[axis], positions) for axis, positions in zip(axes, plan.operands)}
-    if plan.summed and not target.context.is_exact:
-        result = _summed(plain_target, plain_operands, plan.summed)
+    if plan.n_summed and not target.context.is_exact:
+        result = _summed(plain_target, plain_operands, plan.n_summed)
         return type(result)._from_prepared_kernel(result.context, result.gatype.derive.with_fields(plan.fields), result.kernel)
     if len(plain_operands) == target.arity:
         result = plain_target(*(plain_operands[axis] for axis in range(target.arity)))
@@ -53,45 +65,41 @@ def bind_fields(target: Extensor, operands: dict[int, Extensor]) -> Extensor:
         result = plain_target.bind(plain_operands)
 
     kernel, gatype = result.kernel, result.gatype
-    if plan.summed:
+    if plan.n_summed:
         ndim = result.ndim
-        kernel = result.context.xp.sum(kernel, axis=tuple(range(ndim - plan.summed, ndim)))
+        kernel = result.context.xp.sum(kernel, axis=tuple(range(ndim - plan.n_summed, ndim)))
         gatype = gatype.derive.structural
     return type(result)._from_prepared_kernel(result.context, gatype.derive.with_fields(plan.fields), kernel)
 
 
-def _summed(target: Extensor, operands: dict[int, Extensor], summed: int) -> Extensor:
-    """The bind of aligned values over blades alone, its last `summed` batch axes, the paired sites,
-    summed within the contraction of the values, so that a field map's product with a field never
-    holds a term per pair of sites."""
+def _summed(target: Extensor, operands: dict[int, Extensor], n_summed: int) -> Extensor:
     context = binding_context(target.context, tuple(operand.context for operand in operands.values()))
     normalized = tuple(sorted(operands.items()))
-    values = tuple(context.lower(value) for value in (target, *(operand for _, operand in normalized)))
+    aligned = tuple(context.lower(extensor) for extensor in (target, *(operand for _, operand in normalized)))
     result_type, contract = _contraction(
         context.xp, target.gatype, tuple((axis, operand.gatype) for axis, operand in normalized),
-        nullary_identity_groups(normalized), tuple(value._kernel.shape for value in values),
-        tuple(value.ndim for value in values), summed,
+        nullary_identity_groups(normalized), tuple(extensor._kernel.shape for extensor in aligned),
+        tuple(extensor.ndim for extensor in aligned), n_summed,
     )
-    return type(target)._from_prepared_kernel(context, result_type, contract(tuple(value._kernel for value in values)))
+    return type(target)._from_prepared_kernel(context, result_type, contract(tuple(extensor._kernel for extensor in aligned)))
 
 
 @lru_cache(maxsize=None)
-def _contraction(xp, target: GAType, operands: tuple[tuple[int, GAType], ...], groups: tuple[tuple[int, ...], ...],
-                 shapes: tuple[tuple[int, ...], ...], batches: tuple[int, ...], summed: int):
-    """The type of a bind and the contraction of the target's kernel with its operands' kernels, of
-    these shapes with these counts of batch axes, the last `summed` batch axes summed: planned once
-    per signature."""
+def _contraction(
+    xp, target: GAType, operands: tuple, groups: tuple,
+    shapes: tuple, batches: tuple[int, ...], n_summed: int,
+) -> tuple[GAType, Callable]:
     plan = BindingPlan.from_types(target, operands, groups)
     restrict = plan.result_subspaces[0] is not target.output_subspace
     indices = xp.asarray(plan.output_indices, dtype=int) if restrict else None
 
-    def prepare(kernels):
+    def prepare(kernels: tuple) -> tuple:
         kernel = xp.take(kernels[0], indices, axis=batches[0]) if restrict else kernels[0]
         return (kernel,) + tuple(
             transform_output(xp, operand, binding.operand_gatype, binding.transform)
             for operand, binding in zip(kernels[1:], plan.bindings)
         )
-    # The restriction and the conversions change the length of one structural axis each.
+    # Output restriction and input basis conversions each replace the first structural axis length.
     lengths = [len(plan.output_indices) if restrict else None] + [
         None if binding.transform.kind is AxisTransformKind.EXACT else len(binding.transform.target)
         for binding in plan.bindings
@@ -101,8 +109,7 @@ def _contraction(xp, target: GAType, operands: tuple[tuple[int, GAType], ...], g
         for shape, batch, length in zip(shapes, batches, lengths)
     )
     ndim = max(batches)
-    # Batch axes align from the right and take the first labels; the structural axes follow, an
-    # operand's output under the label of the input it is bound into.
+    # Batch axes align from the right under leading labels; each bound operand shares its target input label.
     labels = iter(range(ndim, len(ascii_letters)))
     target_labels = [next(labels) for _ in range(1 + plan.target_gatype.arity)]
     structural = [target_labels]
@@ -116,18 +123,16 @@ def _contraction(xp, target: GAType, operands: tuple[tuple[int, GAType], ...], g
         inputs = [next(labels) for _ in range(binding.operand_gatype.arity)]
         structural.append([target_labels[axis + 1]] + inputs)
         output.extend(inputs)
-    # Every axis of length one is squeezed from its value, so that each contraction meets only true
-    # extents and can run as a matrix product.
-    sizes: dict[int, int] = {}
+    # Squeezing size-1 axes exposes true extents so pairwise contractions dispatch to matrix products.
+    sizes = {}
     squeezed = []
     for shape, batch, axes in zip(shapes, batches, structural):
         kept = [(label, size) for label, size in zip(list(range(ndim - batch, ndim)) + axes, shape) if size != 1]
         sizes.update(kept)
         squeezed.append((tuple(size for _, size in kept), [label for label, _ in kept]))
-    result_labels = list(range(ndim - summed)) + output
+    result_labels = list(range(ndim - n_summed)) + output
     present = [label for label in result_labels if label in sizes]
-    # The operands contract into the target one at a time, from the last axis to the first, each
-    # label summed as soon as no later operand and not the result carries it.
+    # Operands contract from last to first, summing each label once neither the result nor any remaining operand needs it.
     labels, steps = squeezed[0][1], []
     order = list(range(len(squeezed) - 1, 0, -1))
     for step, index in enumerate(order):
@@ -144,7 +149,7 @@ def _contraction(xp, target: GAType, operands: tuple[tuple[int, GAType], ...], g
     permutation = tuple(labels.index(label) for label in present)
     shape = tuple(sizes.get(label, 1) for label in result_labels)
 
-    def contract(kernels):
+    def contract(kernels: tuple):
         arrays = [xp.reshape(array, kept) for array, (kept, _) in zip(prepare(kernels), squeezed)]
         result = arrays[0]
         for index, apply in steps:
@@ -154,24 +159,22 @@ def _contraction(xp, target: GAType, operands: tuple[tuple[int, GAType], ...], g
 
 
 class _Plan(NamedTuple):
-    """Where each value's site axes go among the trailing batch axes of a binding, by label."""
-
     target: tuple[int, ...]
-    operands: tuple[tuple[int, ...], ...]
+    operands: tuple
     sizes: tuple[int, ...]
-    summed: int
-    fields: tuple[tuple[int, int], ...]
+    n_summed: int
+    fields: tuple
 
 
 @lru_cache(maxsize=None)
-def _plan(target: GAType, operands: tuple[tuple[int, GAType], ...]) -> _Plan:
+def _plan(target: GAType, operands: tuple) -> _Plan:
     labels = _Labels()
     target_sites = labels.of(target)
     bound = dict(operands)
-    operand_sites: list[dict[int, int]] = []
-    # The sites of the output, and of every field acted on site by site, are one set of sites.
+    operand_sites = []
+    # Output sites and all operands acted on site by site share a single site label.
     output = [target_sites[0]] if 0 in target_sites else []
-    inputs: list[int | None] = []
+    inputs = []
     for axis in range(1, target.arity + 1):
         operand = bound.get(axis - 1)
         if operand is None:
@@ -184,7 +187,7 @@ def _plan(target: GAType, operands: tuple[tuple[int, GAType], ...]) -> _Plan:
             if 0 in sites:
                 labels.join(target_sites[axis], sites[0])
             elif operand.arity == 1 and own_inputs[0] is None:
-                # A map on blades alone acts site by site: the axis's sites pass on to its input.
+                # A blade-only unary map acts site by site, passing the target axis's sites to its own input.
                 own_inputs = [target_sites[axis]]
             else:
                 raise TypeError(
@@ -215,15 +218,13 @@ def _plan(target: GAType, operands: tuple[tuple[int, GAType], ...]) -> _Plan:
     )
 
 
-def _aligned(value: Extensor, positions: tuple[int, ...], sizes: tuple[int, ...]) -> Extensor:
-    """The value over blades alone, its site axes moved to their places among the trailing batch
-    axes of the frame and the frame's other places of length one."""
-    gatype = value.gatype.derive.plain
-    if not positions and (value.context.is_exact or not value.ndim):
-        return value if gatype is value.gatype else type(value)._from_prepared_kernel(value.context, gatype, value.kernel)
-    xp = value.context.xp
-    batch, coefficients = value.ndim, len(value.axes)
-    kernel = value.kernel
+def _aligned(extensor: Extensor, positions: tuple[int, ...], sizes: tuple[int, ...]) -> Extensor:
+    gatype = extensor.gatype.derive.plain
+    if not positions and (extensor.context.is_exact or not extensor.ndim):
+        return extensor if gatype is extensor.gatype else type(extensor)._from_prepared_kernel(extensor.context, gatype, extensor.kernel)
+    xp = extensor.context.xp
+    batch, coefficients = extensor.ndim, len(extensor.axes)
+    kernel = extensor.kernel
     order = sorted(range(len(positions)), key=positions.__getitem__)
     if order != list(range(len(positions))):
         kernel = xp.transpose(
@@ -233,21 +234,18 @@ def _aligned(value: Extensor, positions: tuple[int, ...], sizes: tuple[int, ...]
         )
     present = set(positions)
     frame = tuple(size if position in present else 1 for position, size in enumerate(sizes))
-    shape = value.shape + frame + kernel.shape[kernel.ndim - coefficients:]
+    shape = extensor.shape + frame + kernel.shape[kernel.ndim - coefficients:]
     if shape != kernel.shape:
         kernel = xp.reshape(kernel, shape)
-    return type(value)._from_prepared_kernel(value.context, gatype, kernel)
+    return type(extensor)._from_prepared_kernel(extensor.context, gatype, kernel)
 
 
 class _Labels:
-    """Site axes by label, with the labels that are paired joined into one."""
-
     def __init__(self) -> None:
-        self.parent: list[int] = []
-        self.sizes: list[int] = []
+        self.parent = []
+        self.sizes = []
 
     def of(self, gatype: GAType) -> dict[int, int]:
-        """A fresh label for every field axis of a type."""
         sites = {}
         for axis, count in gatype.fields:
             sites[axis] = len(self.parent)
@@ -268,9 +266,8 @@ class _Labels:
 
 
 def add_fields(left: Extensor, right: Extensor) -> Extensor:
-    """The sum where either side has field axes. A value or map without sites is the same at every
-    site, as it is under application: added to a map from a field to a field over the same sites, a map
-    acting at every site is that map on the site diagonal, so that `(A + B)(f) == A(f) + B(f)`."""
+    """Field addition aligns shared site axes and promotes site-free or output-only maps onto the
+    site diagonal when paired with a `(sites <- sites)` map, preserving `(A + B)(f) == A(f) + B(f)`."""
     left, right = _on_diagonal_of(left, right), _on_diagonal_of(right, left)
     sites = dict(left.gatype.fields)
     for axis, count in right.gatype.fields:
@@ -286,28 +283,25 @@ def add_fields(left: Extensor, right: Extensor) -> Extensor:
     return type(result)._from_prepared_kernel(result.context, result.gatype.derive.with_fields(fields), result.kernel)
 
 
-def _on_diagonal_of(value: Extensor, other: Extensor) -> Extensor:
-    """A map acting at every site, read on the site diagonal where the other's input ranges over the
-    sites of its output and the map's input does not."""
-    sites, own = dict(other.gatype.fields), dict(value.gatype.fields)
+def _on_diagonal_of(extensor: Extensor, other: Extensor) -> Extensor:
+    sites, own = dict(other.gatype.fields), dict(extensor.gatype.fields)
     missing = [axis for axis in sites if axis and axis not in own]
     if not missing:
-        return value
-    if missing != [1] or sites.get(0) != sites[1] or [axis for axis in own if axis] or value.arity < 1:
-        raise TypeError(f"{value.gatype.signature} has no reading on the sites of {other.gatype.signature}")
+        return extensor
+    if missing != [1] or sites.get(0) != sites[1] or [axis for axis in own if axis] or extensor.arity < 1:
+        raise TypeError(f"{extensor.gatype.signature} has no reading on the sites of {other.gatype.signature}")
     if 0 not in own:
-        # The same map at every site.
-        value = other.context.lower(value)
-        value = value[..., None].broadcast_to(value.shape + (sites[0],)).field()
-    return value.on_diagonal()
+        # Broadcast a site-free map across all output sites before taking its site diagonal.
+        extensor = other.context.lower(extensor)
+        extensor = extensor[..., None].broadcast_to(extensor.shape + (sites[0],)).field()
+    return extensor.on_diagonal()
 
 
-def site_by_site(implementation, operand_count: int):
-    """An implementation over blades, run at every site of fields of values: each field's sites read
-    as one trailing batch axis, shared by all of them, and a result whose last batch axis holds them
-    read as a field again."""
+def site_by_site(implementation: Callable, n_operands: int) -> Callable:
+    """Leading field operands align onto one trailing site axis before blade-level evaluation, and
+    outputs retaining that axis return as fields."""
     def run(*arguments, **kwargs):
-        operands = arguments[:operand_count]
+        operands = arguments[:n_operands]
         counts = {sites for operand in operands for _, sites in operand.gatype.fields}
         if len(counts) != 1:
             raise ValueError(f"fields acted on site by site need one number of sites; got {sorted(counts)}")
@@ -321,6 +315,6 @@ def site_by_site(implementation, operand_count: int):
                 return result.field()
             return result
 
-        return refield(implementation(*lowered, *arguments[operand_count:], **kwargs))
+        return refield(implementation(*lowered, *arguments[n_operands:], **kwargs))
 
     return run

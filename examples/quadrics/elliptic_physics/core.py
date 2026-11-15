@@ -1,263 +1,257 @@
-"""Rigid quadric bodies on a sphere: one engine for S² in Cl(3) and S³ in Cl(4).
+"""Rigid quadric bodies spinning and colliding on the 2-sphere and 3-sphere.
 
-A body is a dual quadric, an ellipsoid of the sphere, placed by a motor, a rotation of the ambient space. Its inertia
-is the sum over its mass points of the regressive product of each point with its own motion,
-a map from bivector rates to momenta, and its momentum is kept in the body frame, stepped by a Lie
-midpoint rule. Two bodies meet when no blend A + B * weight of their forms, with a positive
-weight, is positive semidefinite; the least eigenvector of the best blend is the deepest
-point, and the first body's polar plane there is the contact plane, whose inner product with
-its pole is the contact forque. Elastic impulses along that forque reverse the closing rate.
+Each body is modelled as a dual quadric placed on the sphere by a motor, with its inertia formed over mass points inside the shape as the regressive product of each mass point with its velocity under a bivector rate. Body-frame momenta advance by a Lie midpoint step, while candidate pairs are tested for overlap through the concave least eigenvalue of positive blends of their primal forms; elastic impulses along the contact forque at the deepest point reverse the closing rate.
 
-Nothing here knows its dimension. `ga` is supplied per instance, by
-`examples.instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)` for S², or
-with the algebra of the S³ ray tracer for S³.
+Instantiating this module on a 3D or 4D positive-definite Euclidean algebra supplies the same rigid-body engine on the 2-sphere and on the 3-sphere.
 """
 
-from dataclasses import dataclass, fields, replace
+from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Algebra, concatenate, stack
+from numga import Algebra, concatenate
 from numga.backend.context import Context
 
-# The algebra and the context, supplied by examples.instantiate.
+# Algebra and context supplied by `examples.instantiate`.
 ga: Algebra
 ctx: Context
 mv = ctx.multivector
 
-Scalar = ga.gatype.scalar()                        # Scalar+
-Point = ga.gatype.antivector()                     # Antivector-
-Plane = ga.gatype.vector()                         # Vector+
-Bivector = ga.gatype.bivector()                    # Bivector+
-AntiBivector = ga.gatype.antibivector()            # Antibivector-
-Motor = ga.gatype.rotor()                          # Rotor+
-# The primal quadric maps a point to its polar plane and is negative inside; the dual quadric
-# maps a plane to its pole. The inertia maps a rate to its momentum, its inverse the momentum
-# back to the rate.
-Quadric = ga.gatype((Plane, Point))
-DualQuadric = ga.gatype((Point, Plane))
-Inertia = ga.gatype((AntiBivector, Bivector))
-InverseInertia = ga.gatype((Bivector, AntiBivector))
-# The golden-section steps of the overlap test: they bracket the best blend to 0.005 rad, where five misreport near
-# pairs as touching.
-N_GOLDEN_STEPS = 12
+Scalar = ga.gatype.scalar()                                                     # Scalar+
+Point = ga.gatype.antivector()                                                  # Antivector-
+Plane = ga.gatype.vector()                                                      # Vector+
+Rate = ga.gatype.bivector()                                                     # Bivector+
+Momentum = ga.gatype.antibivector()                                             # Antibivector-
+Motor = ga.gatype.rotor()                                                       # Rotor+
+# A primal quadric maps a point to its polar plane and evaluates negative inside; a dual quadric maps a plane to its pole.
+Quadric = ga.gatype((Plane, Point))                                             # Plane+ <- Point-
+DualQuadric = ga.gatype((Point, Plane))                                         # Point- <- Plane+
+Inertia = ga.gatype((Momentum, Rate))                                           # Momentum- <- Rate+
+InverseInertia = ga.gatype((Rate, Momentum))                                    # Rate+ <- Momentum-
 
-# The poles of the basis planes, and the last of them, the centre of every body in its own frame.
-basis = mv.vector(np.eye(ga.dimension)).dual().normalized()   # [dimension] Point-
-origin = basis[-1]                                 # [] Point-
+# Golden-section iterations bracketing the optimal quadric blend angle to within 0.005 rad.
+n_golden_steps = 12
 
-
-@dataclass(frozen=True)
-class Bodies:
-    """The whole population as batched extensors: one leading axis, one entry per body."""
-    color: np.ndarray
-    motor: Motor
-    # The momentum is kept in the body frame.
-    momentum: AntiBivector
-    # The body's shape in its own frame, dual, mapping a plane to its pole, and its form, mapping a
-    # point to its polar plane, negative inside.
-    dual: DualQuadric
-    form: Quadric
-    inverse_inertia: InverseInertia
-    # The angular radius of each bounding ball, for the broad phase.
-    bounding_radius: Scalar
-
-    @staticmethod
-    def join(groups: list["Bodies"]) -> "Bodies":
-        return Bodies(np.concatenate([g.color for g in groups]), *(
-            concatenate([getattr(g, f.name) for g in groups]) for f in fields(Bodies)[1:]
-        ))
-
-    def select(self, keep: np.ndarray) -> "Bodies":
-        return Bodies(*(getattr(self, f.name)[keep] for f in fields(Bodies)))
-
-    def rate(self) -> Bivector:
-        return self.inverse_inertia(self.momentum)
-
-    def world(self) -> Quadric:
-        """The primal forms of the bodies placed in the world."""
-        return self.motor >> self.form(self.motor << Point)
-
-    def kinetic_energy(self) -> Scalar:
-        return (self.rate() & self.momentum).sum() * 0.5
-
-    def total_momentum(self) -> AntiBivector:
-        """The momenta of all bodies carried into the world frame and summed."""
-        return (self.motor >> self.momentum).sum(axis=0)
-
-
-@dataclass(frozen=True)
-class Trajectory:
-    """The simulation, frame by frame: world forms and body rates per body, totals per frame."""
-    surfaces: Quadric                              # [frames, bodies]
-    # The rate is in the body frame.
-    rate: Bivector                                 # [frames, bodies]
-    energy: Scalar                                 # [frames]
-    # The total momentum is in the world frame.
-    momentum: AntiBivector                         # [frames]
-    impulses: int
-
-
-# --- shapes and bodies ----------------------------------------------------------------
-def quadric(diagonal: np.ndarray) -> DualQuadric:
-    """The dual quadric diagonal on the basis points: the sum of each point paired with itself,
-    weighted; negative weights mark the inside's core, positive ones its extents."""
-    return (basis * (basis & Plane) * diagonal).sum(axis=-1)
-
-
-def ellipsoid(half_widths: np.ndarray) -> DualQuadric:
-    """The ellipsoid around the origin with the given half-widths along the axes, each the tangent
-    of an angular half-width."""
-    return quadric(np.concatenate([half_widths**2, -np.ones_like(half_widths[..., :1])], axis=-1))
-
-
-def pointcloud_inertia(points: Point, masses: Scalar) -> Inertia:
-    """The inertia of the cloud, a map from rates to momenta: each point's join with its own motion, mass-weighted."""
-    return (points.regressive(points.commutator(Bivector)) * masses).sum(axis=-1)
-
-
-def body(color: np.ndarray, dual: DualQuadric, motor: Motor, rate: Bivector, points: Point, masses: Scalar) -> Bodies:
-    """Bodies of any quadric shape, from mass points filling it: inertia from the points, momentum
-    from the body-frame rate, and the farthest of the points from the pole, for the broad phase."""
-    inertia = pointcloud_inertia(points, masses)
-    spread = (points | origin).abs().clip(0.0, 1.0).arccos()
-    bounding_radius = spread[np.arange(spread.shape[0]), spread.argmax(axis=-1)]
-    return Bodies(color, motor, inertia(rate), dual, dual.inverse(), inertia.inverse(), bounding_radius)
-
-
-def filled(dual: DualQuadric, mass: np.ndarray, count: int, rng: np.random.Generator) -> tuple[Point, Scalar]:
-    """Mass points filling the inside of any quadric, where its form is negative. In the form's
-    eigenbasis the inside is where the negative block outweighs the positive one, so a point is a
-    core direction in the negative block, an extent direction in the positive block, both uniform
-    on their spheres, and the angle between them, up to the angle where the blocks balance; the
-    angle is drawn uniformly and weighted by the sphere's measure,
-    angle.cos() ** (k - 1) * angle.sin() ** (n - 1 - k) for k core axes out of n, so the weighted
-    points are uniform in the inside. Batched over quadrics of one signature."""
-    n = ga.dimension
-    # The negative block comes first; k counts its core axes, the same across the batch.
-    values, principal = (Point & dual.inverse()).eigh()
-    k = int((values < 0.0).sum(axis=-1).ravel()[0])
-    core = rng.normal(size=values.shape[:-1] + (count, k))
-    extent = rng.normal(size=values.shape[:-1] + (count, n - k))
-    core, extent = core / np.linalg.norm(core, axis=-1, keepdims=True), extent / np.linalg.norm(extent, axis=-1, keepdims=True)
-    inward = (-values[..., None, :k] * core**2).sum(axis=-1)
-    outward = (values[..., None, k:] * extent**2).sum(axis=-1)
-    balance = (inward / outward).square_root().arctan()
-    angle = balance * rng.uniform(size=balance.shape)
-    weight = angle.cos() ** (k - 1) * angle.sin() ** (n - 1 - k) * balance
-    coordinates = concatenate([angle.cos()[..., None] * core, angle.sin()[..., None] * extent], axis=-1)
-    return (principal[..., None, :] * coordinates).sum(axis=-1), weight * mass[..., None] / weight.sum(axis=-1)[..., None]
+# Unit poles of the coordinate planes, with the final pole serving as each body's reference centre.
+basis = mv.vector(np.eye(ga.dimension)).dual().normalized()                     # [...] Point-
+origin = basis[-1]                                                              # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def step_motor(motor: Motor, momentum: AntiBivector, inverse_inertia: InverseInertia, dt: float) -> tuple[Motor, AntiBivector]:
-    """A body advanced by dt with a Lie midpoint step; momentum is kept in the body frame."""
-    # Half a step ahead along the present rate, the rate there, and a whole step along it.
-    half_step = (inverse_inertia(momentum) * (0.25 * dt)).exp()
-    midpoint = (motor * half_step).normalized()
-    rate = inverse_inertia((motor.inverse() * midpoint) << momentum)
-    step = (rate * (0.5 * dt)).exp()
-    next_motor = (motor * step).normalized()
-    return next_motor, (motor.inverse() * next_motor) << momentum
+def diagonal_quadric(diagonal: np.ndarray) -> DualQuadric:
+    """Coordinate poles weighted by `diagonal` (`[..., n_axes]`) sum into diagonal dual quadrics (`[...] Point- <- Plane+`)."""
+    return (basis * (basis & Plane) * diagonal).sum(axis=-1)                    # [...] Point- <- Plane+
 
 
-def overlap(A: Quadric, B: Quadric) -> tuple[Scalar, Point]:
-    """Whether the insides of two quadrics, where their forms are negative, meet: they are apart if
-    and only if some blend A + B * weight of their forms, with a positive weight, is positive
-    semidefinite (the S-lemma), so the largest over the blends of the least eigenvalue is negative
-    exactly when they overlap. The least eigenvalue is concave in the weight, hence unimodal in
-    phi = np.arctan(weight) between 0 and np.pi / 2, and golden section finds its maximum; the
-    least eigenvector there is the deepest point, the touching point when the margin is zero.
-    Batched over pairs."""
-    def least(phi: np.ndarray) -> Scalar:
-        blend = Point & (A + B * np.tan(phi))(Point)
-        return blend.eigvalsh()[..., 0]
-
-    # Golden section on phi: two probes c < d split the bracket from lo to hi in the golden ratio;
-    # whichever side holds the larger value keeps the bracket, and the surviving probe already sits
-    # at the golden point of the shrunk bracket, so each step evaluates one fresh probe only.
-    golden = (np.sqrt(5.0) - 1.0) / 2.0
-    pairs = np.broadcast_shapes(A.shape, B.shape)
-    lo, hi = np.broadcast_to(0.0, pairs), np.broadcast_to(np.pi / 2, pairs)
-    c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
-    fc, fd = least(c), least(d)
-    for _ in range(N_GOLDEN_STEPS):
-        # The maximum lies between lo and d, else between c and hi.
-        left = fc > fd
-        # Shrink the bracket to that side.
-        lo, hi = np.where(left, lo, c), np.where(left, d, hi)
-        # The next probes; one coincides with the survivor.
-        c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
-        # Evaluate only the other.
-        fresh = least(np.where(left, c, d))
-        # The survivor's value moves to its place.
-        fc, fd = fd.at[left].set(fresh[left]), fresh.at[left].set(fc[left])
-    values, points = (Point & (A + B * np.tan((lo + hi) / 2))(Point)).eigh()
-    return values[..., 0], points[..., 0]
+def ellipsoid_quadric(half_widths: np.ndarray) -> DualQuadric:
+    """Tangent `half_widths` (`[..., n_axes - 1]`) around `origin` form central ellipsoid dual quadrics (`[...] Point- <- Plane+`)."""
+    weights = np.concatenate([half_widths**2, -np.ones_like(half_widths[..., :1])], axis=-1)
+    return diagonal_quadric(weights)                                            # [...] Point- <- Plane+
 
 
-def candidates_near(bodies: Bodies) -> tuple[np.ndarray, np.ndarray]:
-    """Broad phase: the pairs whose poles are closer than their bounding radii summed."""
-    poles = bodies.motor >> origin
-    apart = (poles[:, None] | poles).abs().clip(0.0, 1.0).arccos()
-    return np.nonzero(np.triu(apart < bodies.bounding_radius[:, None] + bodies.bounding_radius[None, :], 1))
+def cloud_inertia(points: Point, masses: Scalar) -> Inertia:
+    """Mass-weighted regressive products of `points` (`[..., n_samples] Point-`) with their commutator velocities form body inertias (`[...] Momentum- <- Rate+`)."""
+    return ((masses * points).regressive(points.commutator(Rate))).sum(axis=-1)  # [...] Momentum- <- Rate+
 
 
-def collide(bodies: Bodies, i: np.ndarray, j: np.ndarray, dt: float) -> tuple[Bodies, int]:
-    """Contact test and elastic impulses for the candidate pairs (i, j), each in the frame of its first body.
+def world_quadrics(motors: Motor, forms: Quadric) -> Quadric:
+    """Sandwiching body-frame `forms` (`[...] Plane+ <- Point-`) by `motors` (`[...] Motor+`) places the primal quadrics in the world frame."""
+    return motors >> forms(motors << Point)                                     # [...] Plane+ <- Point-
 
-    The overlap margin is negative while the bodies meet. An impulse is applied only while the
-    overlap deepens, judged by a virtual step of all bodies along their current rates, so no
-    orientation of the contact forque is ever assumed; the impulse reflects the closing rate along
-    the forque whatever its sign. The geometry is batched over the pairs; the impulses go one pair
-    at a time, each against the momenta the earlier ones left. Returns the bodies after the
-    impulses and the number applied.
+
+def kinetic_energy(rates: Rate, momenta: Momentum) -> Scalar:
+    """Half the regressive pairing of body-frame `rates` (`[n_bodies] Rate+`) with `momenta` (`[n_bodies] Momentum-`) sums to total kinetic energy (`[] Scalar+`)."""
+    return (rates & momenta).sum() / 2                                          # [] Scalar+
+
+
+def world_momentum(motors: Motor, momenta: Momentum) -> Momentum:
+    """Carrying body-frame `momenta` (`[n_bodies] Momentum-`) by `motors` (`[n_bodies] Motor+`) sums to total world-frame momentum (`[] Momentum-`)."""
+    return (motors >> momenta).sum(axis=0)                                      # [] Momentum-
+
+
+def midpoint_step(
+    motors: Motor,
+    momenta: Momentum,
+    inverse_inertias: InverseInertia,
+    dt: float,
+) -> tuple[Motor, Momentum]:
+    """Advancing `motors` and body-frame `momenta` by `dt` with a Lie midpoint step updates placements and body momenta (`[n_bodies] Motor+, [n_bodies] Momentum-`)."""
+    # Step halfway along the present body rate, evaluate the midpoint rate, and advance across the full step.
+    half_step = (inverse_inertias(momenta) * (dt / 4)).exp()                    # [...] Motor+
+    midpoint = (motors * half_step).normalized()                                # [...] Motor+
+    midpoint_rate = inverse_inertias((motors.inverse() * midpoint) << momenta)  # [...] Rate+
+    whole_step = (midpoint_rate * (dt / 2)).exp()                               # [...] Motor+
+    next_motors = (motors * whole_step).normalized()                            # [...] Motor+
+    return next_motors, (motors.inverse() * next_motors) << momenta
+
+
+def quadric_overlap(first: Quadric, second: Quadric) -> tuple[Scalar, Point]:
+    """Golden-section search over positive blends of `first` and `second` (`[...] Plane+ <- Point-`) finds the overlap margin (`[...] Scalar+`) and deepest point (`[...] Point-`).
+
+    By the S-lemma, two quadric interiors where both quadratic forms are negative are disjoint if and only if some positive blend is positive semidefinite; maximizing the concave least eigenvalue over blend angle therefore yields a negative margin exactly on overlap.
     """
-    def margins(motors: Motor):
-        relative = motors[i].inverse() * motors[j]
-        return *overlap(bodies.form[i], relative >> bodies.form[j](relative << Point)), relative
+    def least_eigenvalue(phi: np.ndarray) -> Scalar:
+        blend = Point & (first + second * np.tan(phi))(Point)                   # [...] Scalar+ <- (Point-, Point-)
+        return blend.eigvalsh()[..., 0]                                         # [...] Scalar+
 
-    margin, deepest, relative = margins(bodies.motor)
-    half_step = (bodies.rate() * (0.5 * dt)).exp()
-    ahead = (bodies.motor * half_step).normalized()
-    touching = (margin < 0.0) & (margins(ahead)[0] < margin)
-    # The first body's polar plane at the deepest point is the contact plane, and its pole is the
-    # contact point. The forque is the line through the contact point normal to the contact
-    # plane: their inner product.
-    contact_plane = bodies.form[i](deepest).normalized()
-    contact_point = bodies.dual[i](contact_plane)
-    forque_one = contact_plane | contact_point
-    forque_other = relative << forque_one
-    momentum = bodies.momentum
-    for a, b, one, other in zip(i[touching], j[touching], forque_one[touching], forque_other[touching]):
-        response_one, response_other = bodies.inverse_inertia[a](one), bodies.inverse_inertia[b](other)
-        closing = response_one.regressive(momentum[a]) - response_other.regressive(momentum[b])
-        compliance = one.regressive(response_one) + other.regressive(response_other)
-        # Elastic: the closing rate reverses.
-        impulse = -2.0 * closing / compliance
-        momentum = momentum.at[a].set(momentum[a] + one * impulse).at[b].set(momentum[b] - other * impulse)
-    return replace(bodies, momentum=momentum), int(touching.sum())
-
-
-def advance(bodies: Bodies, dt: float) -> tuple[Bodies, int]:
-    """Every body stepped freely by dt, and the contacts among the pairs within reach resolved."""
-    motor, momentum = step_motor(bodies.motor, bodies.momentum, bodies.inverse_inertia, dt)
-    free = replace(bodies, motor=motor, momentum=momentum)
-    return collide(free, *candidates_near(free), dt)
+    golden = (np.sqrt(5.0) - 1.0) / 2.0
+    pair_shape = np.broadcast_shapes(first.shape, second.shape)
+    lower, upper = np.broadcast_to(0.0, pair_shape), np.broadcast_to(np.pi / 2, pair_shape)
+    left_probe = upper - golden * (upper - lower)
+    right_probe = lower + golden * (upper - lower)
+    left_value, right_value = least_eigenvalue(left_probe), least_eigenvalue(right_probe)  # [...] Scalar+, [...] Scalar+
+    for _ in range(n_golden_steps):
+        keep_left = left_value > right_value
+        lower = np.where(keep_left, lower, left_probe)
+        upper = np.where(keep_left, right_probe, upper)
+        left_probe = upper - golden * (upper - lower)
+        right_probe = lower + golden * (upper - lower)
+        fresh = least_eigenvalue(np.where(keep_left, left_probe, right_probe))  # [...] Scalar+
+        left_value, right_value = (
+            right_value.at[keep_left].set(fresh[keep_left]),
+            fresh.at[keep_left].set(left_value[keep_left]),
+        )
+    eigenvalues, eigenvectors = (Point & (first + second * np.tan((lower + upper) / 2))(Point)).eigh()
+    return eigenvalues[..., 0], eigenvectors[..., 0]
 
 
-def simulate(bodies: Bodies, frames: int, dt: float, substeps: int) -> Trajectory:
-    """The initial state and frames - 1 more, each dt apart in substeps."""
-    states, impulses = [bodies], 0
-    for _ in range(frames - 1):
-        for _ in range(substeps):
-            bodies, applied = advance(bodies, dt / substeps)
-            impulses += applied
-        states.append(bodies)
-    return Trajectory(
-        stack([state.world() for state in states]),
-        stack([state.rate() for state in states]),
-        stack([state.kinetic_energy() for state in states]),
-        stack([state.total_momentum() for state in states]),
-        impulses,
+def candidate_pairs(motors: Motor, bounding_radii: Scalar) -> tuple[np.ndarray, np.ndarray]:
+    """Geodesic distances between body centres (`[n_bodies] Motor+`) filter upper-triangular index pairs within the sum of `bounding_radii` (`[n_bodies] Scalar+`)."""
+    poles = motors >> origin                                                    # [n_bodies] Point-
+    separations = (poles[:, None] | poles).abs().clip(0.0, 1.0).arccos()        # [n_bodies, n_bodies] Scalar+
+    within_reach = separations < bounding_radii[:, None] + bounding_radii[None, :]
+    return np.nonzero(np.triu(within_reach, 1))
+
+
+def contact_forques(
+    first_forms: Quadric,
+    first_duals: DualQuadric,
+    second_forms: Quadric,
+    first_motors: Motor,
+    second_motors: Motor,
+) -> tuple[Scalar, Momentum, Momentum]:
+    """Overlap detection between `first_forms` and `second_forms` returns the margin (`[...] Scalar+`) and the contact forques (`[...] Momentum-`) in both body frames."""
+    relative = first_motors.inverse() * second_motors                           # [...] Motor+
+    margin, deepest = quadric_overlap(first_forms, relative >> second_forms(relative << Point))  # [...] Scalar+, [...] Point-
+    # Contracting the first body's unit polar plane at the deepest point with its pole forms the normal contact line.
+    contact_plane = first_forms(deepest).normalized()                           # [...] Plane+
+    contact_point = first_duals(contact_plane)                                  # [...] Point-
+    first_forque = contact_plane | contact_point                                # [...] Momentum-
+    second_forque = relative << first_forque                                    # [...] Momentum-
+    return margin, first_forque, second_forque
+
+
+def elastic_collision(
+    motors: Motor,
+    momenta: Momentum,
+    forms: Quadric,
+    duals: DualQuadric,
+    inverse_inertias: InverseInertia,
+    first_indices: np.ndarray,
+    second_indices: np.ndarray,
+    dt: float,
+) -> tuple[Momentum, int]:
+    """Sequential elastic impulses across approaching overlapping pairs `(first_indices, second_indices)` update `momenta` (`[n_bodies] Momentum-`) and count applied impulses."""
+    margin, first_forque, second_forque = contact_forques(
+        forms[first_indices],
+        duals[first_indices],
+        forms[second_indices],
+        motors[first_indices],
+        motors[second_indices],
     )
+    # Compare against a virtual half-step forward so impulses act only while an overlap is deepening, independent of forque sign.
+    half_step = (inverse_inertias(momenta) * (dt / 2)).exp()                    # [n_bodies] Motor+
+    ahead = (motors * half_step).normalized()                                   # [n_bodies] Motor+
+    relative_ahead = ahead[first_indices].inverse() * ahead[second_indices]     # [...] Motor+
+    margin_ahead, _ = quadric_overlap(
+        forms[first_indices],
+        relative_ahead >> forms[second_indices](relative_ahead << Point),
+    )
+    approaching = (margin < 0) & (margin_ahead < margin)
+    for first_body, second_body, one, other in zip(
+        first_indices[approaching],
+        second_indices[approaching],
+        first_forque[approaching],
+        second_forque[approaching],
+    ):
+        first_response = inverse_inertias[first_body](one)                      # [] Rate+
+        second_response = inverse_inertias[second_body](other)                  # [] Rate+
+        closing = (first_response & momenta[first_body]) - (second_response & momenta[second_body])  # [] Scalar+
+        compliance = ( first_response & one ) + ( second_response & other )     # [] Scalar+
+        impulse = -2 * closing / compliance                                     # [] Scalar+
+        momenta = (
+            momenta.at[first_body]
+            .set(momenta[first_body] + one * impulse)
+            .at[second_body]
+            .set(momenta[second_body] - other * impulse)
+        )
+    return momenta, int(approaching.sum())
+
+
+def collision_frames(
+    motors: Motor,
+    momenta: Momentum,
+    forms: Quadric,
+    duals: DualQuadric,
+    inverse_inertias: InverseInertia,
+    bounding_radii: Scalar,
+    n_frames: int,
+    dt: float,
+    n_substeps: int,
+) -> Iterator[tuple[Motor, Momentum, int]]:
+    """Yields `n_frames` states `(motors, momenta, cumulative_impulses)` separated by `n_substeps` midpoint and collision substeps across `dt`."""
+    substep_dt = dt / n_substeps
+    impulses = 0
+    for _ in range(n_frames):
+        yield motors, momenta, impulses
+        for _ in range(n_substeps):
+            motors, momenta = midpoint_step(motors, momenta, inverse_inertias, substep_dt)
+            first_indices, second_indices = candidate_pairs(motors, bounding_radii)
+            momenta, applied = elastic_collision(
+                motors, momenta, forms, duals, inverse_inertias, first_indices, second_indices, substep_dt,
+            )
+            impulses += applied
+
+
+# --- plumbing -------------------------------------------------------------------------
+def body_state(
+    duals: DualQuadric,
+    motors: Motor,
+    rates: Rate,
+    points: Point,
+    masses: Scalar,
+) -> tuple[Motor, Momentum, DualQuadric, Quadric, InverseInertia, Scalar]:
+    """Mass clouds (`[n_bodies, n_samples] Point-`, `[n_bodies, n_samples] Scalar+`) determine initial momenta, primal forms, inverse inertias, and bounding radii for `duals`."""
+    inertias = cloud_inertia(points, masses)                                    # [n_bodies] Momentum- <- Rate+
+    momenta = inertias(rates)                                                   # [n_bodies] Momentum-
+    forms = duals.inverse()                                                     # [n_bodies] Plane+ <- Point-
+    inverse_inertias = inertias.inverse()                                       # [n_bodies] Rate+ <- Momentum-
+    bounding_radii = (points | origin).abs().clip(0.0, 1.0).arccos().max(axis=-1)  # [n_bodies] Scalar+
+    return motors, momenta, duals, forms, inverse_inertias, bounding_radii
+
+
+def interior_samples(
+    duals: DualQuadric,
+    masses: np.ndarray,
+    n_samples: int,
+    rng: np.random.Generator,
+) -> tuple[Point, Scalar]:
+    """Stratified eigenbasis directions inside `duals` (`[n_bodies] Point- <- Plane+`) form `n_samples` interior points (`[n_bodies, n_samples] Point-`) carrying total `masses` (`[n_bodies]`)."""
+    n_axes = ga.dimension
+    eigenvalues, principal = (Point & duals.inverse()).eigh()                   # [n_bodies, n_axes] Scalar+, [n_bodies, n_axes] Point-
+    n_core = int((eigenvalues < 0)[0].sum())
+    core = rng.normal(size=eigenvalues.shape[:-1] + (n_samples, n_core))
+    extent = rng.normal(size=eigenvalues.shape[:-1] + (n_samples, n_axes - n_core))
+    core = core / np.linalg.norm(core, axis=-1, keepdims=True)
+    extent = extent / np.linalg.norm(extent, axis=-1, keepdims=True)
+    inward = (-eigenvalues[..., None, :n_core] * core**2).sum(axis=-1)          # [n_bodies, n_samples] Scalar+
+    outward = (eigenvalues[..., None, n_core:] * extent**2).sum(axis=-1)        # [n_bodies, n_samples] Scalar+
+    balance = (inward / outward).square_root().arctan()                         # [n_bodies, n_samples] Scalar+
+    angle = balance * rng.uniform(size=balance.shape)                           # [n_bodies, n_samples] Scalar+
+    weights = angle.cos() ** (n_core - 1) * angle.sin() ** (n_axes - 1 - n_core) * balance  # [n_bodies, n_samples] Scalar+
+    coordinates = concatenate([angle.cos()[..., None] * core, angle.sin()[..., None] * extent], axis=-1)  # [n_bodies, n_samples, n_axes] Scalar+
+    points = (principal[..., None, :] * coordinates).sum(axis=-1)               # [n_bodies, n_samples] Point-
+    sample_masses = weights * masses[..., None] / weights.sum(axis=-1)[..., None]  # [n_bodies, n_samples] Scalar+
+    return points, sample_masses

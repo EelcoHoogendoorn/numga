@@ -1,5 +1,4 @@
-"""A helical flow stirred in a conducting core, wrapped in a poorly conducting mantle, grows a seed field until the
-field's force on the current it carries brakes the flow, and the two settle."""
+"""Planetary core geometry, Chandrasekhar–Kendall helical stirring, seed field, and run entry points."""
 
 from __future__ import annotations
 
@@ -12,156 +11,184 @@ from examples.electromagnetism.dynamo import core
 from examples.util import shapes
 
 mv = core.mv
-# The sphere's subdivision levels, the ball's shells and the mantle's outer radius, the core's radius being one, and
-# the solid inner core's radius, on the first of the core's shells: Earth's is 0.35 of its core's.
+# Spherical shell resolution and inner-core, outer-core, and mantle radii in outer-core units.
 n_levels = 2
 n_shells = 6
 mantle_radius = 1.5
 inner_radius = 0.25
-# How much poorer a conductor the mantle is than the core.
 mantle_conductance = 1e-2
-# The magnetic Reynolds number, the conductivity of the core for a flow whose fastest point moves at unit speed, the
-# step, the steps run, those before the animation starts, while the field grows to saturation, the stride between
-# frames, and the frame duration.
+# Magnetic Reynolds number, seed field, time-step schedule, and GIF palette sizes.
 reynolds = 160.0
+seed_field = mv.xy * 1e-2 + mv.yz * 3e-3                                       # Magnetic+
 dt = 0.05
 n_steps = 2400
 n_skipped_steps = 1200
 stride = 10
 frame_duration_ms = 40
-# The colours of the palettes of the cutaway and of the lines seen from above.
 n_cutaway_colours = 64
 n_lines_colours = 32
-# The core's slowest scalar modes the flow's modes are built from, the flow's modes, the fluid's viscosity, and the
-# rate at which the stirring pulls the flow back toward the helical flow.
+# Modal truncation counts, displayed mode indices, fluid viscosity, and stirring relaxation rate.
 n_scalar_modes = 80
 n_modes = 60
-# The flow modes drawn, from the slowest to a fine one.
 shown_modes = np.array([0, 3, 8, 40])
 viscosity = 0.01
 pull = 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def ball(n_levels: int = n_levels, n_shells: int = n_shells) -> tuple[core.Topology, np.ndarray, core.Point]:
-    """The ball of core and mantle: its topology, its vertices' coordinates and the vertices, directions of space."""
+def ball_complex(n_levels: int, n_shells: int) -> tuple[core.Topology, core.Point]:
+    """Subdivided icosahedral shells scaled to `mantle_radius` form the tetrahedral ball topology and spatial vertices (`Point-[V]`)."""
     topology, coordinates = shapes.ball(n_levels, n_shells)
-    coordinates = mantle_radius * coordinates
-    return topology, coordinates, mv(core.Plane, coordinates).dual().field()
+    return topology, mv(core.Plane, mantle_radius * coordinates).dual().field()
 
 
-def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topology, core.Point, core.SparseExtensor]:
-    """The fluid outer core, between the inner core and the mantle: its tetrahedra as a topology on its own vertices,
-    which run without a gap among the ball's, shell after shell, those vertices, and the map placing a field on its
-    tetrahedra among the ball's."""
-    centres = topology.incidence[3, 0].mean(axis=0) * vertices                   # Point-[tets]
-    radii = centres.antinorm()                                                   # Scalar+[tets]
-    fluid = ((radii > inner_radius) & (radii < 1)).reshape(-1)                   # [tets]
-    simplices = topology.elements[3][fluid]                                      # [fluid, 4]
+def outer_core(topology: core.Topology, vertices: core.Point) -> tuple[core.Topology, core.Point, core.Sparse]:
+    """Tetrahedra between `inner_radius` and unit radius form the fluid outer-core subcomplex, its vertices (`Point-[V_fluid]`), and its tetrahedral embedding."""
+    V, E, F, T = topology.n_elements
+    centres = topology.incidence[3, 0].mean(axis=0) * vertices                  # Point-[T]
+    radii = centres.antinorm()                                                  # Scalar+[T]
+    fluid_mask = (radii > inner_radius) & (radii < 1)                           # [T]
+    simplices = topology.elements[3][fluid_mask]                                # [..., 4]
     first, last = simplices.min(), simplices.max()
-    fluid_vertices = topology.reading(np.arange(first, last + 1), 0) * vertices  # Point-[fluid vertices]
-    return core.Topology(last + 1 - first, simplices - first), fluid_vertices, ~topology.reading(np.flatnonzero(fluid), 3)
+    fluid_vertices = topology.reading(np.arange(first, last + 1), 0) * vertices # Point-[V_fluid]
+    embedding = topology.reading(np.flatnonzero(fluid_mask), 3).adjugate()      # Scalar+[T <- T_fluid]
+    return core.Topology(last + 1 - first, simplices - first), fluid_vertices, embedding
 
 
 # --- math -----------------------------------------------------------------------------
-def spheromak(points: core.Point, degree: int, root: float) -> core.Point:
-    """The Chandrasekhar–Kendall field of the given degree about z at points `Point-[...]` in the unit ball: a Beltrami
-    field, its curl `root` times itself, tangent to the ball's surface, where the spherical Bessel function of that
-    degree has the root. It sweeps out along the radius by the Legendre pattern, along the meridians by the slope of the
-    radial profile, and turns about z as strongly as the profile."""
-    radii = points.antinorm()                                                    # Scalar+[...]
-    cosines = (mv.z & points) / radii                                            # Scalar+[...]
-    # The sine and cosine of the radial phase, read off a turn by it.
-    phases = (mv.xy * (root * radii)).exp()                                      # Rotor+[...]
-    sines, cosine_phases = phases.scalar_product(~mv.xy), phases.scalar_product(mv.scalar([1.0]))   # Scalar+[...], Scalar+[...]
-    x = root * radii                                                             # Scalar+[...]
-    # The spherical Bessel functions of degrees zero to two, and the slope of x times that of the degree.
-    bessels = (sines / x, sines / (x * x) - cosine_phases / x,
-               (3 / (x * x) - 1) * sines / x - 3 * cosine_phases / (x * x))
-    bessel = bessels[degree]                                                     # Scalar+[...]
-    slope = x * bessels[degree - 1] - degree * bessel                            # Scalar+[...]
-    # The Legendre pattern of the degree, and its slope across the meridian over the sine of the colatitude.
-    legendre, across = ((cosines, -1.0), ((3 * cosines * cosines - 1) / 2, -3 * cosines))[degree - 1]
-    radial, up = points / radii, mv.z.dual()                                     # Point-[...], [] Point-
-    sweep = radial * (degree * (degree + 1) * bessel * legendre / radii) + (radial * cosines - up) * (slope * across / radii)
-    turn = points.commutator(mv.xy) * (-root * bessel * across / radii)
-    return sweep + turn
+def spheromak_flow(points: core.Point, degree: int, root: float) -> core.Point:
+    """Chandrasekhar–Kendall Beltrami mode of `degree` and Bessel `root` about the z axis evaluates tangent velocities (`[...] Point-`) in the unit ball."""
+    radii = points.antinorm()                                                   # [...] Scalar+
+    cosines = (mv.z & points) / radii                                           # [...] Scalar+
+    phases = (mv.xy * (root * radii)).exp()                                     # [...] Rotor+
+    sines = phases.scalar_product(~mv.xy)                                       # [...] Scalar+
+    cosine_phases = phases.scalar_product(mv.scalar([1]))                       # [...] Scalar+
+    radial_phases = root * radii                                                # [...] Scalar+
+    bessels = (
+        sines / radial_phases,
+        sines / (radial_phases * radial_phases) - cosine_phases / radial_phases,
+        (3 / (radial_phases * radial_phases) - 1) * sines / radial_phases
+        - 3 * cosine_phases / (radial_phases * radial_phases),
+    )
+    bessel = bessels[degree]                                                    # [...] Scalar+
+    radial_slope = radial_phases * bessels[degree - 1] - degree * bessel        # [...] Scalar+
+    legendre, meridian_slope = ((cosines, -1), ((3 * cosines * cosines - 1) / 2, -3 * cosines))[degree - 1]
+    radial_directions, north_axis = points / radii, mv.z.dual()                 # [...] Point-, Point-
+    poloidal = (
+        radial_directions * (degree * (degree + 1) * bessel * legendre / radii)
+        + (radial_directions * cosines - north_axis) * (meridian_slope * radial_slope / radii)
+    )                                                                           # [...] Point-
+    toroidal = points.commutator(mv.xy) * (-root * bessel * meridian_slope / radii)  # [...] Point-
+    return poloidal + toroidal
 
 
 def helical_flow(topology: core.Topology, vertices: core.Point) -> core.Point:
-    """The flow in the core at each tetrahedron, `Point-[tets]`, nothing in the mantle: the spheromak of degree one
-    about z and that of degree two turned onto x, scaled so the fastest point moves at unit speed."""
-    # The roots of the spherical Bessel functions of degrees one and two, where each field is tangent to the core's
-    # surface.
+    """Orthogonal degree-1 and degree-2 spheromaks inside the unit core combine at unit peak speed (`Point-[T]`)."""
     first_root, second_root = 4.493409457909064, 5.763459196894550
-    onto_x = (mv.zx * (np.pi / 4)).exp()                                         # [] Rotor+
-    # The flow at each tetrahedron's centroid, none of which lies at the centre where the radius vanishes.
-    centres = topology.incidence[3, 0].mean(axis=0) * vertices                   # Point-[tets]
-    flow = spheromak(centres, 1, first_root) + (onto_x >> spheromak(~onto_x >> centres, 2, second_root))   # Point-[tets]
-    inside = mv.scalar((centres.antinorm() < 1)[:, None]).field()                # Scalar+[tets]
-    flow = flow * inside                                                         # Point-[tets]
-    return flow / flow.antinorm().batch().max()
+    axis_rotor = (mv.zx * (np.pi / 4)).exp()                                    # Rotor+
+    centres = topology.incidence[3, 0].mean(axis=0) * vertices                  # Point-[T]
+    turned_centres = ~axis_rotor >> centres                                     # Point-[T]
+    tilted_mode = axis_rotor >> spheromak_flow(turned_centres, 2, second_root)  # Point-[T]
+    core_flow = spheromak_flow(centres, 1, first_root) + tilted_mode            # Point-[T]
+    core_mask = mv.scalar((centres.antinorm() < 1)[:, None]).field()            # Scalar+[T]
+    masked_flow = core_flow * core_mask                                         # Point-[T]
+    return masked_flow / masked_flow.antinorm().batch().max()
 
 
-def seed(topology: core.Topology, vertices: core.Point, field: core.Field) -> core.Scalar:
-    """The potential of a uniform field on the edges, `Scalar+[edges]`: half the field's flux through the triangle from
-    the centre to each edge."""
-    tails, heads = topology.incidence[1, 0] * vertices                           # Point-[edges], Point-[edges]
+def seed_potential(topology: core.Topology, vertices: core.Point, field: core.Magnetic) -> core.Scalar:
+    """Uniform magnetic flux through origin-to-edge triangles defines initial edge potentials (`Scalar+[E]`)."""
+    tails, heads = topology.incidence[1, 0] * vertices                          # Point-[E], Point-[E]
     return (field & (tails & heads)) / 2
 
 
-def frames(operators: core.Ball, flow: core.Flow,
-           states: Iterable[tuple[core.Scalar, core.Scalar]]) -> Iterator[tuple[core.Magnetic, core.Point]]:
-    """The field and the flow in each tetrahedron, `Magnetic+[tets]` and `Point-[tets]`, frame after frame."""
+def field_frames(curl: core.SparseExtensor, mode_velocities: core.Point,
+                 states: Iterable[tuple[core.Scalar, core.Scalar]]) -> Iterator[tuple[core.Magnetic, core.Point]]:
+    """Yields tetrahedral magnetic planes (`Magnetic+[T]`) and fluid velocities (`Point-[T]`) for each streamed state."""
     for amplitudes, potential in states:
-        yield operators.curl(potential), flow.velocity(flow.circulation(amplitudes))
+        yield curl(potential), (amplitudes * mode_velocities).sum(axis=0)
 
 
 def main() -> None:
     from itertools import islice, tee
-    from examples.util.animation import save_animation, save_figure
     from examples.electromagnetism.dynamo import render
+    from examples.util.animation import save_animation, save_figure
 
-    topology, coordinates, vertices = ball()
-    operators = core.Ball(topology, vertices)
+    topology, vertices = ball_complex(n_levels, n_shells)
+    centres = topology.incidence[3, 0].mean(axis=0) * vertices                  # Point-[T]
+    volumes, whitney, curl = core.whitney_operators(topology, vertices)
+    stiffness = core.magnetic_stiffness(volumes, curl)                          # (Antiscalar- <- Scalar+)[E <- E]
     fluid_topology, fluid_vertices, embedding = outer_core(topology, vertices)
-    flow = core.Flow(core.Ball(fluid_topology, fluid_vertices), embedding, n_scalar_modes, n_modes)
-    save_figure(render.draw_modes(operators, mantle_radius, flow.velocity(flow.modes[shown_modes])), "dynamo_modes")
-    # The stirred flow, the helical flow's share in each mode.
-    stirred = flow.reading(operators.prisms.norm() * helical_flow(topology, vertices).dual())   # Scalar+[modes]
-    radii = operators.centres.antinorm()                                         # Scalar+[tets]
-    conductivity = mv.scalar(np.where((radii < 1).reshape(-1), reynolds, reynolds * mantle_conductance)[:, None]).field()   # Scalar+[tets]
-    potential = seed(topology, vertices, mv.xy * 1e-2 + mv.yz * 3e-3)            # Scalar+[edges]
-    states = core.dynamo(operators, flow, conductivity, viscosity, pull, stirred, potential, dt, n_steps)
-    # The saturated dynamo, every stride-th state drawn cut away as it comes, and the whole run kept for the energies.
-    cutaway, kept = tee(states, 2)
-    save_animation(render.animate(operators, mantle_radius, frames(operators, flow, islice(cutaway, n_skipped_steps, None, stride))),
-                   "dynamo", frame_duration_ms, colors=n_cutaway_colours)
-    amplitudes, potentials = map(stack, zip(*islice(kept, 0, None, stride)))   # [frames] Scalar+[modes], [frames] Scalar+[edges]
-    kinetic = (amplitudes * amplitudes).sites.sum() / 2                          # [frames] Scalar+
-    magnetic = (potentials * operators.stiffness(potentials)).sites.sum() / 2    # [frames] Amount-
-    save_figure(render.draw_energies(np.arange(0, n_steps + 1, stride) * dt, kinetic, magnetic), "dynamo_energies")
+    decay_rates, mode_velocities, mode_vorticities = core.flow_modes(
+        fluid_topology, fluid_vertices, embedding, n_scalar_modes, n_modes
+    )
+    save_figure(render.modes_figure(centres, mantle_radius, mode_velocities[shown_modes]), "dynamo_modes")
+
+    target_momentum = volumes * helical_flow(topology, vertices).dual()         # Plane+[T]
+    target_amplitudes = (target_momentum & mode_velocities).sites.sum()         # [n_modes] Scalar+
+    radii = centres.antinorm()                                                  # Scalar+[T]
+    conductivity = mv.scalar(np.where(radii < 1, reynolds, reynolds * mantle_conductance)[:, None]).field()  # Scalar+[T]
+    initial_potential = seed_potential(topology, vertices, seed_field)          # Scalar+[E]
+    states = core.dynamo_states(
+        volumes, whitney, curl, decay_rates, mode_velocities, mode_vorticities,
+        conductivity, viscosity, pull, target_amplitudes, initial_potential, dt, n_steps,
+    )
+    cutaway_stream, energy_stream = tee(states, 2)
+    save_animation(
+        render.cutaway_animation(
+            centres, mantle_radius,
+            field_frames(curl, mode_velocities, islice(cutaway_stream, n_skipped_steps, None, stride)),
+        ),
+        "dynamo", frame_duration_ms, colors=n_cutaway_colours,
+    )
+    n_energy_frames = n_steps // stride + 1
+    amplitudes, potentials = map(stack, zip(*islice(energy_stream, 0, None, stride)))  # [n_energy_frames, n_modes] Scalar+, [n_energy_frames] Scalar+[E]
+    kinetic_energy = (amplitudes * amplitudes).sum(axis=-1) / 2                 # [n_energy_frames] Scalar+
+    magnetic_energy = (potentials & stiffness(potentials)).sites.sum() / 2      # [n_energy_frames] Scalar+
+    times = np.arange(0, n_steps + 1, stride) * dt                              # [n_energy_frames]
+    save_figure(render.energies_figure(times, kinetic_energy, magnetic_energy), "dynamo_energies")
+
+    # checks
+    final_velocity = (amplitudes[-1] * mode_velocities).sum(axis=0)             # Point-[T]
+    volume_energy = (volumes * (final_velocity.dual() & final_velocity)).sites.sum() / 2  # Scalar+
+    assert (volume_energy - kinetic_energy[-1]).abs() < 1e-10 * kinetic_energy[-1]
+    target_velocity = (target_amplitudes * mode_velocities).sum(axis=0)         # Point-[T]
+    _, advection_rates = core.flow_advection(
+        volumes, curl, mode_velocities, mode_vorticities, target_velocity, amplitudes[-1], potentials[-1]
+    )
+    power_scale = ((advection_rates * advection_rates).sum() * (amplitudes[-1] * amplitudes[-1]).sum()).square_root()
+    assert (amplitudes[-1] * advection_rates).sum().abs() < 1e-10 * power_scale
+    face_fluxes = topology.d[1] * potentials[-1]                                # Scalar+[F]
+    assert ((topology.d[2] * face_fluxes).norm().batch() < 1e-10 * face_fluxes.norm().batch().max()).all()
+    assert magnetic_energy[-1] > 100 * magnetic_energy[0]
+    assert kinetic_energy.min() < 0.75 * kinetic_energy[0]
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the saturated dynamo's field lines and streamlines seen from above, for the gallery."""
+    """Gallery animation of saturated outer-core magnetic field lines and streamlines seen from above."""
     from itertools import islice
-    from examples.util.animation import pin_animation
     from examples.electromagnetism.dynamo import render
+    from examples.util.animation import pin_animation
 
-    topology, _, vertices = ball()
-    operators = core.Ball(topology, vertices)
+    topology, vertices = ball_complex(n_levels, n_shells)
+    centres = topology.incidence[3, 0].mean(axis=0) * vertices                  # Point-[T]
+    volumes, whitney, curl = core.whitney_operators(topology, vertices)
     fluid_topology, fluid_vertices, embedding = outer_core(topology, vertices)
-    flow = core.Flow(core.Ball(fluid_topology, fluid_vertices), embedding, n_scalar_modes, n_modes)
-    # The stirred flow, the helical flow's share in each mode.
-    stirred = flow.reading(operators.prisms.norm() * helical_flow(topology, vertices).dual())   # Scalar+[modes]
-    radii = operators.centres.antinorm()                                         # Scalar+[tets]
-    conductivity = mv.scalar(np.where((radii < 1).reshape(-1), reynolds, reynolds * mantle_conductance)[:, None]).field()   # Scalar+[tets]
-    potential = seed(topology, vertices, mv.xy * 1e-2 + mv.yz * 3e-3)            # Scalar+[edges]
-    states = core.dynamo(operators, flow, conductivity, viscosity, pull, stirred, potential, dt, n_steps)
-    # The saturated dynamo, every stride-th state drawn from above as it comes.
-    pin_animation(render.animate_lines(operators, frames(operators, flow, islice(states, n_skipped_steps, None, stride))),
-                  "dynamo_lines", frame_duration_ms, colors=n_lines_colours)
+    decay_rates, mode_velocities, mode_vorticities = core.flow_modes(
+        fluid_topology, fluid_vertices, embedding, n_scalar_modes, n_modes
+    )
+    target_momentum = volumes * helical_flow(topology, vertices).dual()         # Plane+[T]
+    target_amplitudes = (target_momentum & mode_velocities).sites.sum()         # [n_modes] Scalar+
+    radii = centres.antinorm()                                                  # Scalar+[T]
+    conductivity = mv.scalar(np.where(radii < 1, reynolds, reynolds * mantle_conductance)[:, None]).field()  # Scalar+[T]
+    initial_potential = seed_potential(topology, vertices, seed_field)          # Scalar+[E]
+    states = core.dynamo_states(
+        volumes, whitney, curl, decay_rates, mode_velocities, mode_vorticities,
+        conductivity, viscosity, pull, target_amplitudes, initial_potential, dt, n_steps,
+    )
+    pin_animation(
+        render.lines_animation(centres, field_frames(curl, mode_velocities, islice(states, n_skipped_steps, None, stride))),
+        "dynamo_lines", frame_duration_ms, colors=n_lines_colours,
+    )
 
 
 if __name__ == "__main__":

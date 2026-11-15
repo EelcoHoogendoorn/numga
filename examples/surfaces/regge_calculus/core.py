@@ -1,6 +1,6 @@
-"""Triangle edge lengths determine a surface's intrinsic geometry and the current it carries.
+"""Prescribed edge lengths on a flat triangulation determine its intrinsic metric, curvature defects, and steady conduction.
 
-A metric is a correlation from displacements to planes: `metric(edge) & edge` reads an edge's squared length. Symmetric products of corner gradients reconstruct that correlation. Corner turns record curvature at the vertices, and the gradient's adjugate assembles the local current response into steady conduction on the mesh.
+Each triangle's intrinsic metric is modelled as a symmetric duality map `Plane <- Point` built from products of corner simplex gradients so that `metric(edge) & edge` reads each squared edge length. Combining side pairings with twice the intrinsic area in each face's turning plane forms unit corner rotors whose logarithms sum to the vertex angle defects, while cotangent-weighted side dyads assemble steady conduction across the triangulation.
 """
 
 from __future__ import annotations
@@ -10,113 +10,90 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import VGA2D as ga
 from numga.sparse import spdiag
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
 Bivector = ga.gatype.bivector()                                              # Bivector+
-Point = ga.gatype.antivector()                                               # Antivector-
-Patch = ga.gatype.antibivector()                                             # Antibivector-
 Rotor = ga.gatype.rotor()                                                    # Rotor+
-Metric = ga.gatype((Plane, Point))                                           # Vector+ <- Antivector-
-Conductivity = ga.gatype((Point, Plane))                                     # Antivector- <- Vector+
+Point = ga.gatype.antivector()                                               # Antivector-
+Antiscalar = ga.gatype.antiscalar()                                          # Antiscalar-
+Metric = ga.gatype((Plane, Point))                                           # Plane+ <- Point-
+Conductivity = ga.gatype((Point, Plane))                                     # Point- <- Plane+
+Gradient = ga.gatype((Plane, Scalar))                                        # Plane+ <- Scalar+
+Conductance = ga.gatype((Antiscalar, Scalar))                                # Antiscalar- <- Scalar+
 triangle = Topology(3, [[0, 1, 2]])
 
 
 # --- math -----------------------------------------------------------------------------
-def regge_metric_basis(corners: Point) -> tuple[Metric, Plane, Patch]:
-    """Each edge's correlation reads one on that edge and zero on the other two; its corner gradients and signed patch define the reference triangle."""
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
-    patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
-    gradients = sides / (2 * patch)                                          # [corners] Plane+
+def metric_basis(topology: Topology, vertices: Point) -> Metric:
+    """Each triangle's three symmetric simplex-gradient products (`[3] (Plane+ <- Point-)[F]`) pair to one on their own side and zero on the other two."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
+    gradients = sides / (2 * patches)                                        # [3] Plane+[F]
     # Along the two sides meeting at a corner, one endpoint gradient vanishes while on the opposite
     # side the two endpoint gradients pair to -1 and +1, making their symmetric product dual to the squared edge lengths.
-    tails, heads = triangle.corners[2, 1]
-    first, second = gradients[tails], gradients[heads]                       # [corners] Plane+, [corners] Plane+
-    basis = -(first * (second & Point) + second * (first & Point)) / 2       # [corners] Plane+ <- Point-
-    return basis, gradients, patch
-
-
-def triangle_geometry(corners: Point, squared_lengths: Scalar
-                      ) -> tuple[Metric, Scalar, Rotor, Bivector]:
-    """Prescribed squared edge lengths determine the triangle's correlation, area, unit corner rotors, and corner turns."""
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
-    basis, _, patch = regge_metric_basis(corners)                            # [corners] Plane+ <- Point-, [corners] Plane+, [] Patch-
-    metric = (squared_lengths * basis).sum(axis=0)                           # [] Plane+ <- Point-
-    # The wedge carries the correlation's area scaling; pairing it with the reference patch
-    # and dividing by two gives the intrinsic area squared.
-    intrinsic_area = (((metric(sides[0]) ^ metric(sides[1])) & patch) / 2).square_root()  # [] Scalar+
-    # Combining the metric inner product of the two sides meeting at each corner with twice the intrinsic
-    # area in the even subalgebra forms a rotor whose norm is the product of those two side lengths.
-    tails, heads = triangle.corners[2, 1]
-    dots = -(metric(sides[tails]) & sides[heads])                            # [corners] Scalar+
-    corner_rotors = (dots + 2 * intrinsic_area * mv.xy).normalized()         # [corners] Rotor+
-    corner_turns = corner_rotors.log()                                       # [corners] Bivector+
-    return metric, intrinsic_area, corner_rotors, corner_turns
-
-
-def mesh_geometry(topology: Topology, vertices: Point, edge_squared_lengths: Scalar
-                  ) -> tuple[Metric, Scalar, Bivector, Bivector, Conductivity]:
-    """The edge lengths define face correlations, areas, vertex angle defects, area-normalized defects, and local conductivities."""
-    edges = topology.d[0] * vertices                                         # Point-[edges]
-    sides = topology.boundary[2, 1] * edges                                  # [corners] Point-[faces]
-    patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
-    corner_gradients = sides / (2 * patches)                                 # [corners] Plane+[faces]
     tails, heads = topology.corners[2, 1]
-    first, second = corner_gradients[tails], corner_gradients[heads]         # [corners] Plane+[faces], [corners] Plane+[faces]
-    basis = -(first * (second & Point) + second * (first & Point)) / 2       # [corners] (Plane+ <- Point-)[faces]
+    first, second = gradients[tails], gradients[heads]                       # [3] Plane+[F], [3] Plane+[F]
+    return -(first * (second & Point) + second * (first & Point)) / 2        # [3] (Plane+ <- Point-)[F]
 
-    metrics = (spdiag(basis) * topology.incidence[2, 1]).sum(axis=0) * edge_squared_lengths  # [...] (Plane+ <- Point-)[faces]
-    intrinsic_areas = (((metrics(sides[0]) ^ metrics(sides[1])) & patches) / 2).square_root()  # [...] Scalar+[faces]
-    dots = -(metrics[..., None](sides[tails]) & sides[heads])                # [..., corners] Scalar+[faces]
-    corner_rotors = (dots + 2 * intrinsic_areas[..., None] * mv.xy).normalized()  # [..., corners] Rotor+[faces]
-    corner_turns = corner_rotors.log()                                       # [..., corners] Bivector+[faces]
 
-    # Each vertex holds a third of the intrinsic area of the triangles around it. The corner turns, carried from
-    # the faces back to their vertices and summed, fall short of the flat turn by the defect.
-    corner_mean = topology.incidence[2, 0].mean(axis=0)                      # Scalar+[faces <- vertices]
-    vertex_areas = ~corner_mean * intrinsic_areas                            # [...] Scalar+[vertices]
+def intrinsic_areas(topology: Topology, vertices: Point, metrics: Metric) -> Scalar:
+    """Each triangle's metric wedge paired with its reference patch determines its intrinsic area (`[...] Scalar+[F]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
+    # The wedge carries the duality map's area scaling; pairing it with the reference patch
+    # and dividing by two gives the intrinsic area squared.
+    return (((metrics(sides[0]) ^ metrics(sides[1])) & patches) / 2).square_root()  # [...] Scalar+[F]
+
+
+def corner_rotors(topology: Topology, vertices: Point, metrics: Metric, areas: Scalar) -> Rotor:
+    """Side pairings and twice the intrinsic area in each face's turning plane form unit corner rotors (`[..., 3] Rotor+[F]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
+    turning_planes = patches.normalized().dual_inverse()                     # Bivector+[F]
+    tails, heads = topology.corners[2, 1]
+    # Combining the metric pairing of the two sides meeting at each corner with twice the intrinsic
+    # area in the face's turning plane forms a rotor whose norm is the product of those two side lengths.
+    dots = -(metrics[..., None](sides[tails]) & sides[heads])                # [..., 3] Scalar+[F]
+    return (dots + 2 * areas[..., None] * turning_planes).normalized()       # [..., 3] Rotor+[F]
+
+
+def vertex_defects(topology: Topology, vertices: Point, corner_turns: Bivector) -> Bivector:
+    """Interior vertices fall short of a full turn and boundary vertices of a half turn by the angle defect (`[...] Bivector+[V]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    turning_planes = ((sides[0] & sides[1]) / 2).normalized().dual_inverse()  # Bivector+[F]
+    corner_mean = topology.incidence[2, 0].mean(axis=0)                      # Scalar+[F <- V]
+    full_turns = 2 * np.pi * (corner_mean.adjugate() * turning_planes).normalized()  # Bivector+[V]
     # A flat surface turns through a full turn around an interior vertex, and through half of one at the rim.
-    rim = topology.reading(topology.exterior[0], 0)                          # Scalar+[rim <- vertices]
-    full_turns = (mv.xy * np.full(topology.n_vertices, 2 * np.pi)).field()        # Bivector+[vertices]
-    target_turns = full_turns - ~rim * (rim * full_turns) / 2                     # Bivector+[vertices]
-    defects = target_turns - (~topology.incidence[2, 0] * corner_turns).sum(axis=-1)  # [...] Bivector+[vertices]
-    curvatures = defects / vertex_areas                                           # [...] Bivector+[vertices]
-
-    # Each side dyad turns a gradient reading into flow along that side;
-    # the corner cotangents weight the response of the intrinsic triangle.
-    cotangents = dots / (2 * intrinsic_areas[..., None])                     # [..., corners] Scalar+[faces]
-    conductivities = ((cotangents / 2) * (sides * (Plane & sides))).sum(axis=-1)  # [...] (Point- <- Plane+)[faces]
-    return metrics, intrinsic_areas, defects, curvatures, conductivities
+    rim = topology.reading(topology.exterior[0], 0)                          # Scalar+[V_rim <- V]
+    target_turns = full_turns - rim.adjugate() * (rim * full_turns) / 2      # Bivector+[V]
+    return target_turns - (topology.incidence[2, 0].adjugate() * corner_turns).sum(axis=-1)  # [...] Bivector+[V]
 
 
-def intrinsic_conduction(topology: Topology, vertices: Point, conductivities: Conductivity,
-                         electrodes: np.ndarray, prescribed: Scalar
-                         ) -> tuple[Scalar, Point, Scalar]:
-    """Prescribed electrode potentials determine a steady potential, reference-frame flux density, and streamfunction."""
-    edges = topology.d[0] * vertices                                         # Point-[edges]
-    sides = topology.boundary[2, 1] * edges                                  # [corners] Point-[faces]
-    patches = (sides[0] & sides[1]) / 2                                      # Patch-[faces]
-    areas = patches.norm()                                                   # Scalar+[faces]
-    corner_gradients = sides / (2 * patches)                                 # [corners] Plane+[faces]
-    gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
+def triangle_conductivities(topology: Topology, vertices: Point, metrics: Metric, areas: Scalar) -> Conductivity:
+    """Corner cotangents weight the side dyads into each triangle's area-weighted inverse metric (`[...] (Point- <- Plane+)[F]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    tails, heads = topology.corners[2, 1]
+    dots = -(metrics[..., None](sides[tails]) & sides[heads])                # [..., 3] Scalar+[F]
+    # Each side dyad turns a potential slope into flow along that side;
+    # the corner cotangents weight the isotropic response of the intrinsic triangle.
+    cotangents = dots / (2 * areas[..., None])                               # [..., 3] Scalar+[F]
+    return ((cotangents / 2) * (sides * (Plane & sides))).sum(axis=-1)       # [...] (Point- <- Plane+)[F]
 
-    # The adjugate carries each triangle's current response back to its vertex potentials.
-    conductance = gradient.adjugate()(conductivities(gradient))              # [cases] (Amount- <- Scalar+)[vertices <- vertices]
-    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
-    rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
-    potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
-    integrated_flux = -conductivities(gradient(potential))                   # [cases] Point-[faces]
-    current = integrated_flux / areas                                        # [cases] Point-[faces]
 
-    # Because the area-integrated flux is divergence-free on the reference mesh, turning it by a quarter turn
-    # gives the area-weighted reference gradient of the streamfunction whose level curves follow the intrinsic flow.
-    quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
-    medium = areas * Plane.dual()                                            # (Point- <- Plane+)[faces]
-    laplacian = gradient.adjugate()(medium(gradient))                        # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
-    stream_rhs = unpinned.adjugate()(gradient.adjugate()(quarter_turn >> integrated_flux))  # [cases] Amount-[unpinned]
-    streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
-    return potential, current, streamfunction
+def simplex_gradient(topology: Topology, vertices: Point) -> Gradient:
+    """Corner simplex gradients assemble into the piecewise-linear gradient operator (`(Plane+ <- Scalar+)[F <- V]`) on the reference triangulation."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
+    gradients = sides / (2 * patches)                                        # [3] Plane+[F]
+    return (spdiag(gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[F <- V]
+
+
+def steady_potential(topology: Topology, conductance: Conductance,
+                     free_indices: np.ndarray, boundary_potential: Scalar) -> Scalar:
+    """Current balance at every unpinned vertex determines the steady potential (`[...] Scalar+[V]`) from `boundary_potential`."""
+    free = topology.reading(free_indices, 0).adjugate() * Scalar             # (Scalar+ <- Scalar+)[V <- V_free]
+    rhs = -free.adjugate()(conductance(boundary_potential))                  # [...] Antiscalar-[V_free]
+    return boundary_potential + free(free.adjugate()(conductance(free)).solve(rhs))  # [...] Scalar+[V]

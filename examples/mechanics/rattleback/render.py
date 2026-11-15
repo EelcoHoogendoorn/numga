@@ -1,10 +1,9 @@
-"""A rattleback as built, a wooden boat with steel balls pressed into its sides, above its ground, ray traced on the
-GPU.
+"""GPU ray tracer for a rattleback hull of wood and inset steel balls rolling above a tiled stone table.
 
-The drawing traces the quadrics the mass is read from: each part an intersection of quadrics, `quadric(point) & point`
-negative inside, a ray's first meeting with one part's quadric that lies inside all its others is what it sees, and
-the quadric's plane there is the tangent plane. Each quadric colours the surface it bounds: the painted underside,
-the bare wood of the deck and the cuts; the steel mirrors what lies around it.
+Each solid part is an intersection of quadrics whose pairing `quadric(point) & point` is negative inside and zero on
+the boundary. A ray hits the nearest boundary point that lies inside every sibling quadric of that part, where
+`quadric(point)` supplies the outward tangent plane. Each quadric carries its own surface finish for the painted hull,
+the bare-wood deck and chamfers, and the mirroring steel balls.
 """
 
 from __future__ import annotations
@@ -17,60 +16,64 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import concatenate
-from numga.algebras import PGA3D
-from examples import instantiate
-from examples.util.wgsl import Shader, image_figure, solids, supersampled
-from examples.util.wgsl.solids import lamp_shading, quadric_regions
+from numga.render import solids
+from numga.render.solids import lamp_shading, quadric_regions
+from numga.wgsl import Shader, supersampled
+from examples.util.panels import image_figure
 
-core = instantiate("examples.mechanics.rattleback.core", PGA3D)
-mv = core.mv
+ga = solids.ga
+mv = solids.mv
+origin = solids.origin                                                # [] Point-
 
-n_pixels = 300
-# The views, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the subject as a
-# share of its larger side.
-view = np.radians([25.0, 0.0])
-setup_view = np.radians([58.0, 22.0])
+Point = solids.Point
+Plane = solids.Plane
+Line = solids.Line
+Spin = ga.gatype.bivector().derive.nondegenerate
+Motor = solids.Motor
+Quadric = solids.Quadric
+
+n_default_pixels = 300
+camera_angles = np.radians([25.0, 0.0])
+setup_angles = np.radians([58.0, 22.0])
 margin = 0.1
-# The lamp's direction at unit length; the light that falls everywhere and the glint's sharpness, with the lamp as
-# `lamp_shading` takes them, each finish carrying its own glint.
-toward_lamp = mv.direction([-0.3, -0.6, 0.85])                                 # [] Point-
-lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point-
+
+lamp_offset = mv.direction([-0.3, -0.6, 0.85])                        # [] Point-
+lamp = lamp_offset / lamp_offset.dual().norm()                        # [] Point-
 lighting = dict(ambient=0.38, fill_tilt=0.0, headlight=0.0, gloss=0.0, shininess=32.0)
-# The surfaces' colours; the glint of the satin paint, the bare wood having none; and how much of what lies around
-# it the steel mirrors.
+
 paint = np.array([0.19, 0.52, 0.62])
 deck_wood = np.array([0.91, 0.81, 0.60])
 cut_wood = np.array([0.80, 0.63, 0.42])
 steel = np.array([0.68, 0.68, 0.70])
 paint_gloss = 0.08
 steel_mirroring = 1.0
-# The ground: tiles of warm grey stone, each a little lighter or darker than its neighbours and softly mottled, honed
-# smooth enough to mirror a little of what stands on it, the more the more glancing the view.
+
 stone = np.array([0.47, 0.44, 0.40])
 tile_variation = 0.06
 mottling = 0.07
 mottle_scale = 1.5
 stone_reflectance = 0.04
-# The sky as a mirror shows it: bright at the horizon, deepening overhead, with the lamp a bright disc in it; and how
-# much of the lamp's light the body's shadow takes.
+
 horizon = np.array([0.86, 0.86, 0.86])
 zenith = np.array([0.38, 0.39, 0.41])
 lamp_size = 0.995
 lamp_brightness = 5.0
 shadow = 0.22
-# The tiles' size, and the joints between them: their width and how much darker they are.
+
 tile_size = 2.0
 joint_width = 0.02
 joint_darkness = 0.45
-# The points of the body the framing follows; the turns of its first placement about the vertical it frames, every
-# way the body may come to face as it spins, and the room around them for the body to wander as it rolls.
-n_framing = 400
+
+n_framing_samples = 400
 n_turns = 16
 drift = 0.3
 
-source = """
-// A part: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`; each quadric's finish, the
-// colour of the surface it bounds and how much that mirrors.
+
+# --- plumbing -------------------------------------------------------------------------
+@cache
+def shader() -> Shader:
+    """The cached shader compiles the supersampled WGSL ray tracer for quadric intersections over a reflective stone floor."""
+    wgsl_source = """
 struct Part {
     first: u32,
     end: u32,
@@ -84,26 +87,18 @@ struct Finish {
 
 var<storage, read> parts: array<Part>;
 var<storage, read> finishes: array<Finish>;
-// A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the image
-// half as high as this. Its frame, `axes`, is given from Python.
 var<uniform> camera: Motor;
-// The lamp's direction in the scene, along which the shadows fall and where it shows in the sky.
 var<uniform> lamp_in_scene: Point;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
 
 alias Sample = vec3<f32>;
 
-const origin = mv.w.dual();
-const ground_plane = mv.z;
-// How far a point may lie outside a quadric and still count as inside, for points on two surfaces; and how far
-// past its start a ray leaving a surface looks.
 const tolerance = 1e-4;
 const clearance = 1e-3;
 
-// Every part shares the region intersection; each quadric retains its own finish.
 fn first_hit(start: Point, direction: Point, nearest: f32) -> SurfaceHit {
-    var hit = SurfaceHit(far, 0u, mv.z);
+    var hit = SurfaceHit(far, 0u, ground_plane);
     for (var index = 0u; index < arrayLength(&parts); index++) {
         let part = parts[index];
         let surface = region_hit(part.first, part.end, start, direction, nearest, hit.distance, tolerance);
@@ -114,7 +109,6 @@ fn first_hit(start: Point, direction: Point, nearest: f32) -> SurfaceHit {
     return hit;
 }
 
-// A value for each cell of a lattice, and a smooth blend of them between the cells.
 fn hash(cell: vec2<f32>) -> f32 {
     return fract(sin(dot(cell, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
@@ -127,27 +121,22 @@ fn noise(spot: vec2<f32>) -> f32 {
                mix(hash(cell + vec2<f32>(0.0, 1.0)), hash(cell + vec2<f32>(1.0, 1.0)), blend.x), blend.y);
 }
 
-// The ground where a ray meets it, tiled, mottled and darker where the body stands between it and the lamp; the
-// sky, with the lamp in it, where the ray rises.
 fn surroundings(start: Point, direction: Point) -> vec3<f32> {
     let to_ground = -(ground_plane & start) / (ground_plane & direction);
     let on_ground = start + direction * to_ground;
-    let spot = vec2<f32>(mv.x & on_ground, mv.y & on_ground) / tile_size;
+    let spot = vec2<f32>(plane_x & on_ground, plane_y & on_ground) / tile_size;
     let off_joint = min(abs(spot.x - round(spot.x)), abs(spot.y - round(spot.y))) * tile_size;
     let joint = clamp(1 - off_joint / joint_width, 0.0, 1.0);
     let tone = 1 + tile_variation * (2 * hash(floor(spot)) - 1);
     let mottle = 1 + mottling * (noise(spot * mottle_scale) + noise(spot * mottle_scale * 2.3) / 2 - 0.75);
     let shaded = select(1.0, 1 - shadow, first_hit(on_ground, lamp_in_scene, clearance).distance < far);
-    let floor = stone * tone * mottle * (1 - joint_darkness * joint) * shaded;
-    let rise = max(mv.z & direction, 0.0);
-    let toward_lamp = -(direction.dual() & lamp_in_scene);
-    let heaven = mix(horizon, zenith, sqrt(rise)) + lamp_brightness * smoothstep(lamp_size, 1.0, toward_lamp);
-    // Every ray starts on or above the ground, so it meets the ground only heading down.
-    return select(heaven, floor, (ground_plane & direction) < 0);
+    let floor_colour = stone * tone * mottle * (1 - joint_darkness * joint) * shaded;
+    let rise = max(ground_plane & direction, 0.0);
+    let lamp_alignment = -(direction.dual() & lamp_in_scene);
+    let sky_colour = mix(horizon, zenith, sqrt(rise)) + lamp_brightness * smoothstep(lamp_size, 1.0, lamp_alignment);
+    return select(sky_colour, floor_colour, (ground_plane & direction) < 0);
 }
 
-// A surface lit by the lamp, with its finish's glint, unless the body stands between them: then none of the lamp's
-// light and glint reaches it, only the light that falls everywhere.
 fn lit_or_shadowed(hit: SurfaceHit, start: Point, direction: Point) -> vec3<f32> {
     let normal = turned(slopes(hit.tangent));
     let lamp_share = select(1.0, 0.0, first_hit(start + direction * hit.distance, lamp_in_scene, clearance).distance < far);
@@ -155,7 +144,6 @@ fn lit_or_shadowed(hit: SurfaceHit, start: Point, direction: Point) -> vec3<f32>
     return finish.colour * mix(ambient, brightness(normal), lamp_share) + finish.gloss * lamp_share * glint(normal);
 }
 
-// What a ray sees, without looking into mirrors.
 fn seen(start: Point, direction: Point) -> vec3<f32> {
     let hit = first_hit(start, direction, clearance);
     if (hit.distance < far) {
@@ -165,20 +153,16 @@ fn seen(start: Point, direction: Point) -> vec3<f32> {
 }
 
 fn sample(place: vec2<f32>) -> Sample {
-    // The ray's start in the camera's frame: across and up the image, and `back` toward the viewer.
-    let across = screen(place) * half_height;
-    let start = camera >> (origin + (axes.dual() * vec3<f32>(across, back)).sum());
-    let direction = camera >> -mv.z.dual();
+    let screen_offset = screen(place) * half_height;
+    let start = camera >> (origin + (axes.dual() * vec3<f32>(screen_offset, back)).sum());
+    let direction = camera >> -ground_plane.dual();
     let hit = first_hit(start, direction, 0.0);
     let to_ground = -(ground_plane & start) / (ground_plane & direction);
     if (hit.distance >= far || hit.distance > to_ground) {
-        // The honed stone mirrors a little of what the ray, reflected in the ground, goes on to see.
         let glancing = pow(1 - abs(ground_plane & direction), 5.0);
         let reflectance = stone_reflectance + (1 - stone_reflectance) * glancing;
         return mix(surroundings(start, direction), seen(start + direction * to_ground, ground_plane >> direction), reflectance);
     }
-    // A mirroring surface shows what the ray, reflected in its tangent plane, goes on to see, tinted by its own
-    // colour as a metal is, and less tinted the more glancing the ray.
     let point = start + direction * hit.distance;
     let normal = hit.tangent.normalized();
     let finish = finishes[hit.quadric];
@@ -187,79 +171,84 @@ fn sample(place: vec2<f32>) -> Sample {
     return mix(lit_or_shadowed(hit, start, direction), reflectance * seen(point, normal >> direction), finish.mirroring);
 }
 """
+    return Shader(
+        supersampled() + quadric_regions() + lamp_shading() + solids.tangent_seen() + wgsl_source,
+        ga,
+        dict(Point=Point, Plane=Plane, Tangent=Plane, Motor=Motor, Quadric=Quadric),
+        dict(
+            axes=solids.axes, origin=origin, plane_x=mv.x, plane_y=mv.y, ground_plane=mv.z,
+            stone=stone, tile_variation=tile_variation, mottling=mottling, mottle_scale=mottle_scale,
+            stone_reflectance=stone_reflectance, horizon=horizon, zenith=zenith, lamp_size=lamp_size,
+            lamp_brightness=lamp_brightness, shadow=shadow, tile_size=tile_size,
+            joint_width=joint_width, joint_darkness=joint_darkness,
+        ),
+    )
 
 
-# --- plumbing -------------------------------------------------------------------------
-@cache
-def shader() -> Shader:
-    return Shader(supersampled() + quadric_regions() + lamp_shading() + solids.tangent_seen() + source, PGA3D,
-                  dict(Point=core.Point, Plane=core.Cut, Cut=core.Cut, Tangent=core.Cut, Motor=core.Motor, Quadric=core.Quadric),
-                  dict(axes=solids.axes, stone=stone, tile_variation=tile_variation, mottling=mottling,
-                       mottle_scale=mottle_scale, stone_reflectance=stone_reflectance, horizon=horizon, zenith=zenith,
-                       lamp_size=lamp_size, lamp_brightness=lamp_brightness, shadow=shadow, tile_size=tile_size,
-                       joint_width=joint_width, joint_darkness=joint_darkness))
-
-
-def scene(built: core.Body, motor: core.Motor) -> dict:
-    """The parts placed by a motor, their quadrics one after another, and each quadric's finish: the wood first,
-    then each ball."""
-    wood = built.wood()                                                         # [quadrics] Plane+ <- Point-
-    quadrics = concatenate([wood, built.balls])                                 # [quadrics] Plane+ <- Point-
-    n_wood, n_balls = wood.shape[0], built.balls.shape[0]
+def scene(wood: Quadric, balls: Quadric, motor: Motor) -> dict:
+    """Wood and steel quadrics placed by `motor` (`[n_quadrics] Plane+ <- Point-`) pair with their surface finishes."""
+    n_wood, n_balls = wood.shape[0], balls.shape[0]
+    n_quadrics = n_wood + n_balls
+    quadrics = concatenate([wood, balls])                             # [n_quadrics] Plane+ <- Point-
     ends = np.concatenate([[n_wood], n_wood + 1 + np.arange(n_balls)])
     starts = np.concatenate([[0], ends[:-1]])
-    # The underside painted, the deck and the cuts bare wood; the pockets lie under the balls.
     colours = np.concatenate([[paint, deck_wood], np.repeat([cut_wood], n_wood - 2, axis=0),
                               np.repeat([steel], n_balls, axis=0)])
-    gloss = np.concatenate([[paint_gloss], np.zeros(n_wood - 1 + n_balls)])
+    gloss = np.concatenate([[paint_gloss], np.zeros(n_quadrics - 1)])
     mirroring = np.concatenate([np.zeros(n_wood), np.full(n_balls, steel_mirroring)])
     return dict(parts=dict(first=starts, end=ends), quadrics=solids.placed(quadrics, motor),
                 finishes=dict(colour=colours, gloss=gloss, mirroring=mirroring))
 
 
-def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float, clearance: float,
-            pixels: int) -> solids.View:
-    """A view `pixels` across framing the body over every placement and its shadow on the ground, cast along the
-    lamp, with `clearance` to spare around each, the height rounded to whole pixels."""
-    body = motors[..., None] >> samples[::max(1, samples.shape[0] // n_framing)]   # [..., points] Point-
-    shadows = (body & lamp) ^ mv.z                                                # [..., points] Point-
-    framed = solids.view([body, shadows], clearance, elevation, azimuth, margin, pixels)
-    n_rows = framed.shape[0]
-    return solids.View(framed.camera, np.array([framed.half[0], framed.half[0] * n_rows / pixels]), pixels)
+def framing(motors: Motor, samples: Point, elevation: float, azimuth: float, clearance: float,
+            n_pixels: int) -> solids.View:
+    """Sampled body points and their ground shadows across `motors` set an orthographic camera view `n_pixels` wide."""
+    stride = max(1, samples.shape[0] // n_framing_samples)
+    framed_samples = samples[::stride]
+    n_points = framed_samples.shape[0]
+    body_points = motors[..., None] >> framed_samples                 # [..., n_points] Point-
+    shadow_points = (body_points & lamp) ^ mv.z                       # [..., n_points] Point-
+    camera_view = solids.view([body_points, shadow_points], clearance, elevation, azimuth, margin, n_pixels)
+    n_rows = camera_view.shape[0]
+    return solids.View(camera_view.camera, np.array([camera_view.half[0], camera_view.half[0] * n_rows / n_pixels]),
+                       n_pixels)
 
 
-def picture(built: core.Body, motor: core.Motor, seen: solids.View) -> np.ndarray:
-    """The body and its shadow, `[rows, columns, 3]` bytes."""
-    traced = shader()(seen.shape, **scene(built, motor), camera=seen.camera, back=4 * seen.half.max(),
-                      half_height=seen.half[1], lamp=solids.seen_lamp(seen, lamp), lamp_in_scene=lamp, **lighting,
-                      **solids.steps(seen))["image"]
-    return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
+def picture(wood: Quadric, balls: Quadric, motor: Motor, camera_view: solids.View) -> np.ndarray:
+    """Ray tracing the placed quadrics produces one `[n_rows, n_columns, 3]` RGB byte image of the body and its shadow."""
+    raw_image = shader()(
+        camera_view.shape, **scene(wood, balls, motor), camera=camera_view.camera,
+        back=4 * camera_view.half.max(), half_height=camera_view.half[1],
+        lamp=solids.seen_lamp(camera_view, lamp), lamp_in_scene=lamp,
+        **lighting, **solids.steps(camera_view),
+    )["image"]
+    return np.round(np.clip(raw_image, 0, 1) * 255).astype(np.uint8)
 
 
-def turned(motor: core.Motor) -> core.Motor:
-    """A placement turned about the vertical line through the centre of mass, a whole turn in `n_turns` steps
-    `[turns]`."""
-    # The vertical line through the centre: the join of the centre with the upward direction, made extrinsic.
-    vertical = ((motor >> mv.w.dual()) & mv.z.dual()) * solids.flip                   # [] Line+
-    return (vertical.normalized() * (np.pi * np.arange(n_turns) / n_turns)).exp() * motor
+def spin_orbit(motor: Motor) -> Motor:
+    """Rotations about the vertical line through the centre of mass sweep `motor` across `n_turns` yaw orientations (`[n_turns] Motor+`)."""
+    vertical_line = ((motor >> origin) & mv.z.dual()) * solids.flip   # [] Line+
+    turns = (vertical_line.normalized() * (np.pi * np.arange(n_turns) / n_turns)).exp()  # [n_turns] Motor+
+    return turns * motor
 
 
-def frames(motors: Iterable[core.Motor], built: core.Body, samples: core.Point) -> Iterator[np.ndarray]:
-    """The rolling body, as `sized_frames` draws it `n_pixels` across."""
-    return sized_frames(motors, built, samples, n_pixels)
+def frames(wood: Quadric, balls: Quadric, samples: Point,
+           states: Iterable[tuple[Motor, Spin]]) -> Iterator[np.ndarray]:
+    """Yields rendered `[n_rows, n_default_pixels, 3]` frames as `states` stream from the integrator."""
+    return sized_frames(wood, balls, samples, states, n_default_pixels)
 
 
-def sized_frames(motors: Iterable[core.Motor], built: core.Body, samples: core.Point,
-                 pixels: int) -> Iterator[np.ndarray]:
-    """The rolling body, `pixels` across, viewed from a fixed camera framing its first placement turned every way
-    about the vertical, with room for it to wander."""
-    motors = iter(motors)
-    first = next(motors)
-    seen = framing(turned(first), samples, *view, drift, pixels)
-    for motor in chain([first], motors):
-        yield picture(built, motor, seen)
+def sized_frames(wood: Quadric, balls: Quadric, samples: Point,
+                 states: Iterable[tuple[Motor, Spin]], n_pixels: int) -> Iterator[np.ndarray]:
+    """Yields rendered `[n_rows, n_pixels, 3]` frames from a fixed camera framed around the initial placement."""
+    state_stream = iter(states)
+    first_state = next(state_stream)
+    first_motor, _ = first_state
+    camera_view = framing(spin_orbit(first_motor), samples, *camera_angles, drift, n_pixels)
+    for motor, _ in chain([first_state], state_stream):
+        yield picture(wood, balls, motor, camera_view)
 
 
-def draw_setup(built: core.Body, samples: core.Point, motor: core.Motor) -> plt.Figure:
-    """The body at rest, seen from above, its steel balls on opposite corners."""
-    return image_figure(picture(built, motor, framing(motor, samples, *setup_view, 0.0, n_pixels)))
+def setup_figure(wood: Quadric, balls: Quadric, samples: Point, motor: Motor) -> plt.Figure:
+    """An overhead view of the stationary rattleback displays the deck chamfers and opposite steel balls."""
+    return image_figure(picture(wood, balls, motor, framing(motor, samples, *setup_angles, 0.0, n_default_pixels)))

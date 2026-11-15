@@ -1,46 +1,62 @@
-"""Unit tests for the scenegraph, robot kinematics, and compound optics example, and one frame of the robot's sweep
-drawn."""
+"""Coverage and mathematical checks for the articulated scenegraph and compound two-lens camera example."""
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
+
 from examples.geometry.scenegraph import core, render, scenarios
 
 mv = core.mv
 
 
 def euclidean(points: core.Point) -> np.ndarray:
-    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
+    """Euclidean `(x, y, z)` coordinates of projective `points` from pairings with the coordinate planes."""
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def test_anisotropic_scale_extensor():
-    """The anisotropic scaling extensor scales each coordinate and keeps the weight."""
+    """Anisotropic scaling stretches each spatial coordinate while preserving unit point weight."""
     scaled = core.anisotropic_scale(2.0, 0.5, 3.0)(mv.point([3.0, 4.0, 5.0]))
-    np.testing.assert_allclose(euclidean(scaled), [6.0, 2.0, 15.0], atol=1e-12)
-    np.testing.assert_allclose((mv.w & scaled).to_array(), 1.0, atol=1e-12)
+    assert ((scaled - mv.point([6.0, 2.0, 15.0])).antinorm() < 1e-9).all()
+    assert ((mv.w & scaled) - 1).abs() < 1e-9
 
 
 def test_robot_arm_kinematics():
-    """Forward kinematics yields five rigidly placed bodies."""
+    """Forward kinematics places five rigid bodies and four joint pivots while preserving unit weights."""
     unit_box = core.canonical_unit_box()
-    bodies_to_world, _ = core.robot_arm((0.2, -0.3, 0.5, -0.2))
+    bodies_to_world, pivots = core.robot_arm((0.2, -0.3, 0.5, -0.2))
     assert bodies_to_world.shape == (5,)
-    verts = bodies_to_world[:, None](unit_box[None, :])
-    np.testing.assert_allclose((mv.w & verts).to_array(), 1.0, atol=1e-10)
+    assert pivots.shape == (4,)
+    vertices = bodies_to_world[:, None](unit_box[None, :])
+    assert (((mv.w & vertices) - 1).abs() < 1e-9).all()
 
 
-def test_compound_optics_lands_on_the_sensor():
-    """The multi-lens camera sends world points onto the sensor plane z = -1.25."""
-    pose = core.look_at(mv.point([0.0, -4.0, 1.5]), mv.point([0.0, 0.0, 1.0]))
+def test_compound_optics_lands_on_sensor():
+    """Compound two-lens refraction lands world points on the sensor plane `z == -1.25`."""
+    pose = core.aim_motor(mv.point([0.0, -4.0, 1.5]), mv.point([0.0, 0.0, 1.0]))
     front_lens, rear_lens, _ = core.lens_train(1.0, 0.8, -0.3)
-    pupil = (mv.xw * 0.02).exp() >> core.origin
-    camera = core.lens_camera(pose, front_lens, rear_lens, pupil, mv.z + 1.25 * mv.w)
+    pupil_shift = (mv.xw * 0.02).exp()
+    pupil = pupil_shift >> core.origin
+    sensor_plane = mv.z + 1.25 * mv.w
+    camera = core.lens_camera(pose, front_lens, rear_lens, pupil, sensor_plane)
     sensor_hit = camera(mv.point([0.1, 0.2, 1.0]))
-    np.testing.assert_allclose(euclidean(sensor_hit)[2], -1.25, atol=1e-10)
+    assert (sensor_plane & sensor_hit).abs() < 1e-9
+    np.testing.assert_allclose(euclidean(sensor_hit)[2], -1.25, atol=1e-9)
 
 
-def test_one_frame_of_the_sweep_draws():
-    next(render.animate_scenegraph(scenarios.robot_sweep(1)))
+def test_figures_and_one_sweep_frame_render():
+    """Static scenegraph figures and one animation frame render without saving files."""
+    world_vertices, projected_pixels, camera_pose, rays = scenarios.still_scenegraph()
+    for fig in (
+        render.scenegraph_figure(world_vertices, projected_pixels, camera_pose, rays),
+        render.world_scene_figure(world_vertices, camera_pose, rays),
+        render.sensor_photograph_figure(world_vertices, projected_pixels, camera_pose),
+    ):
+        assert fig.axes
+        plt.close(fig)
+
+    frame = next(render.scenegraph_animation(scenarios.arm_sweep_states(1)))
+    assert frame.ndim == 3 and frame.shape[-1] == 3

@@ -1,5 +1,4 @@
-"""Two ellipsoids posed apart, touching and overlapping, classified by the blends of their dual quadrics, and the second
-sliding along the normal through contact with the first."""
+"""Scene parameters and sliding-contact setup for two planar ellipsoids classified through blends of their dual quadrics."""
 
 from __future__ import annotations
 
@@ -8,109 +7,124 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.quadrics.quadric_collision.core import (
-    Plane, Polarity, Quadric, Scalar, blend, cubic_peak, ellipsoid, infinity, motor, mv, tangent_plane,
+    Motor, Plane, Polarity, Point, Quadric, Scalar,
+    cubic_peak, infinity, mv, placement_motor, quadric_blend, rest_ellipsoid, tangent_plane,
 )
 
-# The first ellipsoid: its semi-axes, its centre and its turn.
-FIRST_SEMI = (2.0, 1.0)
-FIRST_CENTRE = (-1.2, 0.0)
-FIRST_TURN = np.radians(25)
-# The second ellipsoid: its semi-axes and its turn; it touches the first where the first's normal is turned
-# this far from x, and is posed apart, touching and overlapping by these offsets along that normal.
-SECOND_SEMI = (1.6, 0.9)
-SECOND_TURN = np.radians(-35)
-CONTACT_NORMAL = np.radians(22)
-OFFSETS = np.array([0.8, 0.0, -0.6])
-# The offsets the second ellipsoid slides through, from apart into the first, and the duration of a frame.
-SLIDE = np.linspace(0.8, -0.6, 85)
-DURATION_MS = 40
-# The shares at which the blend's determinant, a cubic, is sampled to fix it, and the shares it is drawn at.
-SAMPLES = [[0.0], [1.0], [2.0], [-1.0]]
-N_SHARES = 500
+# First ellipsoid semi-axes, centre, and orientation angle.
+first_semi = (2.0, 1.0)
+first_centre = (-1.2, 0.0)
+first_turn = np.radians(25)
+# Second ellipsoid semi-axes, orientation angle, contact normal angle on the first ellipsoid,
+# and static test offsets (apart, touching, overlapping) along that normal.
+second_semi = (1.6, 0.9)
+second_turn = np.radians(-35)
+contact_angle = np.radians(22)
+pose_offsets = np.array([0.8, 0.0, -0.6])
+n_poses = len(pose_offsets)
+# Offsets swept during the animation and per-frame duration in milliseconds.
+n_frames = 85
+slide_offsets = np.linspace(0.8, -0.6, n_frames)
+frame_duration_ms = 40
+# Four shares fixing the cubic determinant, and dense shares for plotting the determinant curve.
+cubic_samples = [[0], [1], [2], [-1]]
+n_shares = 500
 
 
 # --- math -----------------------------------------------------------------------------
-def pair():
-    """The first ellipsoid, the second at its own centre, the first's normal at the contact, and the motion that
-    lays the second against the first along that normal."""
-    placement = motor(*FIRST_CENTRE, FIRST_TURN)
-    first_shape = ellipsoid(*FIRST_SEMI)                                       # [] Point- <- Plane+
+def touching_pair() -> tuple[Quadric, Quadric, Plane, Motor]:
+    """The first ellipsoid (`[] Point- <- Plane+`), the unplaced second ellipsoid, the contact normal (`[] Plane+`), and the motor (`[] Motor+`) bringing them into tangency meet at one shared contact point."""
+    placement = placement_motor(*first_centre, first_turn)                     # [] Motor+
+    first_shape = rest_ellipsoid(*first_semi)                                  # [] Point- <- Plane+
     first_ellipsoid = placement >> first_shape(placement << Plane)             # [] Point- <- Plane+
 
-    # The second ellipsoid, turned, is translated so that its tangent point with the opposite normal lands
-    # on the first ellipsoid's tangent point with the chosen normal.
-    normal = (mv.xy * (-CONTACT_NORMAL / 2)).exp() >> mv.x                     # [] Plane+
-    second_ellipsoid = ellipsoid(*SECOND_SEMI)                                 # [] Point- <- Plane+
-    turn = motor(0.0, 0.0, SECOND_TURN)
+    rotor = (mv.xy * (-contact_angle / 2)).exp()                               # [] Motor+
+    normal = rotor >> mv.x                                                     # [] Plane+
+    second_ellipsoid = rest_ellipsoid(*second_semi)                            # [] Point- <- Plane+
+    turn = placement_motor(0.0, 0.0, second_turn)                              # [] Motor+
     turned_second = turn >> second_ellipsoid(turn << Plane)                    # [] Point- <- Plane+
+    # Translate the turned second ellipsoid so its opposite-normal contact lands on the first's contact.
     target = first_ellipsoid(tangent_plane(first_ellipsoid, normal))           # [] Point-
     start = turned_second(tangent_plane(turned_second, -normal))               # [] Point-
-    # Their displacement is the difference of the two points taken at unit weight.
     displacement = target.normalized() - start.normalized()                    # [] Point-
     translator = ((infinity ^ displacement.dual()) * -0.5).exp()               # [] Motor+
-    touch = translator * turn                                                  # [] Motor+
-    return first_ellipsoid, second_ellipsoid, normal, touch
+    touch_motor = translator * turn                                            # [] Motor+
+    return first_ellipsoid, second_ellipsoid, normal, touch_motor
 
 
-def collision():
-    """A second ellipsoid touching the first along a chosen normal, then moved apart and into it."""
-    first_ellipsoid, second_ellipsoid, normal, touch = pair()
-    # The poses along the normal: apart, touching, and into the first.
-    shifts = ((infinity ^ (normal * OFFSETS)) * -0.5).exp()                    # [poses] Motor+
-    poses = shifts * touch                                                     # [poses] Motor+
-    placed_second = poses >> second_ellipsoid(poses << Plane)                  # [poses] Point- <- Plane+
+def posed_pair() -> tuple[Quadric, Quadric, Scalar, Scalar, Plane, Point]:
+    """Apart, touching, and overlapping poses (`[n_poses]`) along `normal` yield positive, zero, and negative peak blend determinants, while the singular blend at contact locates the shared tangent plane and contact point."""
+    first_ellipsoid, second_ellipsoid, normal, touch_motor = touching_pair()
+    shifts = ((infinity ^ (normal * pose_offsets)) * -0.5).exp()               # [n_poses] Motor+
+    poses = shifts * touch_motor                                               # [n_poses] Motor+
+    placed_second = poses >> second_ellipsoid(poses << Plane)                  # [n_poses] Point- <- Plane+
 
-    # Four samples of the blend's determinant fix the cubic exactly; only locating its peak leaves the
-    # algebra.
-    parameter, maximum = cubic_peak(blend(first_ellipsoid, placed_second, mv.scalar(SAMPLES)[:, None]).dual().det())   # [poses] Scalar+, Scalar+
+    sample_shares = mv.scalar(cubic_samples)[:, None]                          # [4, 1] Scalar+
+    peak_shares, peak_dets = cubic_peak(quadric_blend(first_ellipsoid, placed_second, sample_shares).dual().det())   # [n_poses] Scalar+, Scalar+
 
-    # At contact the blend at the peak has a null plane, its last singular vector: the shared tangent, which
-    # each ellipsoid maps to the same contact point.
-    _, _, planes = blend(first_ellipsoid, placed_second[1], parameter[1]).dual().svd()
+    # At contact (`pose_offsets[1] == 0`), the singular peak blend's null plane is the shared tangent.
+    _, _, planes = quadric_blend(first_ellipsoid, placed_second[1], peak_shares[1]).dual().svd()
     contact_plane = planes[-1].normalized()                                    # [] Plane+
     contact_point = first_ellipsoid(contact_plane).normalized()                # [] Point-
-    return first_ellipsoid, placed_second, parameter, maximum, contact_plane, contact_point
+    return first_ellipsoid, placed_second, peak_shares, peak_dets, contact_plane, contact_point
 
 
-def slide(offsets: np.ndarray) -> tuple[Quadric, Plane, Scalar, Iterator[tuple]]:
-    """The first ellipsoid, its tangent plane with the chosen normal, the shares the determinant is drawn at, and the
-    second ellipsoid at each offset along the normal from touching, with what the figure draws of it."""
-    first_ellipsoid, second_ellipsoid, normal, touch = pair()
+def slide_setup(offsets: np.ndarray) -> tuple[Quadric, Plane, Scalar, Iterator[tuple[Quadric, Plane, Plane, Polarity, Scalar, Scalar, Scalar]]]:
+    """Pairs the stationary first ellipsoid, its outward tangent, and the share axis (`[n_shares] Scalar+`) with a generator yielding the sliding second ellipsoid and its blend diagnostics at each offset."""
+    first_ellipsoid, second_ellipsoid, normal, touch_motor = touching_pair()
     first_tangent = tangent_plane(first_ellipsoid, normal)                     # [] Plane+
-    shares = mv.scalar(np.linspace(0.001, 0.999, N_SHARES)[:, None])           # [shares] Scalar+
+    shares = mv.scalar(np.linspace(0.001, 0.999, n_shares)[:, None])           # [n_shares] Scalar+
+    sample_shares = mv.scalar(cubic_samples)                                   # [4] Scalar+
 
-    def moments() -> Iterator[tuple[Quadric, Plane, Plane, Polarity, Scalar, Scalar, Scalar]]:
-        # Each moment: the second ellipsoid, its tangent plane with the opposite normal and the midplane of the two
-        # tangents, the blend at the determinant's peak as a map from points to their polar planes, and the
-        # determinant along the blends with its peak.
+    def states() -> Iterator[tuple[Quadric, Plane, Plane, Polarity, Scalar, Scalar, Scalar]]:
         for offset in offsets:
             shift = ((infinity ^ (normal * offset)) * -0.5).exp()              # [] Motor+
-            pose = shift * touch                                               # [] Motor+
+            pose = shift * touch_motor                                         # [] Motor+
             placed_second = pose >> second_ellipsoid(pose << Plane)            # [] Point- <- Plane+
-            parameter, maximum = cubic_peak(blend(first_ellipsoid, placed_second, mv.scalar(SAMPLES)).dual().det())   # [] Scalar+, Scalar+
+            peak_share, peak_det = cubic_peak(quadric_blend(first_ellipsoid, placed_second, sample_shares).dual().det())   # [] Scalar+, Scalar+
             second_tangent = tangent_plane(placed_second, -normal)             # [] Plane+
             midplane = ((first_tangent - second_tangent) * 0.5).normalized()   # [] Plane+
-            yield (placed_second, second_tangent, midplane, blend(first_ellipsoid, placed_second, parameter).inverse(),
-                   blend(first_ellipsoid, placed_second, shares).dual().det(), parameter, maximum)
+            yield (
+                placed_second,
+                second_tangent,
+                midplane,
+                quadric_blend(first_ellipsoid, placed_second, peak_share).inverse(),
+                quadric_blend(first_ellipsoid, placed_second, shares).dual().det(),
+                peak_share,
+                peak_det,
+            )
 
-    return first_ellipsoid, first_tangent, shares, moments()
+    return first_ellipsoid, first_tangent, shares, states()
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation
     from examples.quadrics.quadric_collision import render
+    from examples.util.animation import save_animation
 
-    save_animation(render.animate_collision(*slide(SLIDE)), "quadric_collision", DURATION_MS, forward_then_back=True)
+    first_ellipsoid, first_tangent, shares, states = slide_setup(slide_offsets)
+    recorded = []
+
+    def streamed():
+        for state in states:
+            recorded.append(state)
+            yield state
+
+    save_animation(
+        render.collision_animation(first_ellipsoid, first_tangent, shares, streamed()),
+        "quadric_collision",
+        frame_duration_ms,
+        forward_then_back=True,
+    )
 
     # checks
-    # The poses are apart, touching and overlapping, by the sign of the blend's peak determinant; the
-    # contact plane is a common tangent, and both ellipsoids map it to one contact point.
-    first_ellipsoid, placed_second, _, maximum, contact_plane, contact_point = collision()
-    assert maximum[0] > 0 and maximum[2] < 0
-    np.testing.assert_allclose(maximum[1].to_array(), 0, atol=1e-12)
-    np.testing.assert_allclose((contact_plane & first_ellipsoid(contact_plane)).to_array(), 0, atol=1e-12)
-    np.testing.assert_allclose((placed_second[1](contact_plane).normalized() & contact_point).norm().to_array(), 0, atol=1e-12)
+    _, placed_second, _, peak_dets, contact_plane, contact_point = posed_pair()
+    assert peak_dets[0] > 0 and peak_dets[2] < 0
+    assert peak_dets[1].abs() < 1e-12
+    assert (contact_plane & first_ellipsoid(contact_plane)).abs() < 1e-12
+    assert (contact_plane & placed_second[1](contact_plane)).abs() < 1e-12
+    assert (placed_second[1](contact_plane).normalized() & contact_point).norm() < 1e-12
+    assert recorded[0][6] > 0 and recorded[-1][6] < 0
 
 
 if __name__ == "__main__":

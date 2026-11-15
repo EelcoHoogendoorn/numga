@@ -16,6 +16,8 @@ import pytest
 
 # One precision for JAX across the whole suite, double, read by JAX when it is first imported; no test switches it.
 os.environ["JAX_ENABLE_X64"] = "1"
+# Unit and coverage tests never write figures or animations to `PLOT_DIR`, `PINNED_DIR`, or `DUMP_DIRS`.
+os.environ["NUMGA_NO_PLOT_WRITES"] = "1"
 
 # A test run, and in the full sweep each test file, is one job of the pool: one core and 1 GB unless the file declares
 # more, `pytestmark = pytest.mark.memory(gb=4)`. A job the pool kills for exceeding its memory runs again with twice

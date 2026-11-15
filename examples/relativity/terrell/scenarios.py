@@ -1,10 +1,8 @@
-"""Scenes for Terrell rotation: a sphere above a cube passing a camera, photographed at rest, at six
-tenths and at nine tenths of the speed of light, each time its centre is seen along the same line of
-sight."""
+"""Scene parameters and animation driver photograph a sphere and cube passing at three relativistic speeds."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 
@@ -12,67 +10,66 @@ from examples.relativity.terrell import core
 
 mv = core.mv
 travel, line_of_sight, up = core.space
-# The distance from the camera to the track, the speeds of the cases, and the lines of sight to the
-# centre of the pair as it passes, as angles from the motion.
 track_distance = 4.5
 body_speeds = np.array([0.0, 0.6, 0.9])
 n_frames = 108
 sightings = np.linspace(3 * np.pi / 4, np.pi / 4, n_frames)
-# The sphere's radius and the cube's half-width, and how far above and below the centre of the pair
-# their centres are.
 sphere_radius = 1.0
 half_width = 1.0
 height = 1.6
-# The angles between the sphere's meridians and between its parallels, and how far its parallels reach from its
-# equator; the samples around its outline in the checks; the duration of a frame.
 meridian_spacing = np.pi / 4
 parallel_spacing = np.pi / 6
 parallel_reach = np.pi / 3
 n_outline = 96
-duration_ms = 40
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def cameras() -> Iterator[core.Antivector]:
-    """Per frame, where the camera is in each body's frame `[cases]` when the centre of the pair is seen along that
-    frame's line of sight."""
-    frame = core.boost(body_speeds)                                                 # [cases] Rotor+
-    for sighting in sightings:
-        yield core.rest_camera(frame, core.sighting(track_distance, sighting))      # [cases] Antivector-
+def camera_stream() -> Iterator[core.Antivector]:
+    """Yields the camera's rest-frame position (`[3] Antivector-`) for the three body speeds across all sightings."""
+    frames = core.boost_rotors(body_speeds)                                     # [3] Rotor+
+    return core.camera_positions(frames, track_distance, sightings)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def photographs(cameras: Iterator[core.Antivector]) -> Iterator[np.ndarray]:
-    """The pair photographed from each of the cameras, one lane per speed."""
+def photograph_frames(cameras: Iterable[core.Antivector]) -> Iterator[np.ndarray]:
+    """Yields multi-lane stereographic photographs from streamed camera positions."""
     from examples.relativity.terrell import render
 
-    return render.animate_photographs(core.boost(body_speeds), cameras, height * up, sphere_radius, -height * up,
-                                      half_width, meridian_spacing, parallel_spacing, parallel_reach)
+    frames = core.boost_rotors(body_speeds)                                     # [3] Rotor+
+    return render.photographs_animation(
+        frames, height * up, sphere_radius, -height * up, half_width,
+        meridian_spacing, parallel_spacing, parallel_reach, cameras,
+    )
 
 
 def main() -> None:
+    """Streams the Terrell rotation animation once and checks aberration and circular-outline invariants."""
     from examples.util.animation import save_animation
 
-    save_animation(photographs(cameras()), "terrell_rotation", duration_ms)
+    camera_states: list[core.Antivector] = []
+
+    def recorded_cameras() -> Iterator[core.Antivector]:
+        for state in camera_stream():
+            camera_states.append(state)
+            yield state
+
+    save_animation(photograph_frames(recorded_cameras()), "terrell_rotation", frame_duration_ms)
 
     # checks
-    # Seen at right angles to its motion, the body is photographed from behind the perpendicular, by the
-    # speed's fraction of the distance: turned by the arcsine of the speed.
-    frame = core.boost(body_speeds)                                                 # [cases] Rotor+
-    camera = core.rest_camera(frame, core.sighting(track_distance, np.pi / 2))      # [cases] Antivector-
-    leaning = (mv.x & camera) / camera.squared().square_root()                      # [cases] Scalar+
-    np.testing.assert_allclose(leaning.to_array(), -body_speeds, atol=1e-12)
-    # The sphere's outline is a circle on the sky in every frame: its rays lie in one hyperplane through
-    # the camera, so the join of any four of them vanishes.
-    camera = core.rest_camera(frame, core.sighting(track_distance, sightings[0]))   # [cases] Antivector-
-    angles = np.linspace(0, 2 * np.pi, n_outline, endpoint=False)
-    grazing = core.outline(camera, height * up, sphere_radius, angles)              # [cases, outline] Antivector-
-    outline = frame[:, None] >> core.rays(camera[:, None], grazing)                 # [cases, outline] Antivector-
-    # Each ray scaled to one unit of the camera's time.
-    points = outline / (mv.t & outline)                                             # [cases, outline] Antivector-
+    frames = core.boost_rotors(body_speeds)                                     # [3] Rotor+
+    sideways_camera = core.rest_camera(frames, core.sighting_events(track_distance, np.pi / 2))  # [3] Antivector-
+    leaning = (mv.x & sideways_camera) / sideways_camera.antinorm()             # [3] Scalar+
+    assert ((leaning + body_speeds).abs() < 1e-8).all()
+
+    first_camera = camera_states[0]                                             # [3] Antivector-
+    outline_angles = np.linspace(0, 2 * np.pi, n_outline, endpoint=False)
+    grazing_points = core.grazing_outline(first_camera, height * up, sphere_radius, outline_angles)  # [3, n_outline] Antivector-
+    boosted_rays = frames[:, None] >> core.rest_rays(first_camera[:, None], grazing_points)  # [3, n_outline] Antivector-
+    sky_points = boosted_rays / (mv.t & boosted_rays)                           # [3, n_outline] Antivector-
     quarter = n_outline // 4
-    joined = points[:, 0] & points[:, quarter] & points[:, 2 * quarter] & points[:, 3 * quarter - 5]   # [cases] Scalar+
-    np.testing.assert_allclose(joined.to_array(), 0, atol=1e-12)
+    four_ray_join = sky_points[:, 0] & sky_points[:, quarter] & sky_points[:, 2 * quarter] & sky_points[:, 3 * quarter - 5]  # [3] Scalar+
+    assert (four_ray_join.abs() < 1e-8).all()
 
 
 if __name__ == "__main__":

@@ -1,14 +1,32 @@
-"""The Kane–Mele flake: its levels, its states nearest zero, and its helical edge states, computed and drawn on a small
-flake."""
+"""Small-flake coverage test for the Kane–Mele topological insulator: Hamiltonian Hermiticity,
+mass-sweep spectrum, gap-edge densities, helical spin evolution, and all four renderers."""
 
 from __future__ import annotations
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 from examples.quantum.kane_mele import core, render, scenarios
 
 
-def test_a_small_flake_is_swept_spread_and_drawn():
-    flake = core.flake(8, scenarios.RIM)
-    _, _, spins = scenarios.helical(flake, n_frames=1)
-    render.draw_levels(scenarios.CASES, *scenarios.sweep(flake, scenarios.CASES), 3 * 3**0.5 * scenarios.SPIN_ORBIT)
-    render.draw_states(flake, scenarios.nearest(flake, scenarios.CASES))
-    next(render.animate_spin(flake, spins, 64))
+def test_small_flake_spectrum_evolution_and_figures():
+    flake = scenarios.honeycomb_flake(6, scenarios.rim_fraction)
+    energy = core.hamiltonian(
+        flake.bonds, flake.next_bonds, flake.positions, flake.between,
+        flake.sublattice, scenarios.spin_orbit, 0.0,
+    )
+    in_gap, edge_states = core.sector_levels(energy, core.Even, 8)
+    assert (((~energy - energy) * edge_states).scalar_norm_squared().sites.sum() < 1e-20).all()
+
+    energies, shares = scenarios.mass_sweep(flake, scenarios.sample_masses, 4)
+    densities = scenarios.gap_edge_densities(flake, scenarios.sample_masses)
+    spins = core.spin_evolution(
+        edge_states, in_gap, flake.start_site, scenarios.initial_spinor, np.array([0.0, 1.0]),
+    )
+
+    plt.close(render.flake_figure(flake))
+    plt.close(render.levels_figure(scenarios.sample_masses, energies, shares, scenarios.gap_threshold))
+    plt.close(render.states_figure(flake, densities))
+    frame = next(render.spin_animation(flake, 64, spins))
+    assert frame.ndim == 3 and frame.shape[-1] == 3
+    plt.close("all")

@@ -1,4 +1,4 @@
-"""A cluster of stars falling past a soft mass and stretched into a stream by its tides."""
+"""Scenario parameters and animation driver for a star cluster stretched by a Plummer mass."""
 
 from __future__ import annotations
 
@@ -8,89 +8,94 @@ import numpy as np
 
 from examples.mechanics.tides import core
 
-# The mass and its core radius; the cluster's stars, its radius and the seed that places them, its starting
-# centre and velocity; and the time step and the steps per frame.
-MASS = 1.0
-MASS_CORE = 0.3
-N_STARS = 300
-CLUSTER_RADIUS = 0.25
-SEED = 1
-START = [-3.0, 0.5, 0.0]
-START_VELOCITY = [0.5, 0.0, 0.0]
-DT = 0.005
-N_SUBSTEPS = 8
-# The field's half extents and its sample counts in the plane z = 0.
-HALF_WIDTH, HALF_HEIGHT = 3.6, 2.4
-N_COLUMNS, N_ROWS = 360, 240
-# The flyby's frames, ending while the stream is still in the picture, and a frame's duration in milliseconds.
-N_FRAMES = 150
-FRAME_DURATION = 40
+mass_centres = core.mv.vector([[0, 0, 0]]).dual()           # [1] Point-
+mass_values = np.array([1.0])
+mass_core = 0.3
+n_stars = 300
+cluster_radius = 0.25
+seed = 1
+start_position = [-3.0, 0.5, 0.0]
+start_velocity = [0.5, 0.0, 0.0]
+dt = 0.005
+n_substeps = 8
+half_width, half_height = 3.6, 2.4
+n_columns, n_rows = 360, 240
+n_frames = 150
+frame_duration_ms = 40
 
 
-# --- math -----------------------------------------------------------------------------
-def setting() -> tuple[core.Masses, core.Stars, core.Shape]:
-    """The mass, the cluster as a disc of stars in the plane z = 0, and its shape."""
-    masses = core.Masses(core.mv.vector([[0.0, 0.0, 0.0]]).dual(), np.array([MASS]), MASS_CORE)
-    rng = np.random.default_rng(SEED)
-    # Uniform over the disc: a radius growing as the square root, turned by a rotor to a random angle.
-    radii = CLUSTER_RADIUS * np.sqrt(rng.uniform(size=N_STARS))
-    turns = (core.mv.xy * (-np.pi * rng.uniform(size=N_STARS))).exp()           # [stars] Rotor+
-    offsets = turns >> (core.mv.x.dual() * radii)                            # [stars] Point-
-    centre, velocity = core.mv.vector(START).dual(), core.mv.vector(START_VELOCITY).dual()   # [] Point-, Point-
-    stars = core.Stars(centre + offsets, velocity.broadcast_to(offsets.shape))
-    shape = core.Shape(centre, velocity, core.Point, 0 * core.Point)
-    return masses, stars, shape
+def initial_cluster(n_samples: int) -> tuple[core.Point, core.Point, core.Point, core.Point]:
+    """Uniform disc sampling places `n_samples` stars around `start_position` with common `start_velocity` (`[n_samples] Point-`)."""
+    rng = np.random.default_rng(seed)
+    # Radii grow as the square root so stars cover the disc uniformly under random rotor turns.
+    radii = cluster_radius * np.sqrt(rng.uniform(size=n_samples))
+    turns = (core.mv.xy * (-np.pi * rng.uniform(size=n_samples))).exp()      # [n_samples] Rotor+
+    offsets = turns >> (core.mv.x.dual() * radii)                            # [n_samples] Point-
+    guiding_centre = core.mv.vector(start_position).dual()                   # [] Point-
+    guiding_velocity = core.mv.vector(start_velocity).dual()                 # [] Point-
+    return guiding_centre + offsets, guiding_velocity.broadcast_to(offsets.shape), guiding_centre, guiding_velocity
 
 
-def flyby(n_frames: int, n_substeps: int = N_SUBSTEPS) -> Iterator[tuple[core.Stars, core.Shape]]:
-    """The stars, and the cluster's shape as the tidal map deforms it, frame by frame, n_substeps steps apart."""
-    masses, stars, shape = setting()
-    for _ in range(n_frames):
-        yield stars, shape
-        for _ in range(n_substeps):
-            stars, shape = stars.fall(masses, DT), shape.deform(masses, DT)
+def density_field(n_grid_columns: int, n_grid_rows: int) -> tuple[core.Point, core.Even, core.Scalar]:
+    """Poisson's equation recovers the Plummer mass density from the geometric derivative of gravity (`[n_grid_rows, n_grid_columns] Scalar+`)."""
+    points = core.sample_grid(half_width, half_height, n_grid_columns, n_grid_rows)  # [n_grid_rows, n_grid_columns] Point-
+    field_derivative = core.gravity_derivative(
+        core.tidal_map(points, mass_centres, mass_values, mass_core)
+    )                                                                        # [n_grid_rows, n_grid_columns] Even+
+    return points, field_derivative, -field_derivative.select[0] / (4 * np.pi)
 
 
-def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Point, core.Form]:
-    """The stars' centre of mass and the rim the deformation predicts around it. The shape is first
-    order in the cluster's size; the drift of its centre of mass off the orbit is second order."""
-    return stars.centre(), shape.rim(CLUSTER_RADIUS)
+def flyby(n_flyby_frames: int, n_step_substeps: int) -> Iterator[tuple[core.Point, core.Point, core.Spread]]:
+    """Yields `(positions, star_centre, predicted_spread)` across `n_flyby_frames` frames of the cluster flyby."""
+    positions, velocities, guiding_centre, guiding_velocity = initial_cluster(n_stars)
+    yield from core.flyby_states(
+        positions,
+        velocities,
+        guiding_centre,
+        guiding_velocity,
+        mass_centres,
+        mass_values,
+        mass_core,
+        cluster_radius,
+        dt,
+        n_step_substeps,
+        n_flyby_frames,
+    )
 
 
-def field(n_columns: int = N_COLUMNS, n_rows: int = N_ROWS) -> tuple[core.Point, core.Even, core.Scalar]:
-    """The geometric derivative of gravity on the plane z = 0, sampled n_columns by n_rows, and the density it gives by
-    Poisson's equation."""
-    masses, _, _ = setting()
-    points = core.grid(HALF_WIDTH, HALF_HEIGHT, n_columns, n_rows)              # [rows, columns] Point-
-    derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even+
-    return points, derivative, -derivative.select[0] / (4 * np.pi)
-
-
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation
+    """Saves the flyby animation and verifies Poisson's equation and tidal spread tracking."""
     from examples.mechanics.tides import render
+    from examples.util.animation import save_animation
 
-    points, derivative, density = field()
-    states = list(flyby(N_FRAMES))
-    drawn = ((stars, *outline(stars, shape)) for stars, shape in states)
-    save_animation(render.animate(points, density, drawn), "tides_flyby", FRAME_DURATION)
+    points, field_derivative, mass_density = density_field(n_columns, n_rows)
+    states = []
+
+    def streamed_states() -> Iterator[tuple[core.Point, core.Point, core.Spread]]:
+        """Yields each flyby state once while recording it for downstream checks."""
+        for state in flyby(n_frames, n_substeps):
+            states.append(state)
+            yield state
+
+    save_animation(render.flyby_frames(points, mass_density, streamed_states()), "tides_flyby", frame_duration_ms)
 
     # checks
-    # The geometric derivative of gravity is minus four pi times the Plummer density, and has no curl.
-    masses, _, _ = setting()
-    towards = masses.centres - points[..., None]
-    softened = towards.scalar_norm_squared() + MASS_CORE**2
-    plummer = (3 * masses.masses * MASS_CORE**2 / (4 * np.pi) / (softened * softened * softened.square_root())).sum(axis=-1)
-    np.testing.assert_allclose((derivative + 4 * np.pi * plummer).kernel, 0.0, atol=1e-10)
-    # Through the whole flyby the stars spread in the plane as the deformation predicts: a uniform
-    # disc's moment is a quarter of its radius squared. Measured against the largest spread, the
-    # sampling of the disc costs about a tenth, and the passage through the mass's core a quarter.
-    planes = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x   # [planes] Plane+
-    for stars, shape in states:
-        measured = (planes & stars.moment()(planes)).to_array()              # [planes]
-        predicted = (planes & (shape.spread(CLUSTER_RADIUS) / 4)(planes)).to_array()
-        np.testing.assert_allclose(measured, predicted, rtol=0, atol=0.3 * predicted.max())
+    # Gravity's geometric derivative has zero curl and recovers minus four pi times the Plummer density.
+    source_offsets = mass_centres - points[..., None]                        # [n_rows, n_columns, 1] Point-
+    softened_squares = source_offsets.scalar_norm_squared() + mass_core**2   # [n_rows, n_columns, 1] Scalar+
+    plummer_density = (
+        3 * mass_values * mass_core**2 / (4 * np.pi) / (softened_squares * softened_squares * softened_squares.square_root())
+    ).sum(axis=-1)                                                           # [n_rows, n_columns] Scalar+
+    assert (field_derivative.select[2].norm() < 1e-10).all()
+    assert ((mass_density - plummer_density).abs() < 1e-10).all()
+
+    # A uniform disc's second moment is a quarter of its squared radius, carried forward by the tidal deformation.
+    n_sample_planes = 8
+    sample_planes = (core.mv.xy * (-np.pi * np.arange(n_sample_planes) / n_sample_planes)).exp() >> core.mv.x  # [n_sample_planes] Plane+
+    for state_positions, state_centre, state_spread in states:
+        measured_moment = sample_planes & core.cluster_moment(state_positions, state_centre)(sample_planes)  # [n_sample_planes] Scalar+
+        predicted_moment = sample_planes & (state_spread / 4)(sample_planes)  # [n_sample_planes] Scalar+
+        assert ((measured_moment - predicted_moment).abs() <= 0.3 * predicted_moment.max()).all()
 
 
 if __name__ == "__main__":

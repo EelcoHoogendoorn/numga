@@ -1,4 +1,4 @@
-"""Stress concentration and transmitted light around a hole in a loaded plate."""
+"""Pixel-exact panels render the principal stress difference and polariscope fringe patterns around a circular hole."""
 
 from __future__ import annotations
 
@@ -9,90 +9,89 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, simplices
-from examples.util.wgsl.camera import offset_panel
+from numga.render import simplices
+from examples.util.panels import offset_panel, overlay, pinned
 from examples.optics.photoelasticity import core
 
 figure_dpi = 100
 panel_gap = 4
-# The hole's rim, its width in pixels and its grey.
+# Rim stroke width in pixels and grey tone around the circular hole.
 rim_width = 1.0
 rim_colour = np.full(3, 0.6)
-# The plate's algebra with real coefficients, for the picture: the hole's middle, the origin, which the camera reads.
+# Real-coefficient multivector factory in the plate's algebra for rendering the hole marker.
 real = NumpyContext(core.ga).multivector
 
 
 # --- plumbing -------------------------------------------------------------------------
 def window(positions: core.Planar) -> tuple[float, float, float, float]:
-    """The extent of an image grid of pixel centres `[rows, columns]`, on the pixels' outer edges."""
-    # Positions read by pairing with the planes across x and y, in the positions' own algebra; the outer edges half a
-    # step between pixel centres past the outermost, columns along x and rows along y.
+    """Outer pixel-edge bounds `(x_min, x_max, y_min, y_max)` enclose a `[n_rows, n_columns] Planar-` grid of pixel
+    centres."""
+    n_rows, n_columns = positions.shape
     mv = positions.context.multivector
-    readings = (stack((mv.x, mv.y))[:, None] & positions.reshape(-1)).real()   # [2, pixels] Scalar+
-    low, high = readings.min(axis=-1), readings.max(axis=-1)                    # [2] Scalar+, [2] Scalar+
-    half_step = (high - low) / (2 * (np.array(positions.shape[::-1]) - 1))      # [2] Scalar+
-    return tuple(stack((low - half_step, high + half_step), axis=-1).reshape(-1).to_array())
+    readings = (stack((mv.x, mv.y))[:, None] & positions.reshape(-1)).real()    # [2, n_rows * n_columns] Scalar+
+    lower, upper = readings.min(axis=-1), readings.max(axis=-1)                 # [2] Scalar+, [2] Scalar+
+    half_step = (upper - lower) / (2 * (np.array([n_columns, n_rows]) - 1))     # [2] Scalar+
+    return tuple(stack((lower - half_step, upper + half_step), axis=-1).reshape(-1).to_array())
 
 
 def panels(n_panels: int, pixels: tuple[int, ...]) -> tuple[plt.Figure, list[plt.Axes]]:
-    """A figure of panels side by side, each the image's own pixels, a few pixels apart."""
-    rows, columns = pixels
-    width = n_panels * columns + (n_panels - 1) * panel_gap
-    figure = plt.figure(figsize=(width / figure_dpi, rows / figure_dpi), dpi=figure_dpi)
+    """Creates a row of `n_panels` pixel-exact axes of shape `[n_rows, n_columns]` separated by `panel_gap` pixels."""
+    n_rows, n_columns = pixels
+    width = n_panels * n_columns + (n_panels - 1) * panel_gap
+    figure = plt.figure(figsize=(width / figure_dpi, n_rows / figure_dpi), dpi=figure_dpi)
     axes = figure.subplots(1, n_panels, squeeze=False)[0]
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=panel_gap / columns)
+    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=panel_gap / n_columns)
     return figure, list(axes)
 
 
-def plate(ax: plt.Axes, values: np.ndarray, extent: tuple[float, float, float, float], hole_radius: float,
-          cmap: str, vmin: float, vmax: float) -> plt.AxesImage:
-    """An image over the plate's window, rows up from the bottom, pixel for pixel, with the hole drawn over it, a white
-    disc rimmed in grey about the origin, as a camera of the plate's planes x and y sees it."""
+def plate_image(ax: plt.Axes, values: np.ndarray, extent: tuple[float, float, float, float], hole_radius: float,
+                cmap: str, vmin: float, vmax: float) -> plt.AxesImage:
+    """Draws a pixel-aligned `[n_rows, n_columns]` scalar image on `ax` and overlays the grey-rimmed circular hole."""
     image = pinned(ax, values[::-1], extent)
     image.set_cmap(cmap)
     image.set_clim(vmin, vmax)
     camera = offset_panel(ax, real.x, real.y)
     middle = (0 * real.x.dual())[None]                                          # [1] Planar-
     radius = hole_radius / camera.pixel
-    simplices.overlay(ax, [simplices.markers(middle, rim_colour, radius + rim_width / 2, camera),
-                           simplices.markers(middle, np.ones(3), radius - rim_width / 2, camera)])
+    overlay(ax, [simplices.markers(middle, rim_colour, radius + rim_width / 2, camera),
+                 simplices.markers(middle, np.ones(3), radius - rim_width / 2, camera)])
     return image
 
 
-def draw_stress(
+def stress_figure(
     positions: core.Planar, difference: core.Scalar, hole_radius: float, far_stress: float,
 ) -> plt.Figure:
-    """Principal stress difference over the applied stress, on the `[rows, columns]` pixel grid."""
+    """Renders the normalized principal stress difference (`[n_rows, n_columns] Scalar+`) outside the circular hole."""
     extent = window(positions)
     values = difference.to_array().real / far_stress
-    # The colour scale spans the plate only, not the pixels the hole covers: those within the hole's radius of its
-    # middle, by the size of their place's square, whichever sign the square has in the algebra.
-    plate_pixels = positions.squared().norm() >= hole_radius**2
+    # Span the colour scale over exterior plate pixels only, excluding pixels covered by the hole.
+    plate_pixels = positions.antinorm().real() >= hole_radius
 
     figure, (ax,) = panels(1, values.shape)
-    plate(ax, values, extent, hole_radius, "cividis", 0, values[plate_pixels].max())
+    plate_image(ax, values, extent, hole_radius, "cividis", 0, values[plate_pixels].max())
     return figure
 
 
-def draw_polariscope(positions: core.Planar, intensities: core.Scalar, hole_radius: float) -> plt.Figure:
-    """Transmitted intensities `[views, rows, columns]` side by side, on a shared physical scale."""
+def polariscope_figure(positions: core.Planar, intensities: core.Scalar, hole_radius: float) -> plt.Figure:
+    """Renders `[n_views, n_rows, n_columns] Scalar+` polariscope intensities side by side on a shared `[0, 1]` scale."""
     extent = window(positions)
     values = intensities.to_array().real
 
     figure, axes = panels(len(values), values.shape[1:])
-    for ax, intensity in zip(axes, values):
-        # The pixel brightness is the light intensity, on the same scale in every view.
-        plate(ax, intensity, extent, hole_radius, "gray", 0, 1)
+    for ax, intensity_panel in zip(axes, values):
+        plate_image(ax, intensity_panel, extent, hole_radius, "gray", 0, 1)
     return figure
 
 
-def animate_polariscope(positions: core.Planar, frames: Iterable[core.Scalar],
-                        hole_radius: float) -> Iterator[np.ndarray]:
-    """One polariscope's transmitted intensity, `[rows, columns]` per frame, as the load changes."""
+def polariscope_animation(positions: core.Planar, frames: Iterable[core.Scalar],
+                          hole_radius: float) -> Iterator[np.ndarray]:
+    """Yields RGB frames of the `[n_rows, n_columns] Scalar+` polariscope intensity across a loading sequence."""
     extent = window(positions)
     figure, (ax,) = panels(1, positions.shape)
-    image = plate(ax, np.zeros(positions.shape), extent, hole_radius, "gray", 0, 1)
-    for intensity in frames:
-        image.set_data(intensity.to_array().real[::-1])
-        yield capture(figure)
-    plt.close(figure)
+    image = plate_image(ax, np.zeros(positions.shape), extent, hole_radius, "gray", 0, 1)
+    try:
+        for intensity_frame in frames:
+            image.set_data(intensity_frame.to_array().real[::-1])
+            yield capture(figure)
+    finally:
+        plt.close(figure)

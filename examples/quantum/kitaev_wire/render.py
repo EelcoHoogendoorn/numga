@@ -1,8 +1,8 @@
-"""Spatial Majorana mode weights, excitation energies and transport leakage."""
+"""Spatial Majorana mode weights, excitation energies, and transport leakage."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,38 +10,36 @@ from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from matplotlib.figure import Figure
 
 from examples.util.animation import capture
-from examples.util.wgsl import pinned
+from examples.util.panels import pinned
 from examples.quantum.kitaev_wire import core
 from examples.util import charts
 
-INK = "#263b51"
-SLOW = "#148d88"
-FAST = "#d06c36"
-GATE = LinearSegmentedColormap.from_list("gate", ["white", "#e8e4f5"])
-WEIGHTS = plt.get_cmap("magma")
+ink_colour = "#263b51"
+slow_colour = "#148d88"
+fast_colour = "#d06c36"
+gate_cmap = LinearSegmentedColormap.from_list("gate", ["white", "#e8e4f5"])
+weights_cmap = plt.get_cmap("magma")
 # The mode weight at the top of the transport panels: above the most any one site holds, as the fast move squeezes
 # the mode against the moving end.
-WEIGHT_LIMIT = 0.6
+weight_limit = 0.6
 
 
 # --- plumbing -------------------------------------------------------------------------
 def plain_axes(axis: plt.Axes) -> None:
-    """A quantity plot with faint left and bottom spines only."""
+    """A quantity plot shows faint left and bottom spines only."""
     axis.spines[["top", "right"]].set_visible(False)
     axis.spines[["left", "bottom"]].set_color("0.8")
     axis.tick_params(color="0.8")
 
 
-def shade(chemical: np.ndarray, hopping: float) -> np.ndarray:
-    """How deep each site lies in the topological regime, from zero at the threshold 2 * hopping
-    to one at the lowest chemical potential."""
+def topological_depth(chemical: np.ndarray, hopping: float) -> np.ndarray:
+    """Each site's topological depth runs from zero at threshold `2 * hopping` to one at the lowest chemical potential."""
     return np.clip((2 * hopping - chemical) / (2 * hopping - chemical.min()), 0, 1)
 
 
 def weight_image(axis: plt.Axes, weights: np.ndarray, extent: tuple[float, float, float, float], gamma: float):
-    """Mode weights, rows down from the top, one pixel per site and sample, held pixel for pixel with the axes'
-    labels kept; the image."""
-    colours = WEIGHTS(PowerNorm(gamma, vmin=0, vmax=weights.max())(weights))[..., :3]
+    """Mode weights draw rows down from the top, one pixel per site and sample, keeping the axis labels."""
+    colours = weights_cmap(PowerNorm(gamma, vmin=0, vmax=weights.max())(weights))[..., :3]
     image = pinned(axis, colours, extent)
     axis.set_axis_on()
     axis.spines[:].set_visible(False)
@@ -50,15 +48,16 @@ def weight_image(axis: plt.Axes, weights: np.ndarray, extent: tuple[float, float
 
 
 @charts.style()
-def draw_formation(chemical_potentials: np.ndarray, energies: core.Scalar,
-                   density: core.Scalar, hopping: float) -> Figure:
+def formation_figure(chemical_potentials: np.ndarray, energies: core.Scalar,
+                     density: core.Scalar, hopping: float) -> Figure:
+    """Excitation energies beside spatial mode weights across a chemical-potential sweep."""
     values = energies.to_array() / hopping
     weights = density.to_array()
     ratios = chemical_potentials / hopping
     # The spectrum beside the mode weights, a pixel a site and a sample, tall enough for their samples.
     figure, (spectrum, modes) = charts.subplots(560, 280, ncols=2, width_ratios=[2.4, 1], layout="constrained")
     # Each excitation has two real quadratures with the same frequency.
-    spectrum.plot(ratios, values[:, ::2], color=INK)
+    spectrum.plot(ratios, values[:, ::2], color=ink_colour)
     spectrum.axvline(2, color="0.65", linestyle=":", linewidth=charts.FRAME_WIDTH)
     # Read off: the threshold at twice the hopping, and zero energy.
     spectrum.set(xlim=(ratios[0], ratios[-1]), ylim=(0, None), xticks=[2], yticks=[0],
@@ -72,63 +71,65 @@ def draw_formation(chemical_potentials: np.ndarray, energies: core.Scalar,
     return figure
 
 
-def animate_transport(
-    progress: np.ndarray, potentials: core.Scalar, history: core.Majorana,
-    target: core.Majorana, share: core.Scalar, hopping: float,
+def transport_animation(
+    progress: np.ndarray, potentials: core.Scalar,
+    target: core.Majorana, hopping: float, states: Iterable[tuple[core.Majorana, core.Scalar]],
 ) -> Iterator[np.ndarray]:
-    weights = history.scalar_norm_squared().to_array()
+    """Yields frames comparing slow and fast Majorana transport against the instantaneous boundary mode and bulk leakage."""
     expected = target.scalar_norm_squared().to_array()
     chemical = potentials.to_array()
-    leakage = 1 - share.to_array()
-    sites = np.arange(weights.shape[-1])
-    regime = shade(chemical, hopping)
+    sites = np.arange(expected.shape[-1])
+    regime = topological_depth(chemical, hopping)
+    leakages: list[np.ndarray] = []
 
     with charts.style():
         # Three strips stacked, each with its two labels: the two speeds' modes along the wire, and the bulk weight.
         figure, axes = charts.subplots(360, 400, nrows=3, height_ratios=[1, 1, 0.7], layout="constrained")
         lines, references, gates, fills = [], [], [], []
-        for case, (axis, colour) in enumerate(zip(axes[:2], (SLOW, FAST))):
-            # A two-row mesh shaded between its vertices fills the panel with the gate profile.
-            gates.append(axis.pcolormesh(sites, [0, WEIGHT_LIMIT], np.broadcast_to(regime[0], (2, len(sites))),
-                                         shading="gouraud", cmap=GATE, vmin=0, vmax=1, zorder=0))
-            line, = axis.plot(sites, weights[0, case], color=colour)
+        for case, (axis, colour) in enumerate(zip(axes[:2], (slow_colour, fast_colour))):
+            # A two-row pcolormesh shaded between its vertices fills the panel with the gate profile.
+            gates.append(axis.pcolormesh(sites, [0, weight_limit], np.broadcast_to(regime[0], (2, len(sites))),
+                                         shading="gouraud", cmap=gate_cmap, vmin=0, vmax=1, zorder=0))
+            line, = axis.plot(sites, expected[0], color=colour)
             # The adiabatic target thin, so that the mode's own curve shows under it.
-            reference, = axis.plot(sites, expected[0], color=INK, linestyle="--", linewidth=charts.FRAME_WIDTH)
-            fills.append(axis.fill_between(sites, weights[0, case], color=colour, alpha=0.25, linewidth=0))
+            reference, = axis.plot(sites, expected[0], color=ink_colour, linestyle="--", linewidth=charts.FRAME_WIDTH)
+            fills.append(axis.fill_between(sites, expected[0], color=colour, alpha=0.25, linewidth=0))
             lines.append(line)
             references.append(reference)
-            axis.set(xlim=(sites[0], sites[-1]), ylim=(0, WEIGHT_LIMIT), xticks=[], yticks=[], xlabel="site",
+            axis.set(xlim=(sites[0], sites[-1]), ylim=(0, weight_limit), xticks=[], yticks=[], xlabel="site",
                      ylabel="mode weight")
             plain_axes(axis)
-        traces = [axes[2].plot([], [], color=colour)[0] for colour in (SLOW, FAST)]
+        traces = [axes[2].plot([], [], color=colour)[0] for colour in (slow_colour, fast_colour)]
         cursor = axes[2].axvline(0, color="0.7", linewidth=charts.FRAME_WIDTH)
         # The bulk weight from none to all of the mode, along the gate's motion.
         axes[2].set(xlim=(0, 1), ylim=(0, 1.02), xticks=[], yticks=[0, 1], xlabel="fraction of gate motion",
                     ylabel="bulk weight")
         plain_axes(axes[2])
-        # Lay the figure out once; only the curves, the gate and the cursor change between frames.
+        # Lay the figure out once; only the curves, the gate, and the cursor change between frames.
         figure.canvas.draw()
         figure.set_layout_engine("none")
 
-        for frame, fraction in enumerate(progress):
-            for case, colour in enumerate((SLOW, FAST)):
-                lines[case].set_ydata(weights[frame, case])
+        for frame, (fraction, (state, share)) in enumerate(zip(progress, states)):
+            weights = state.scalar_norm_squared().to_array()
+            leakages.append(1 - share.to_array())
+            leakage_history = np.asarray(leakages)
+            for case, colour in enumerate((slow_colour, fast_colour)):
+                lines[case].set_ydata(weights[case])
                 references[case].set_ydata(expected[frame])
                 gates[case].set_array(np.broadcast_to(regime[frame], (2, len(sites))))
                 fills[case].remove()
-                fills[case] = axes[case].fill_between(sites, weights[frame, case], color=colour, alpha=0.25,
+                fills[case] = axes[case].fill_between(sites, weights[case], color=colour, alpha=0.25,
                                                       linewidth=0)
-                traces[case].set_data(progress[:frame + 1], leakage[:frame + 1, case])
+                traces[case].set_data(progress[:frame + 1], leakage_history[:, case])
             cursor.set_xdata([fraction, fraction])
             yield capture(figure)
         plt.close(figure)
 
 
 @charts.style()
-def draw_transport(progress: np.ndarray, history: core.Majorana, potentials: core.Scalar,
-                   hopping: float) -> Figure:
-    """The mode weight along the wire, the gate's motion upward, one panel per speed, the slow one on the left;
-    the gate's topological threshold dashed."""
+def transport_figure(progress: np.ndarray, history: core.Majorana, potentials: core.Scalar,
+                     hopping: float) -> Figure:
+    """Space-time mode weights along the wire for slow and fast gate motion, with the topological threshold dashed."""
     weights = history.scalar_norm_squared().to_array()
     chemical = potentials.to_array()
     sites = np.arange(weights.shape[-1])
@@ -146,44 +147,43 @@ def draw_transport(progress: np.ndarray, history: core.Majorana, potentials: cor
     return figure
 
 
-def animate_overlap(separations: np.ndarray, splitting: core.Scalar, potentials: core.Scalar,
-                    modes: core.Majorana, hopping: float) -> Iterator[np.ndarray]:
-    """The two end modes at each separation of the segment's ends, beside the lowest excitation energy against
-    the separation, marked at the separation of the moment."""
+def overlap_animation(separations: np.ndarray, splitting: core.Scalar, potentials: core.Scalar,
+                      modes: core.Majorana, hopping: float) -> Iterator[np.ndarray]:
+    """Yields frames showing the two end modes at each gate separation beside the lowest excitation energy."""
     energies = splitting.to_array() / hopping
     weights = modes.scalar_norm_squared().to_array()
-    regime = shade(potentials.to_array(), hopping)
+    regime = topological_depth(potentials.to_array(), hopping)
     sites = np.arange(weights.shape[-1])
     top = weights.max() * 1.1
     with charts.style():
         # Three quarters of the column: the energy's decades beside the two modes.
         figure, (spectrum, profile) = charts.subplots(600, 270, ncols=2, width_ratios=[1, 1.1], layout="constrained")
-        spectrum.semilogy(separations, energies, color=INK)
+        spectrum.semilogy(separations, energies, color=ink_colour)
         # The separation of the moment, a dot twice the usual size on a white rim, to stand out on its curve.
-        marker = spectrum.scatter([], [], color=INK, edgecolors="white", s=charts.points(2 * charts.MARKER_PX) ** 2,
+        marker = spectrum.scatter([], [], color=ink_colour, edgecolors="white", s=charts.points(2 * charts.MARKER_PX) ** 2,
                                   linewidths=charts.FRAME_WIDTH, zorder=3)
         # The ends of the separations swept; the energy's decades show the exponential.
         spectrum.set(xlabel="gate separation (sites)", ylabel=r"lowest excitation, $E/t$",
                      xticks=[separations.min(), separations.max()])
         plain_axes(spectrum)
-        # A two-row mesh shaded between its vertices fills the panel with the gate profile.
+        # A two-row pcolormesh shaded between its vertices fills the panel with the gate profile.
         shading = profile.pcolormesh(sites, [0, top], np.broadcast_to(regime[0], (2, len(sites))),
-                                     shading="gouraud", cmap=GATE, vmin=0, vmax=1, zorder=0)
+                                     shading="gouraud", cmap=gate_cmap, vmin=0, vmax=1, zorder=0)
         lines = [profile.plot(sites, density, color=colour)[0]
-                 for density, colour in zip(weights[0], (SLOW, FAST))]
+                 for density, colour in zip(weights[0], (slow_colour, fast_colour))]
         fills = [profile.fill_between(sites, density, color=colour, alpha=0.35, linewidth=0)
-                 for density, colour in zip(weights[0], (SLOW, FAST))]
+                 for density, colour in zip(weights[0], (slow_colour, fast_colour))]
         profile.set(xlim=(sites[-1] - separations.max() - 20, sites[-1]), ylim=(0, top),
                     xlabel="site", ylabel="mode weight", xticks=[], yticks=[])
         plain_axes(profile)
-        # Lay the figure out once; only the marker, the gate and the modes change between frames.
+        # Lay the figure out once; only the marker, the gate, and the modes change between frames.
         figure.canvas.draw()
         figure.set_layout_engine("none")
 
         for frame, separation in enumerate(separations):
             marker.set_offsets([[separation, energies[frame]]])
             shading.set_array(np.broadcast_to(regime[frame], (2, len(sites))))
-            for end, colour in enumerate((SLOW, FAST)):
+            for end, colour in enumerate((slow_colour, fast_colour)):
                 lines[end].set_ydata(weights[frame, end])
                 fills[end].remove()
                 fills[end] = profile.fill_between(sites, weights[frame, end], color=colour, alpha=0.35, linewidth=0)

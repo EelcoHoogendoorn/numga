@@ -2,52 +2,60 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
 from examples.geometry.sundial import core
 
-# The dial's latitude, the height of the nodus above the dial, and the tilt of the earth's axis, the
-# declination of the sun at the solstices.
-LATITUDE = np.radians(52.0)
-HEIGHT = 1.0
-TILT = np.radians(23.44)
-# The seasons drawn: the sun's declination a whole number of months from an equinox, up to a solstice on
-# either side; the hours drawn, from six in the morning to six at night; the declinations each hour line
-# is drawn through, from solstice to solstice; and the samples of each day's path, with their hour angles
-# from solar noon at a twenty-fourth of a turn per hour.
-NOON = 12
-TURN_PER_HOUR = 2 * np.pi / 24
-N_MONTHS = 3
-HOURS = np.arange(6, 19)
-HOUR_ANGLES = (HOURS - NOON) * TURN_PER_HOUR
-N_DECLINATIONS = 25
-DAY_HOURS = np.arange(3, 21.01, 0.05)
-DAY_ANGLES = (DAY_HOURS - NOON) * TURN_PER_HOUR
-# The frames of one year, the hours of a day each frame's rays are drawn at, and the duration of a frame.
-N_FRAMES = 108
-RAY_HOURS = np.arange(4, 21, 0.25)
-RAY_ANGLES = (RAY_HOURS - NOON) * TURN_PER_HOUR
-DURATION_MS = 40
+# Dial latitude, nodus height above the dial, and axial tilt (solstice declination).
+latitude = np.radians(52.0)
+height = 1.0
+tilt = np.radians(23.44)
+# Seasonal declinations, drawn hours, solstice-to-solstice samples along each hour line, and daily path samples.
+noon = 12
+turn_per_hour = 2 * np.pi / 24
+n_months = 3
+n_seasons = 2 * n_months + 1
+hours = np.arange(6, 19)
+n_hours = len(hours)
+hour_angles = (hours - noon) * turn_per_hour
+n_declinations = 25
+day_hours = np.arange(3, 21.01, 0.05)
+n_samples = len(day_hours)
+day_angles = (day_hours - noon) * turn_per_hour
+# Half-year sweep frames, drawn ray hours, and frame duration.
+n_frames = 108
+n_half_year = n_frames // 2 + 1
+ray_hours = np.arange(4, 21, 0.25)
+n_ray_hours = len(ray_hours)
+ray_angles = (ray_hours - noon) * turn_per_hour
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
-def dial() -> tuple[core.Point, np.ndarray, core.Point, core.Point, np.ndarray]:
-    """The dial's scene is the nodus, the seasons' declinations and daily sun paths, and the sun directions along each hour line from solstice to solstice."""
-    pole, equator = core.sky(LATITUDE)                                                  # [] Point-, Point-
-    seasons = TILT * np.sin(np.pi / 2 * np.arange(-N_MONTHS, N_MONTHS + 1) / N_MONTHS)  # [seasons]
-    days = core.sun(pole, equator, seasons[:, None], DAY_ANGLES[None, :])               # [seasons, samples] Point-
-    declinations = np.linspace(-TILT, TILT, N_DECLINATIONS)                             # [declinations]
-    hour_suns = core.sun(pole, equator, declinations[None, :], HOUR_ANGLES[:, None])    # [hours, declinations] Point-
-    return core.up * HEIGHT, seasons, days, hour_suns, HOURS
+def dial_scene() -> tuple[core.Point, np.ndarray, core.Point, core.Point, np.ndarray]:
+    """The dial scene bundles the nodus, seasonal declinations, daily sun paths, hour-line sun directions, and hour labels."""
+    pole, equator = core.sky(latitude)                                                   # [] Point-, Point-
+    seasons = tilt * np.sin(np.pi / 2 * np.arange(-n_months, n_months + 1) / n_months)   # [n_seasons]
+    days = core.sun(pole, equator, seasons[:, None], day_angles[None, :])                # [n_seasons, n_samples] Point-
+    declinations = np.linspace(-tilt, tilt, n_declinations)                              # [n_declinations]
+    hour_suns = core.sun(pole, equator, declinations[None, :], hour_angles[:, None])     # [n_hours, n_declinations] Point-
+    return core.up * height, seasons, days, hour_suns, hours
 
 
-def year() -> tuple[np.ndarray, core.Point, core.Point]:
-    """The year's frames are the sun's declination, its rays at the drawn hours and its daily path, from winter solstice to summer solstice."""
-    pole, equator = core.sky(LATITUDE)                                                   # [] Point-, Point-
-    declinations = TILT * np.sin(np.linspace(-np.pi / 2, np.pi / 2, N_FRAMES // 2 + 1))  # [frames]
-    rays = core.sun(pole, equator, declinations[:, None], RAY_ANGLES[None, :])           # [frames, ray_hours] Point-
-    days = core.sun(pole, equator, declinations[:, None], DAY_ANGLES[None, :])           # [frames, samples] Point-
-    return declinations, rays, days
+def annual_envelope() -> core.Point:
+    """Daytime ray directions across the half-year declinations (`[n_half_year, n_ray_hours] Point-`) bound the sky view."""
+    pole, equator = core.sky(latitude)                                                   # [] Point-, Point-
+    declinations = tilt * np.sin(np.linspace(-np.pi / 2, np.pi / 2, n_half_year))        # [n_half_year]
+    return core.sun(pole, equator, declinations[:, None], ray_angles[None, :])           # [n_half_year, n_ray_hours] Point-
+
+
+def annual_states() -> Iterator[tuple[core.Point, core.Point]]:
+    """Yields `(day_rays, day_suns)` (`[n_ray_hours] Point-`, `[n_samples] Point-`) from winter solstice to summer solstice."""
+    pole, equator = core.sky(latitude)                                                   # [] Point-, Point-
+    declinations = tilt * np.sin(np.linspace(-np.pi / 2, np.pi / 2, n_half_year))        # [n_half_year]
+    return core.year_states(pole, equator, declinations, ray_angles, day_angles)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -55,23 +63,37 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.geometry.sundial import render
 
-    nodus, seasons, days, suns, hours = dial()
-    pole, _ = core.sky(LATITUDE)                                               # [] Point-, Point-
-    foot = core.shadow(nodus, pole)                                            # [] Point-
-    save_figure(render.draw_dial(nodus, foot, seasons, days, suns, hours), "sundial")
-    save_animation(render.animate_year(*year(), nodus, foot, seasons, days, suns, hours), "sundial_year", DURATION_MS,
-                   forward_then_back=True)
+    nodus, seasons, days, suns, drawn_hours = dial_scene()
+    pole, equator = core.sky(latitude)                                                   # [] Point-, Point-
+    del equator
+    foot = core.shadow(nodus, pole)                                                      # [] Point-
+    save_figure(render.dial_figure(nodus, foot, seasons, days, suns, drawn_hours), "sundial")
+
+    recorded: list[tuple[core.Point, core.Point]] = []
+
+    def streaming() -> Iterator[tuple[core.Point, core.Point]]:
+        for state in annual_states():
+            recorded.append(state)
+            yield state
+
+    save_animation(
+        render.year_animation(nodus, foot, seasons, days, suns, drawn_hours, annual_envelope(), streaming()),
+        "sundial_year",
+        frame_duration_ms,
+        forward_then_back=True,
+    )
 
     # checks
+    assert len(recorded) == n_half_year
     # Every shadow of the nodus through each season's day lies on that season's cone of rays.
-    rays = (nodus - core.shadow(nodus, days)).normalized()                     # [seasons, samples] Point-
-    assert np.abs((core.cone(pole, days[:, 0])[:, None](rays) & rays).to_array()).max() < 1e-10
-    # Each hour's shadows at every season lie on one line through the foot of the style, at the angle
-    # of gnomonics.
-    offsets = core.shadow(nodus, suns) - foot                                  # [hours, declinations] Point-
-    angles = np.arctan2((core.mv.x & offsets).to_array(), (core.mv.y & offsets).to_array())
-    expected = np.arctan2(np.sin(LATITUDE) * np.sin(HOUR_ANGLES), np.cos(HOUR_ANGLES))
-    assert np.abs(np.sin(angles - expected[:, None])).max() < 1e-10
+    rays = (nodus - core.shadow(nodus, days)).normalized()                               # [n_seasons, n_samples] Point-
+    assert ((core.cone(pole, days[:, 0])[:, None](rays) & rays).abs() < 1e-10).all()
+    # Each hour's shadows across all seasons lie on one line through the foot of the style at the gnomonic angle.
+    offsets = (core.shadow(nodus, suns) - foot).normalized()                             # [n_hours, n_declinations] Point-
+    expected_east = np.sin(latitude) * np.sin(hour_angles)[:, None]
+    expected_north = np.cos(hour_angles)[:, None]
+    residuals = expected_north * (core.mv.x & offsets) - expected_east * (core.mv.y & offsets)  # [n_hours, n_declinations] Scalar+
+    assert (residuals.abs() < 1e-10).all()
 
 
 if __name__ == "__main__":

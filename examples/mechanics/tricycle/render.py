@@ -1,10 +1,6 @@
-"""Drawing for the tricycle: the plane from above and space in perspective, with the tricycle's frame and
-wheels, each axle drawn on to the turning centre, and the trails of the middle of the rear axle and of the
-front wheel.
+"""Planar and spatial GPU views draw the tricycle's frame, wheels, axle extensions to the turning centre, and rear-axle trail.
 
-The geometry of the drawing is written once for both algebras, on the points of whichever the drive is in; the
-plane is drawn in its own algebra, read by a camera of its planes x and y, and space, in the GPU library's own
-algebra, is passed as it is."""
+Both views prepare their geometry on algebraic points in the drive's own algebra: the top-down planar view reads points directly with a camera of planes `x`, `y`, and `w`, while the perspective spatial view passes its `PGA3D` solids and rim tubes straight to the GPU ray tracer."""
 
 from __future__ import annotations
 
@@ -16,144 +12,132 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor, concatenate, stack
 from examples.util.animation import capture
-from examples.util.wgsl import meshes, simplices, solids
-from examples.util.wgsl.camera import panel
+from numga.topology import Topology
+from numga.render import meshes, simplices, solids
+from examples.util.panels import overlay, panel
 
-FRAME = "#2c3e50"
-WHEEL = "#222222"
-AXLE = "#c0392b"
-CENTRE = "#c0392b"
-TRAIL = "#7f8c8d"
-FRONT_TRAIL = "#2980b9"
-WHEEL_RADIUS = 0.25
-# Half the width of the view, which follows the middle of the rear axle.
-VIEW = 3.0
-BACKGROUND = np.ones(3)
-# The plane view, in pixels: the widths of the trail, the axles, drawn dashed, with the lengths of their dashes and
-# gaps, the frame and the wheels; the turning centre's radius.
-PLANE_TRAIL_WIDTH, AXLE_WIDTH, AXLE_DASHES, PLANE_FRAME_WIDTH, WHEEL_WIDTH = 1.0, 1.5, (6.0, 4.5), 2.0, 4.0
-CENTRE_RADIUS = 2.3
-# Space: the view's elevation and azimuth in radians, azimuth zero looking along +y, the margin around the square
-# of ground it follows as a share of the larger side, and the pixels across it; the length of a dash along an axle
-# and of the gap after it, and the points around a rim; the widths in pixels of the axles' dashes, the frame, the
-# post, the rims and the trail.
-ELEVATION, AZIMUTH = np.radians(35.0), np.radians(25.0)
-MARGIN, N_PIXELS = 0.04, 300
-DASH = 0.12
-N_RIM = 48
-DASH_WIDTH, FRAME_WIDTH, POST_WIDTH, RIM_WIDTH, TRAIL_WIDTH = 2.0, 3.0, 2.0, 2.0, 2.0
-# The corners of the square of ground the view of space follows, across x and y, as shares of its half width.
-CORNERS = np.array([[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
+frame_colour = "#2c3e50"
+wheel_colour = "#222222"
+axle_colour = "#c0392b"
+centre_colour = "#c0392b"
+trail_colour = "#7f8c8d"
+wheel_radius = 0.25
+# Half-width of the square view window following the midpoint of the rear axle.
+view_half_width = 3.0
+background = np.ones(3)
+# Pixel stroke widths, dash pattern, and marker radius in the top-down planar view.
+plane_trail_width, axle_width, axle_dashes, plane_frame_width, wheel_width = 1.0, 1.5, (6.0, 4.5), 2.0, 4.0
+centre_radius = 2.3
+# Perspective camera elevation and azimuth (zero looking along +y), framing margin, pixel width,
+# spatial axle dash length, rim sample count, and stroke widths in pixels.
+elevation, azimuth = np.radians(35.0), np.radians(25.0)
+margin, n_pixels = 0.04, 300
+dash_length = 0.12
+n_rim = 48
+dash_width, frame_width, post_width, rim_width, trail_width = 2.0, 3.0, 2.0, 2.0, 2.0
+# Unit-square corner offsets for the ground patch tracked by the spatial camera.
+ground_corners = np.array([[-1, -1], [-1, 1], [1, -1], [1, 1]])
 
 
 # --- plumbing -------------------------------------------------------------------------
-def axles(contacts: Extensor, centre: Extensor) -> Extensor:
-    """Where the axles are drawn from, `[axles]`: the rear wheels share one axle, drawn once from the rear wheel nearer
-    the turning centre, a point of unit weight, and the front wheel has its own; every axle runs on to the centre."""
-    # How far each rear wheel lies from the centre: the size of the line through them.
+def axle_origins(contacts: Extensor, centre: Extensor) -> Extensor:
+    """The nearer of the two rear wheel contacts in `contacts` (`[3] Point-`) to unit-weight `centre` (`[] Point-`) pairs with the front wheel contact (`[2] Point-`) so each axle line is drawn once to `centre`."""
+    # Line norm between unit-weight points measures Euclidean distance along the ground.
     nearer = (contacts[:2] & centre).norm().argmin()
-    return contacts[[nearer, 2]]
+    return contacts[[nearer, 2]]                                                # [2] Point-
 
 
-def frame(contacts: Extensor) -> tuple[Extensor, Extensor]:
-    """The tricycle's frame, from where to where `[bars]` each: across between the rear wheels, and from the middle of
-    the rear axle to the front wheel."""
-    middle = (contacts[0] + contacts[1]) / 2
-    return stack([contacts[0], middle]), stack([contacts[1], contacts[2]])
+def frame_bars(contacts: Extensor) -> tuple[Extensor, Extensor]:
+    """Wheel ground contacts `contacts` (`[3] Point-`) span the rear axle bar and the main spine from the rear-axle midpoint to the front wheel (`[2] Point-`, `[2] Point-`)."""
+    middle = (contacts[0] + contacts[1]) / 2                                    # [] Point-
+    return stack([contacts[0], middle]), stack([contacts[1], contacts[2]])      # [2] Point-, [2] Point-
 
 
 def wheel_steps(contacts: Extensor, forward: Extensor) -> Extensor:
-    """Each wheel's step along the way it rolls, as long as a wheel's radius: towards the point ahead of it, over the
-    distance to that point, the size of the line through the two."""
-    return (forward - contacts) * (WHEEL_RADIUS / (contacts & forward).norm())
+    """Scaling `forward - contacts` by `wheel_radius` over the join norm `(contacts & forward).norm()` gives each wheel's one-radius ground step (`[3] Point-`)."""
+    return (forward - contacts) * (wheel_radius / (contacts & forward).norm())  # [3] Point-
 
 
-def pairs(n_pairs: int) -> simplices.Topology:
-    """An edge from each of the first `n_pairs` points to the one `n_pairs` after it."""
-    return simplices.Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
+def segment_pairs(n_pairs: int) -> Topology:
+    """Index pairs `[k, n_pairs + k]` form a 1D `Topology` of `n_pairs` disjoint segments across `2 * n_pairs` concatenated endpoints."""
+    return Topology(2 * n_pairs, np.stack([np.arange(n_pairs), n_pairs + np.arange(n_pairs)], axis=-1))
 
 
 def plane(contacts: Extensor, forward: Extensor, centre: Extensor, middle: Extensor) -> np.ndarray:
-    """The plane from above, around the tricycle, drawn on the GPU in the drive's own algebra."""
+    """Renders a top-down RGB frame (`[rows, columns, 3]`) of the planar tricycle in its own algebra."""
     mv = centre.context.multivector
-    # The turning centre, an extrinsic meet, as the intrinsic point it names, at unit weight.
-    centre = (centre * mv.antipseudoscalar([1.0])).normalized()
-    steps = wheel_steps(contacts, forward)
-    across, up = following(middle[-1])
+    # Reorient the extrinsic meet into the unit-weight intrinsic point where the axles cross.
+    centre = (centre * mv.antipseudoscalar([1])).normalized()                   # [] Point-
+    steps = wheel_steps(contacts, forward)                                      # [3] Point-
+    across, up = following_limits(middle[-1])
     figure, ax = plt.subplots(figsize=(3, 3))
     ax.set(xlim=across, ylim=up, aspect="equal")
     ax.axis("off")
     figure.tight_layout()
     camera = panel(ax, mv.x, mv.y, mv.w)
-    # Each axle on to the turning centre, the last of the points.
-    froms = axles(contacts, centre)                                          # [axles] Point-
-    spokes = simplices.Topology(len(froms) + 1, np.stack([np.arange(len(froms)), np.full(len(froms), len(froms))], -1))
-    starts, ends = frame(contacts)                                           # [bars] Point-, Point-
-    simplices.overlay(ax, [
-        simplices.strokes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), PLANE_TRAIL_WIDTH, camera),
-        simplices.strokes(concatenate([froms, centre[None]]), spokes, to_rgb(AXLE), AXLE_WIDTH, camera,
-                          dashes=AXLE_DASHES, cap=simplices.Cap.BUTT),
-        simplices.markers(centre[None], to_rgb(CENTRE), CENTRE_RADIUS, camera),
-        simplices.strokes(concatenate([starts, ends]), pairs(len(starts)), to_rgb(FRAME), PLANE_FRAME_WIDTH, camera),
-        simplices.strokes(concatenate([contacts - steps, contacts + steps]), pairs(len(contacts)), to_rgb(WHEEL),
-                          WHEEL_WIDTH, camera)])
+    origins = axle_origins(contacts, centre)                                    # [2] Point-
+    spokes = Topology(len(origins) + 1, np.stack([np.arange(len(origins)), np.full(len(origins), len(origins))], -1))
+    starts, ends = frame_bars(contacts)                                         # [2] Point-, [2] Point-
+    overlay(ax, [
+        simplices.strokes(middle, Topology.chains([len(middle)]), to_rgb(trail_colour), plane_trail_width, camera),
+        simplices.strokes(concatenate([origins, centre[None]]), spokes, to_rgb(axle_colour), axle_width, camera,
+                          dashes=axle_dashes, cap=simplices.Cap.BUTT),
+        simplices.markers(centre[None], to_rgb(centre_colour), centre_radius, camera),
+        simplices.strokes(concatenate([starts, ends]), segment_pairs(len(starts)), to_rgb(frame_colour),
+                          plane_frame_width, camera),
+        simplices.strokes(concatenate([contacts - steps, contacts + steps]), segment_pairs(len(contacts)),
+                          to_rgb(wheel_colour), wheel_width, camera)])
     pixels = capture(figure)
     plt.close(figure)
     return pixels
 
 
 def space(contacts: solids.Point, forward: solids.Point, centre: solids.Line, middle: solids.Point) -> np.ndarray:
-    """Space around the tricycle, drawn on the GPU: the frame and the axles' dashes rods, the wheels' rims and the
-    trail strokes, and the turning centre a vertical post, met with the ground where it is drawn. The view follows
-    the middle of the rear axle."""
+    """Renders a perspective RGB frame (`[rows, columns, 3]`) of the spatial tricycle on the GPU, with dashed axle rods, frame rods, a vertical post at the turning-centre line, wheel rims, and the rear-axle trail."""
     mv = centre.context.multivector
-    # Up from the ground, and where the turning centre meets the ground, as an intrinsic point of unit weight.
-    up = mv.z.dual()                                                                     # [] Point-
-    foot = ((centre ^ mv.z) * mv.antipseudoscalar([1.0])).normalized()                   # [] Point-
+    # Ideal vertical direction and unit-weight ground point where the vertical turning-centre line meets z = 0.
+    up = mv.z.dual()                                                            # [] Point-
+    foot = ((centre ^ mv.z) * mv.antipseudoscalar([1])).normalized()            # [] Point-
     view = space_view(middle[-1])
-    # Each axle's dashes, at the height of the hubs: stretches of one length along it from its wheel, as many as
-    # fit before the turning centre.
-    froms = axles(contacts, foot)                                            # [axles] Point-
-    lengths = (froms & foot).norm()                                                       # [axles] Scalar+
-    directions = (foot - froms) / lengths                                    # [axles] Point-
-    shares = [np.arange(0, length - DASH, 2 * DASH) for length in lengths.to_array()]     # [axles] of [dashes]
-    starts = concatenate([start + direction * share for start, direction, share in zip(froms, directions, shares)])
-    dash_ends = concatenate([start + direction * (share + DASH)
-                             for start, direction, share in zip(froms, directions, shares)])
-    dashes = solids.rods(starts + up * WHEEL_RADIUS, dash_ends + up * WHEEL_RADIUS, DASH_WIDTH / 2 * view.pixel)
-    hubs = contacts + up * WHEEL_RADIUS                                                   # [wheels] Point-
-    bars = solids.rods(*(ends + up * WHEEL_RADIUS for ends in frame(contacts)), FRAME_WIDTH / 2 * view.pixel)
-    post = solids.rods(foot, foot + up * (4 * WHEEL_RADIUS), POST_WIDTH / 2 * view.pixel)
-    parts = [(dashes, to_rgb(AXLE)), (bars, to_rgb(FRAME)), (post[None], to_rgb(CENTRE))]
-    # Each rim: a circle about its axle, the line through its hub across the way the wheel rolls, the step turned a
-    # quarter turn in the ground, from the point of the rim ahead of the hub.
-    steps = wheel_steps(contacts, forward)                                                # [wheels] Point-
-    sideways = steps.commutator(mv.xy)                                                    # [wheels] Point-
-    rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, N_RIM)          # [wheels, rim] Point-
-    tyres = simplices.tubes(rims.reshape(-1), simplices.Topology.loops([rims.shape[1]] * rims.shape[0]), to_rgb(WHEEL),
-                            RIM_WIDTH, view, gloss=solids.gloss)
-    trail = simplices.tubes(middle, simplices.Topology.chains([len(middle)]), to_rgb(TRAIL), TRAIL_WIDTH, view,
+    origins = axle_origins(contacts, foot)                                      # [2] Point-
+    lengths = (origins & foot).norm()                                           # [2] Scalar+
+    directions = (foot - origins) / lengths                                     # [2] Point-
+    shares = [np.arange(0, length - dash_length, 2 * dash_length) for length in lengths.to_array()]
+    starts = concatenate([start + direction * share for start, direction, share in zip(origins, directions, shares)])
+    dash_ends = concatenate([start + direction * (share + dash_length)
+                             for start, direction, share in zip(origins, directions, shares)])
+    dashes = solids.rods(starts + up * wheel_radius, dash_ends + up * wheel_radius, dash_width / 2 * view.pixel)
+    hubs = contacts + up * wheel_radius                                         # [3] Point-
+    bars = solids.rods(*(ends + up * wheel_radius for ends in frame_bars(contacts)), frame_width / 2 * view.pixel)
+    post = solids.rods(foot, foot + up * (4 * wheel_radius), post_width / 2 * view.pixel)
+    parts = [(dashes, to_rgb(axle_colour)), (bars, to_rgb(frame_colour)), (post[None], to_rgb(centre_colour))]
+    # Quarter-turn each rolling step in the ground plane to form the wheel's axle line through its hub.
+    steps = wheel_steps(contacts, forward)                                      # [3] Point-
+    sideways = steps.commutator(mv.xy)                                          # [3] Point-
+    rims = meshes.circles(hubs + steps, (hubs & sideways) * solids.flip, n_rim)  # [3, n_rim] Point-
+    tyres = simplices.tubes(rims.reshape(-1), Topology.loops([rims.shape[1]] * rims.shape[0]), to_rgb(wheel_colour),
+                            rim_width, view, gloss=solids.gloss)
+    trail = simplices.tubes(middle, Topology.chains([len(middle)]), to_rgb(trail_colour), trail_width, view,
                             gloss=solids.gloss)
-    return solids.draw(parts, view, BACKGROUND, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])
+    return solids.draw(parts, view, background, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])
 
 
 def space_view(place: solids.Point) -> solids.View:
-    """A view of the square of ground following a place on it, up to the top of the turning centre's post."""
+    """Frames the square ground patch of half-width `view_half_width` around `place` (`[] Point-`) up to the top of the turning-centre post."""
     mv = place.context.multivector
-    corners = place + (mv.x.dual() * CORNERS[:, 0] + mv.y.dual() * CORNERS[:, 1]) * VIEW  # [corners] Point-
-    return solids.view([corners, corners + mv.z.dual() * (4 * WHEEL_RADIUS)], 0.0, ELEVATION, AZIMUTH, MARGIN,
-                       N_PIXELS)
+    corners = place + (mv.x.dual() * ground_corners[:, 0] + mv.y.dual() * ground_corners[:, 1]) * view_half_width  # [4] Point-
+    return solids.view([corners, corners + mv.z.dual() * (4 * wheel_radius)], 0.0, elevation, azimuth, margin,
+                       n_pixels)
 
 
-def following(place: Extensor) -> np.ndarray:
-    """The square view centred on a place on the ground, its limits along x and along y `[2, 2]`: the place's
-    pairings with the planes x = 0 and y = 0 over its weight, the view's half width either side."""
+def following_limits(place: Extensor) -> np.ndarray:
+    """Pairing `place` (`[] Point-`) with the coordinate planes `x` and `y` over its weight gives `[2, 2]` axis limits spanning `view_half_width` to either side."""
     mv = place.context.multivector
-    middle = (stack((mv.x, mv.y)) & place) / (mv.w & place)                  # [2] Scalar+
-    return stack([middle - VIEW, middle + VIEW], axis=-1).to_array()
+    middle = (stack((mv.x, mv.y)) & place) / (mv.w & place)                     # [2] Scalar+
+    return stack([middle - view_half_width, middle + view_half_width], axis=-1).to_array()
 
 
 def animate(draw, scenes) -> Iterator[np.ndarray]:
-    """One frame per scene, drawn by the given view."""
+    """Yields one rendered RGB frame (`[rows, columns, 3]`) per scene tuple in `scenes`."""
     for scene in scenes:
         yield draw(*scene)

@@ -1,1 +1,1 @@
-"""The GENERIC framework for non-equilibrium reversible-irreversible dynamics."""
+"""A damped spring oscillator warms a thermal reservoir in the GENERIC formulation."""

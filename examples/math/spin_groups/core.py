@@ -1,33 +1,27 @@
-"""The spin groups: the rotors of every signature up to six dimensions, inside one algebra.
+"""Spin groups of every signature up to six dimensions sit inside one nine-dimensional algebra.
 
-The algebra has six directions squaring to plus one, x y z w v u, and three squaring to minus one,
-t s r. Choosing p of the first and q of the second picks out the signature (p, q): the bivectors of
-the chosen directions generate its rotors, the spin group, and their even products are its spinors.
-Three maps, built from types alone, tell the groups apart.
+Six directions square to plus one (`x`, `y`, `z`, `w`, `v`, `u`) and three square to minus one
+(`t`, `s`, `r`). Choosing `p` of the positive directions and `q` of the negative directions picks
+out signature `(p, q)`: the bivectors of the chosen directions generate its rotors, forming the spin
+group, and their even products form its spinors. Three maps built from types alone separate the
+signatures.
 
-The invariant form of the rotors' Lie algebra, the trace of the double commutator, a form
-on pairs of bivectors, is the algebra's own inner product on those bivectors, times `2 * (n - 2)`:
-the geometric product carries it already.
+The Lie algebra's invariant form traces what the double commutator of two bivectors does to a third,
+and equals `2 * (n - 2)` times the algebra's own inner product `Bivector | Bivector`.
 
-Sandwiching the bivectors with the product of the chosen positive directions is an involution: it
-negates exactly the planes that mix a positive with a negative direction. The planes it fixes square
-to minus one and generate rotations; the planes it negates square to plus one and generate boosts. There are `p * (p - 1) // 2 + q * (q - 1) // 2` of the first and `p * q` of the
-second, and a group is compact when every plane is a rotation.
+Sandwiching the bivectors with the product of the chosen positive directions defines an involution
+that negates the `p * q` planes mixing a positive with a negative direction and fixes the
+`p * (p - 1) // 2 + q * (q - 1) // 2` planes within either sign. Fixed planes square to minus one
+and generate rotations; negated planes square to plus one and generate boosts, so a spin group is
+compact when every plane generates a rotation.
 
-In an even number of dimensions the pseudoscalar of the chosen directions commutes with every
-spinor. When it squares to plus one, `0.5 * (1 + pseudoscalar)` and `0.5 * (1 - pseudoscalar)` split
-the spinors into two halves; when it squares to minus one, it acts on the spinors as a quarter turn of
-every pair of their coefficients alike. In four dimensions it also maps bivectors to bivectors, so the
-Lie algebra itself splits in two, or pairs each rotation with the boost it turns into. In four
-Euclidean dimensions each generator is the sum of two commuting halves, and the rotor the product of
-their exponentials; each factor turns every plane through one angle, and their orbits on the
-three-sphere are the fibres of the Hopf fibration and of its mirror image.
-
-In the notation of Lie groups the signatures read as Spin(3) = SU(2), Spin(2,1) = SL(2,R),
-Spin(4) = SU(2) x SU(2), Spin(3,1) = SL(2,C), Spin(2,2) = SL(2,R) x SL(2,R), Spin(5) = Sp(2),
-Spin(4,1) = Sp(1,1), Spin(3,2) = Sp(4,R), Spin(6) = SU(4), Spin(5,1) = SL(2,H), Spin(4,2) = SU(2,2)
-and Spin(3,3) = SL(4,R); the invariant form as the Killing form, and the involution as the Cartan
-involution.
+In even dimensions the pseudoscalar of the chosen directions commutes with every spinor. When it
+squares to plus one, `(1 + pseudoscalar) / 2` and `(1 - pseudoscalar) / 2` split the spinors into
+two invariant halves; when it squares to minus one, multiplying by it turns every pair of spinor
+components through a quarter turn. In four dimensions the pseudoscalar also maps bivectors to
+bivectors, splitting the Lie algebra itself in signature `(4, 0)` into two commuting halves whose
+exponentials turn every plane through one angle and trace the Hopf fibration and its mirror image on
+the three-sphere.
 """
 
 from __future__ import annotations
@@ -42,45 +36,85 @@ ga = Algebra("x+y+z+w+v+u+t-s-r-")
 context = NumpyContext(ga)
 mv = context.multivector
 positive_names, negative_names = "xyzwvu", "tsr"
-# The points of the four Euclidean directions x y z w: the antivectors that contain all five others.
-Euclidean = ga.gatype.vector().derive.within(Algebra("x+y+z+w+")).derive.dual   # Antivector-
-Antitrivector = ga.gatype.antitrivector()                           # Antitrivector-
 
-# The pseudoscalar of the four Euclidean directions commutes with their bivectors and squares to one:
-# its two halves split every generator into two commuting generators, one turning each plane along
-# with its dual plane, the other against it.
-euclidean_pseudoscalar = mv.xyzw                                                     # [] Quadvector+
-plus, minus = 0.5 * (1 + euclidean_pseudoscalar), 0.5 * (1 - euclidean_pseudoscalar)  # [] Even+, Even+
+# Points of the four Euclidean directions x y z w are the antivectors containing the five remaining directions.
+Euclidean = ga.gatype.vector().derive.within(Algebra("x+y+z+w+")).derive.dual   # Antivector-
+Antitrivector = ga.gatype.antitrivector()                                       # Antitrivector-
+
+# The four-dimensional Euclidean pseudoscalar commutes with bivectors and squares to one, splitting each
+# generator into isoclinic halves that turn every plane along with or against its orthogonal complement.
+euclidean_pseudoscalar = mv.xyzw                                                # [] Quadvector+
+plus = (1 + euclidean_pseudoscalar) / 2                                         # [] Even+
+minus = (1 - euclidean_pseudoscalar) / 2                                        # [] Even+
 
 
 # --- math -----------------------------------------------------------------------------
+def invariant_form(Bivector: GAType) -> Extensor:
+    """The trace of the double commutator on `Bivector` defines the Lie algebra's invariant bilinear
+    form (`[] Scalar+ <- (Bivector+, Bivector+)`)."""
+    return Bivector.commutator(Bivector.commutator(Bivector)).trace(0, 3)       # [] Scalar+ <- (Bivector+, Bivector+)
+
+
+def isoclinic_factors(generator: Extensor) -> tuple[Extensor, Extensor]:
+    """Projecting a four-dimensional bivector `generator` onto `plus` and `minus` and exponentiating
+    gives its two commuting isoclinic rotor factors (`[] Rotor+, Rotor+`)."""
+    left_factor = (plus * generator).exp()                                      # [] Rotor+
+    right_factor = (minus * generator).exp()                                    # [] Rotor+
+    return left_factor, right_factor
+
+
 def stereographic(points: Euclidean) -> Euclidean:
-    """Points of the three-sphere projected from the pole at -w into the space of x y z."""
+    """Stereographic projection from the pole at `-w` maps `points` (`[...] Antivector-`) on the
+    three-sphere into the three-dimensional space of `x`, `y`, and `z` (`[...] Antivector-`)."""
     w_coordinate = mv.w & points                                                # [...] Scalar+
     return (points - mv.w.dual() * w_coordinate) / (1 + w_coordinate)           # [...] Antivector-
 
 
+def isoclinic_orbits(n_azimuths: int, heights: np.ndarray, n_steps: int
+                     ) -> tuple[Euclidean, Euclidean, Euclidean]:
+    """Stereographic projections of the two opposite isoclinic circle families (`[n_heights,
+    n_azimuths, n_steps + 1] Antivector-`) and of the `(2, 3)` torus-knot orbits (`[n_heights, 1,
+    n_steps + 1] Antivector-`) on the three-sphere."""
+    n_heights = len(heights)
+    # Turning xy along with its orthogonal plane zw and against it gives the two isoclinic generators.
+    along, against = plus * mv.xy, minus * mv.xy                                # [] Bivector+, Bivector+
+    combined = 2 * mv.xy + 3 * mv.zw                                            # [] Bivector+
+    # Starting points turn from +x toward +z by each height angle and around the xy plane by each azimuth.
+    azimuths = np.linspace(0, 2 * np.pi, n_azimuths, endpoint=False)
+    azimuth_turns = (mv.xy * (-azimuths / 2)).exp()                             # [n_azimuths] Rotor+
+    height_turns = (mv.xz * (-heights[:, None] / 2)).exp()                      # [n_heights, 1] Rotor+
+    starts = (azimuth_turns * height_turns) >> mv.x.dual()                      # [n_heights, n_azimuths] Antivector-
+    # Because the sandwich product turns planes by twice the rotor angle, pi completes one full turn.
+    turn_angles = np.linspace(0, np.pi, n_steps + 1)
+    along_rotors = (2 * along * turn_angles).exp()                              # [n_steps + 1] Rotor+
+    against_rotors = (2 * against * turn_angles).exp()                          # [n_steps + 1] Rotor+
+    combined_rotors = (combined * turn_angles).exp()                            # [n_steps + 1] Rotor+
+    left_orbits = stereographic(along_rotors >> starts[..., None])              # [n_heights, n_azimuths, n_steps + 1] Antivector-
+    right_orbits = stereographic(against_rotors >> starts[..., None])           # [n_heights, n_azimuths, n_steps + 1] Antivector-
+    knotted_orbits = stereographic(combined_rotors >> starts[:, :1, None])      # [n_heights, 1, n_steps + 1] Antivector-
+    return left_orbits, right_orbits, knotted_orbits
+
+
 def linking(first: Euclidean, second: Euclidean) -> Antitrivector:
-    """Gauss's linking number of two closed polygons in the space of x y z, as a volume: the volume
-    each pair of segments spans with the line between them, over the cube of its length, summed and
-    divided by four pi. It is a whole number of unit volumes, oriented by the sense in which the
-    polygons link; their mirror images link the other way."""
-    step_first = first[1:] - first[:-1]                                          # [segments] Antivector-
-    step_second = second[1:] - second[:-1]                                       # [segments] Antivector-
-    middle_first = 0.5 * (first[1:] + first[:-1])                                # [segments] Antivector-
-    middle_second = 0.5 * (second[1:] + second[:-1])                             # [segments] Antivector-
-    separation = middle_first[:, None] - middle_second[None, :]                  # [segments, segments] Antivector-
-    # The volume the separation spans with the two segments, their join.
-    volume = separation & step_first[:, None] & step_second[None, :]             # [segments, segments] Antitrivector-
-    # In this algebra an antivector squares to minus its length squared, and its dot, read through its dual, is its length squared.
-    length = separation.antinorm()                                               # [segments, segments] Scalar+
-    return (volume / length ** 3).sum() / (4 * np.pi)                            # [] Antitrivector-
+    """Gauss's linking integral of two closed polygonal loops (`[n_vertices] Antivector-`) in
+    three-dimensional space yields an integer multiple of the unit volume (`[] Antitrivector-`)
+    whose sign reverses under reflection."""
+    n_segments = first.shape[0] - 1
+    first_steps = first[1:] - first[:-1]                                        # [n_segments] Antivector-
+    second_steps = second[1:] - second[:-1]                                     # [n_segments] Antivector-
+    first_midpoints = 0.5 * (first[1:] + first[:-1])                            # [n_segments] Antivector-
+    second_midpoints = 0.5 * (second[1:] + second[:-1])                         # [n_segments] Antivector-
+    separations = first_midpoints[:, None] - second_midpoints[None, :]          # [n_segments, n_segments] Antivector-
+    # Joining the separation vector with both segment displacements measures the signed spanned volume.
+    volumes = separations & first_steps[:, None] & second_steps[None, :]        # [n_segments, n_segments] Antitrivector-
+    lengths = separations.antinorm()                                            # [n_segments, n_segments] Scalar+
+    return (volumes / lengths ** 3).sum() / (4 * np.pi)                         # [] Antitrivector-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def signature(p: int, q: int) -> tuple[GAType, GAType, Extensor, Extensor]:
-    """The first p positive and q negative directions: their bivectors and even multivectors as
-    types, the product of the positive ones, and their pseudoscalar."""
+    """Choosing the first `p` positive and `q` negative directions yields their `Bivector` and `Even`
+    types alongside the product of the positive directions and the signature's pseudoscalar."""
     names = positive_names[:p] + negative_names[:q]
     directions = Algebra.from_pqr(p, q, 0, names)
     Bivector = ga.gatype.bivector().derive.within(directions)

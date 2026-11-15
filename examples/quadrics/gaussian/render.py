@@ -1,69 +1,69 @@
-"""Drawing and coordinate readout for the Gaussian fit."""
+"""Implicit contour rendering draws the fitted Gaussian density, point cloud, and one-sigma quadric."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb, to_rgba
 
-from collections.abc import Callable
-
 from examples.quadrics.gaussian.core import Point, Polarity, Scalar, mv
 from examples.util import charts
-from examples.util.wgsl import contours, room, simplices
-from examples.util.wgsl.camera import Camera, panel
+from examples.util.panels import overlay, panel, room
+from numga.render import Camera, contours, simplices
+from numga.topology import Topology
 
-# The box the fit is shown over, along x and y, and the figure's width in pixels, for one cloud and one ellipse.
-BOX = np.array([[-5.0, -5.0], [6.0, 4.0]])
-WIDTH = 300
-# The side of a sample's dot in pixels, small for the cloud's density to show; its ink and how much it covers.
-SAMPLE_SIDE = 3
-SAMPLE_INK = np.array(to_rgb("#26364a"))
-SAMPLE_OPACITY = 0.4
-# The ellipsoid's ink and its width in pixels.
-ELLIPSOID_INK = np.array(to_rgba("#e56b24"))
-ELLIPSOID_WIDTH = 1.5
-# The cross's ink, faint.
-CROSS_INK = np.full(3, 0.8)
+view_bounds = np.array([[-5.0, -5.0], [6.0, 4.0]])
+figure_width_px = 300
+sample_side_px = 3
+sample_ink = np.array(to_rgb("#26364a"))
+sample_opacity = 0.4
+ellipsoid_ink = np.array(to_rgba("#e56b24"))
+ellipsoid_width_px = 1.5
+cross_ink = np.full(3, 0.8)
 
 
-# --- plumbing -------------------------------------------------------------------------
 @charts.style()
-def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: Polarity) -> plt.Figure:
-    """The density over the pixels, the point cloud, and the 1σ ellipsoid, orange, the zero contour of its form."""
-    (left, bottom), (right, top) = BOX
-    fig, ax = charts.subplots(WIDTH, round(WIDTH * (top - bottom) / (right - left)))
+def gaussian_figure(points: Point, density: Callable[[Point], Scalar], ellipsoid: Polarity) -> plt.Figure:
+    """Pixel-corner evaluations shade the Gaussian density behind the point cloud (`[...] Point-`) and the zero contour of the one-sigma quadric."""
+    (left, bottom), (right, top) = view_bounds
+    fig, ax = charts.subplots(figure_width_px, round(figure_width_px * (top - bottom) / (right - left)))
     ax.set_position((0, 0, 1, 1))
     ax.set(xlim=(left, right), ylim=(bottom, top))
-    columns, rows = room(ax)
-    # One point at each corner of the pixels, rows down from the top.
-    across = np.linspace(left, right, columns + 1)
-    down = np.linspace(top, bottom, rows + 1)
-    corners = mv.point(np.stack(np.meshgrid(across, down), axis=-1))            # [rows + 1, columns + 1] Point-
-    shades = plt.get_cmap("Blues")(np.clip(density(corners).to_array(), 0, 1))[..., :3]
-    form = (ellipsoid(corners) & corners).to_array()                            # [rows + 1, columns + 1]
-    places = corners.reshape(-1)                                                # [(rows + 1) * (columns + 1)] Point-
-    grid = contours.Topology.grid(*form.shape)
+    n_columns, n_rows = room(ax)
+    # Evaluate the density and quadric form at every pixel corner from top to bottom.
+    x_grid = np.linspace(left, right, n_columns + 1)
+    y_grid = np.linspace(top, bottom, n_rows + 1)
+    grid_points = mv.point(np.stack(np.meshgrid(x_grid, y_grid), axis=-1))     # [n_rows + 1, n_columns + 1] Point-
+    shades = plt.get_cmap("Blues")(np.clip(density(grid_points).to_array(), 0, 1))[..., :3]
+    quadric_values = ellipsoid(grid_points) & grid_points                      # [n_rows + 1, n_columns + 1] Scalar+
+    flat_points = grid_points.reshape(-1)                                      # [(n_rows + 1) * (n_columns + 1)] Point-
+    flat_values = quadric_values.reshape(-1).to_array()
+    flat_shades = shades.reshape(-1, 3)
+    pixel_grid = Topology.grid(n_rows + 1, n_columns + 1)
     camera = panel(ax, mv.x, mv.y, mv.w)
-    shaded = contours.picture(places, grid, form.reshape(-1), shades.reshape(-1, 3), camera)
-    cloud = simplices.markers(points, SAMPLE_INK, SAMPLE_SIDE / 2, camera, opacity=SAMPLE_OPACITY)
-    # The ellipsoid alone, over the cloud and the cross: its zero level on a clear picture.
-    outline = contours.Level(0.0, ELLIPSOID_INK, ELLIPSOID_WIDTH)
-    ellipse = contours.picture(places, grid, form.reshape(-1), shades.reshape(-1, 3), camera, levels=(outline,),
-                               opacity=0.0)
-    simplices.overlay(ax, [shaded, cloud, cross(ax, camera, "x", "y"), ellipse])
+    density_layer = contours.picture(flat_points, pixel_grid, flat_values, flat_shades, camera)
+    cloud_layer = simplices.markers(points, sample_ink, sample_side_px / 2, camera, opacity=sample_opacity)
+    outline = contours.Level(0.0, ellipsoid_ink, ellipsoid_width_px)
+    ellipse_layer = contours.picture(
+        flat_points, pixel_grid, flat_values, flat_shades, camera, levels=(outline,), opacity=0.0,
+    )
+    overlay(ax, [density_layer, cloud_layer, origin_cross(ax, camera, "x", "y"), ellipse_layer])
     return fig
 
 
-def cross(ax, camera: Camera, across: str, up: str) -> np.ndarray:
-    """No scales: a faint cross through the origin, the coordinate planes through it from edge to edge of the panel,
-    each named at its end; the cross's picture."""
+def origin_cross(ax: plt.Axes, camera: Camera, horizontal_label: str, vertical_label: str) -> np.ndarray:
+    """Faint coordinate lines through the origin mark the horizontal and vertical axes across the panel."""
     (left, right), (bottom, top) = ax.get_xlim(), ax.get_ylim()
-    ends = mv.point([[left, 0], [right, 0], [0, bottom], [0, top]])            # [4] Point-
-    ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(-4, -3), textcoords="offset points",
-                ha="right", va="top", color="0.4")
-    ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(4, -4), textcoords="offset points",
-                ha="left", va="top", color="0.4")
+    axis_ends = mv.point([[left, 0], [right, 0], [0, bottom], [0, top]])       # [4] Point-
+    ax.annotate(
+        horizontal_label, (1, 0), xycoords=("axes fraction", "data"), xytext=(-4, -3),
+        textcoords="offset points", ha="right", va="top", color="0.4",
+    )
+    ax.annotate(
+        vertical_label, (0, 1), xycoords=("data", "axes fraction"), xytext=(4, -4),
+        textcoords="offset points", ha="left", va="top", color="0.4",
+    )
     ax.set_axis_off()
-    return simplices.strokes(ends, simplices.Topology.chains([2, 2]), CROSS_INK, charts.FRAME_PX, camera,
-                             cap=simplices.Cap.BUTT)
+    return simplices.strokes(axis_ends, Topology.chains([2, 2]), cross_ink, charts.FRAME_PX, camera, cap=simplices.Cap.BUTT)

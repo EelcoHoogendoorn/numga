@@ -1,5 +1,5 @@
-"""Drawing for magnetic resonance: Bloch-ball trajectories, absorption and dispersion lines, and the
-spin echo. The Bloch ball is drawn on the GPU, the rest by matplotlib."""
+"""Drawing for magnetic resonance renders Bloch-ball trajectories on the GPU and absorption lines,
+dispersion lines, and spin-echo signals in matplotlib."""
 
 from __future__ import annotations
 
@@ -10,52 +10,49 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga.gatype import Orientation
 from numga import stack
-from examples.util.animation import capture
+from numga.gatype import Orientation
+from numga.render import drawing, simplices, solids
+from numga.topology import Topology
 from examples.quantum.magnetic_resonance import core
 from examples.util import charts
-from examples.util.wgsl import labels, show, simplices, solids
-from examples.util.wgsl.camera import offset_panel
+from examples.util.animation import capture
+from examples.util.panels import labels, offset_panel, overlay, show
 
-COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
-SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
-AXIS_COLOUR = np.array([0.45, 0.47, 0.52])
-CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.55
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
-# about the centre, and the pixels across it.
-ELEVATION, AZIMUTH = np.radians(18.0), np.radians(40.0)
-REACH, N_PIXELS = 1.3, 300
-# The widths of the great circles, the paths and the arrows, the radii of the balls at the arrows' tips and of the
-# dots, in pixels, and the size of the axes' names in points; how far the axes' arrows and their names reach, in radii
-# of the ball.
-CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, TIP_RADIUS, DOT_RADIUS = 1.0, 1.4, 1.0, 1.6, 2.6
-LABEL_SIZE = 8
-AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
-# The quantity plots' sizes in pixels: the two lines side by side, and a signal over time.
-LINES_PX, SIGNAL_PX = (640, 280), (440, 250)
-# The echo's animation, in pixels: the docs' picture, kept at its size.
-ECHO_PX = (603, 281)
-# The time the echo's signal is followed for, in µs from the first pulse; the echo's view of the ball's equator, its
-# ink and its samples.
-ECHO_SPAN = 8.0
-EQUATOR_COLOUR, N_RIM_SAMPLES = np.full(3, 0.8), 119
+colours = ("#c0392b", "#7d3c98", "#2e86c1")
+sphere_colour, sphere_opacity = np.array([0.70, 0.76, 0.86]), 0.09
+axis_colour = np.array([0.45, 0.47, 0.52])
+circle_colour, circle_opacity = np.full(3, 0.75), 0.55
+# Camera elevation and azimuth in radians, half-width of the square view, and pixel width.
+elevation, azimuth = np.radians(18.0), np.radians(40.0)
+reach, n_pixels = 1.3, 300
+# Stroke widths and marker radii in pixels, axis label font size in points, and axis extents in ball radii.
+circle_width, path_width, arrow_width, tip_radius, dot_radius = 1.0, 1.4, 1.0, 1.6, 2.6
+label_size = 8
+axis_length, label_distance = 1.18, 1.26
+# Quantity plot pixel dimensions: side-by-side absorption/dispersion lines, single signal trace, and pinned echo GIF.
+lines_px, signal_px = (640, 280), (440, 250)
+echo_px = (603, 281)
+# Echo trace duration in microseconds from the first pulse, equator ink, and rim sample count.
+echo_span = 8.0
+equator_colour, n_rim_samples = np.full(3, 0.8), 119
 
 
-def components(rho: core.State) -> np.ndarray:
-    """The Bloch vector's x, y and z components: twice the pairings of the state's spin part, its antibivector part,
-    with the planes yz, zx and xy, in the algebra of spacetime as in that of space."""
-    mv = rho.context.multivector
+def bloch_components(states: core.State) -> np.ndarray:
+    """Pairs the spin part of `states` with the turning planes `yz`, `zx`, and `xy` and doubles the
+    readings into `[..., 3]` Bloch coordinates across both spacetime and spatial representations."""
+    mv = states.context.multivector
     spin_planes = stack((mv.yz, mv.zx, mv.xy))                           # [3] Bivector+
-    return 2 * (spin_planes & rho.select.antibivector()[..., None]).to_array()
+    return 2 * (spin_planes & states.select.antibivector()[..., None]).to_array()
 
 
-def gpu_points(states: core.State) -> solids.Point:
-    """A spin's place in the Bloch ball, for either source representation. In the conventional twin's algebra of space
-    the Bloch vector is an ordinary vector, extrinsic, which the metric turns into the direction it points along,
-    embedded about the drawing's origin. In spacetime the spin is the patch of the plane it turns in, intrinsic: its
-    place is a handed direction, which no embedding gives as a point, so it is read by those planes and set out along
-    the drawing's axes."""
+def bloch_points(states: core.State) -> solids.Point:
+    """Places each state's spin inside the GPU Bloch ball (`[...] Point-`).
+
+    In the spatial twin the Bloch vector is an extrinsic vector whose dual direction embeds directly
+    around the ball's origin; in spacetime the intrinsic spin patch is read against `yz`, `zx`, and
+    `xy` and laid out along the ball's axes.
+    """
     mv = states.context.multivector
     spin = 2 * states.select.antibivector()
     if spin.gatype.orientation is Orientation.extrinsic:
@@ -64,134 +61,114 @@ def gpu_points(states: core.State) -> solids.Point:
     return solids.origin + (solids.axes.dual() * solids.context.include_from_algebra(readings)).sum(axis=-1)
 
 
-
-def draw_nutation(states: Iterable[core.State], steady_states: core.State) -> plt.Figure:
-    """Each spin's Bloch vector from equilibrium, nutating about the drive and spiralling into its
-    steady state, marked with a dot; the states are consumed as they are yielded. The Bloch ball is
-    translucent, with its equator and two meridians, in the frame of its axes, named at their tips."""
-    paths = gpu_points(stack(list(states), axis=-1))                     # [detunings, times] Point-
-    colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[0]]])
-    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    # Each spin's path a chain of edges, each edge in its spin's colour.
+def nutation_figure(states: Iterable[core.State], steady_states: core.State) -> plt.Figure:
+    """Draws each spin trajectory (`states`) nutating inside a translucent Bloch ball and spiralling
+    into its stationary dot (`steady_states`)."""
+    paths = bloch_points(stack(list(states), axis=-1))                   # [..., ...] Point-
     n_paths, n_times = paths.shape
-    tracks = simplices.tubes(paths.reshape(-1), simplices.Topology.chains([n_times] * n_paths),
-                             np.repeat(colours, n_times - 1, axis=0), PATH_WIDTH, view, gloss=solids.gloss)
-    # The frame of the axes: rods from the centre along x, y and z, each with a ball at its tip.
-    axis_tips = solids.origin + solids.axes.dual() * AXIS_LENGTH              # [3] Point-
-    shafts = solids.rods(solids.origin, axis_tips, ARROW_WIDTH / 2 * view.pixel)
-    heads = solids.ball(axis_tips, TIP_RADIUS * view.pixel)[:, None]
-    parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
-             (solids.ball(gpu_points(steady_states), DOT_RADIUS * view.pixel)[:, None], colours)]
-    # The ball, translucent, the first part after the opaque ones; its equator and two meridians inked where the
-    # planes x, y and z cut it.
-    ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
+    path_colours = np.array([to_rgb(colour) for colour in colours[:n_paths]])
+    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, reach), n_pixels)
+    # Each spin trajectory forms an open tube chain coloured by its detuning.
+    tracks = simplices.tubes(paths.reshape(-1), Topology.chains([n_times] * n_paths),
+                             np.repeat(path_colours, n_times - 1, axis=0), path_width, view, gloss=solids.gloss)
+    axis_tips = solids.origin + solids.axes.dual() * axis_length         # [3] Point-
+    shafts = solids.rods(solids.origin, axis_tips, arrow_width / 2 * view.pixel)
+    heads = solids.ball(axis_tips, tip_radius * view.pixel)[:, None]
+    parts = [(shafts, axis_colour), (heads, axis_colour),
+             (solids.ball(bloch_points(steady_states), dot_radius * view.pixel)[:, None], path_colours)]
+    ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     great_circles = solids.Ink(len(parts), solids.half_space(solids.axes), solids.everywhere[None].broadcast_to((3,)),
-                               CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
-    figure = plt.figure(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100)
+                               circle_colour, circle_width, circle_opacity)
+    figure = plt.figure(figsize=(n_pixels / 100, n_pixels / 100), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(tracks, 1.0)]), view)
-    # Each axis named just past its arrow's tip, where the camera sees it.
-    labels(ax, view, solids.origin + solids.axes.dual() * LABEL_DISTANCE, list("xyz"), ha="center", va="center", fontsize=LABEL_SIZE,
-           color=AXIS_COLOUR)
+    labels(ax, view, solids.origin + solids.axes.dual() * label_distance, list("xyz"), ha="center", va="center",
+           fontsize=label_size, color=axis_colour)
     return figure
 
 
 @charts.style()
-def draw_lines(detunings: np.ndarray, drives: np.ndarray, steady_states: core.State) -> plt.Figure:
-    """Absorption and dispersion against detuning, one curve per drive strength, each divided by
-    the drive so weak drives stay visible: a stronger drive broadens and flattens the line."""
-    r = components(steady_states)                                        # [detunings, drives, 3]
-    figure, (absorbing, dispersing) = charts.subplots(*LINES_PX, ncols=2, layout="constrained")
-    for index, (drive, colour) in enumerate(zip(drives, COLOURS)):
-        absorbing.plot(detunings, -r[:, index, 1] / drive, color=colour, label=f"drive {drive:g} rad/µs")
-        dispersing.plot(detunings, r[:, index, 0] / drive, color=colour)
+def lines_figure(detunings: np.ndarray, drives: np.ndarray, steady_states: core.State) -> plt.Figure:
+    """Plots steady-state absorption and dispersion per unit drive against `detunings` for each drive
+    strength in `drives`."""
+    readings = bloch_components(steady_states)                           # [..., ..., 3]
+    figure, (absorbing, dispersing) = charts.subplots(*lines_px, ncols=2, layout="constrained")
+    for index, (drive, colour) in enumerate(zip(drives, colours)):
+        absorbing.plot(detunings, -readings[:, index, 1] / drive, color=colour)
+        dispersing.plot(detunings, readings[:, index, 0] / drive, color=colour)
     absorbing.set_ylabel("absorption, per unit drive")
     dispersing.set_ylabel("dispersion, per unit drive")
-    # Each line against its zero, with resonance marked faintly.
     absorbing.set_ylim(bottom=0)
     for ax in (absorbing, dispersing):
         ax.axhline(0, color="black", linewidth=charts.FRAME_WIDTH, zorder=0)
         ax.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
         ax.set(xticks=[], yticks=[], xlabel="detuning")
         ax.spines[["top", "right"]].set_visible(False)
-    # The drives named under both panels, clear of the lines.
-    figure.legend(*absorbing.get_legend_handles_labels(), loc="outside lower center", ncol=len(drives), frameon=False)
     return figure
 
 
 def transverse_length(states: core.State) -> np.ndarray:
-    """The length of each state's transverse Bloch vector, what a pick-up coil sees of it: its spin part less that
-    part turned a half turn in the magnet's plane xy, which keeps the part along the field and reverses the rest,
-    in the algebra of spacetime as in that of space; its size that of the plane it turns in, its dual."""
+    """Reads the transverse spin magnitude of `states` (`[...]`) by subtracting a half turn in `xy`."""
     mv = states.context.multivector
-    spins = states.select.antibivector()                                 # [...] Spin-
-    transverse = spins - (mv.xy >> spins)                                # [...] Spin-
+    spins = states.select.antibivector()
+    transverse = spins - (mv.xy >> spins)
     return transverse.antinorm().to_array()
 
 
-def signal(ensemble: core.State) -> np.ndarray:
-    """The ensemble's mean transverse Bloch vector, its length at each time: what a pick-up coil sees."""
+def coil_signal(ensemble: core.State) -> np.ndarray:
+    """Reads the mean transverse spin magnitude of `ensemble` across its trailing spin axis."""
     return transverse_length(ensemble.mean(axis=-1))
 
 
 @charts.style()
-def draw_echo(states: Iterable[core.State], dt: float, delay: float, t2: float) -> plt.Figure:
-    """The signal after the first pulse, for an ensemble recorded every dt: it vanishes as the spins
-    fan out, and returns at twice the delay after the second pulse, reduced only by the true
-    dephasing."""
-    ensemble = stack(list(states))                                       # [times, spins] State-
+def echo_figure(states: Iterable[core.State], dt: float, delay: float, t2: float) -> plt.Figure:
+    """Plots the ensemble's mean transverse spin signal sampled every `dt` alongside the `t2` envelope."""
+    ensemble = stack(list(states))                                       # [..., ...] State-
     times = np.arange(ensemble.shape[0]) * dt
-    figure, ax = charts.subplots(*SIGNAL_PX)
-    ax.plot(times, signal(ensemble), color="#2e86c1", label="mean transverse spin")
-    ax.plot(times, np.exp(-times / t2), "--", color="0.5", label="exp(-t / T2)")
+    figure, ax = charts.subplots(*signal_px)
+    ax.plot(times, coil_signal(ensemble), color="#2e86c1")
+    ax.plot(times, np.exp(-times / t2), "--", color="0.5")
     for when, name in ((delay, "π pulse"), (2 * delay, "echo")):
         ax.axvline(when, color="0.7", linewidth=charts.FRAME_WIDTH)
         ax.annotate(name, (when, 0.95), textcoords="offset points", xytext=(4, 0))
     ax.set(xlabel="time", ylabel="mean transverse spin", xlim=(times[0], times[-1]), ylim=(0, 1.05), xticks=[],
            yticks=[])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="center right", frameon=False)
     figure.tight_layout()
     return figure
 
 
 @charts.style()
-def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: float) -> plt.Figure:
-    """The signal at each time after the first pulse, on a logarithmic time axis: with a half-turn
-    pulse halfway, the echo, which fades only at the rate `1 / t2`; without it, the free decay, which
-    the uneven field ends within about a microsecond."""
-    fine = np.geomspace(times[0], times[-1], 200)
-    figure, ax = charts.subplots(*SIGNAL_PX)
-    ax.semilogx(times, transverse_length(echoed), "o-", color="#2e86c1", label="echo")
-    ax.semilogx(times, transverse_length(faded), "o-", color="#c0392b", label="free decay")
-    ax.semilogx(fine, np.exp(-fine / t2), "--", color="0.5", label="exp(-t / T2)")
+def decays_figure(times: np.ndarray, echo_states: core.State, decay_states: core.State, t2: float) -> plt.Figure:
+    """Plots the refocused `echo_states` and unrefocused `decay_states` amplitudes against `times` on a
+    logarithmic time axis alongside the `t2` envelope."""
+    fine_times = np.geomspace(times[0], times[-1], 200)
+    figure, ax = charts.subplots(*signal_px)
+    ax.semilogx(times, transverse_length(echo_states), "o-", color="#2e86c1")
+    ax.semilogx(times, transverse_length(decay_states), "o-", color="#c0392b")
+    ax.semilogx(fine_times, np.exp(-fine_times / t2), "--", color="0.5")
     ax.set(xlabel="time after the first pulse (µs)", ylabel="transverse spin", ylim=(0, 1.05), yticks=[])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(loc="lower left", frameon=False)
     figure.tight_layout()
     return figure
 
 
-def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float, delay: float, t2: float,
-                 every: int) -> Iterator[np.ndarray]:
-    """The spins seen from above the field, fanning out and refocusing, beside the signal so far, over ECHO_SPAN;
-    one frame for every few recorded states, each drawn as its state comes."""
-    span = np.linspace(0.0, ECHO_SPAN)
-    # Each spin's dot shaded by its detuning, from the lowest to the highest.
-    shades = plt.get_cmap("coolwarm")(plt.Normalize()(detunings))[:, :3]   # [spins, 3]
+def echo_frames(detunings: np.ndarray, dt: float, delay: float, t2: float, frame_stride: int,
+                states: Iterable[core.State]) -> Iterator[np.ndarray]:
+    """Yields `[rows, columns, 3]` RGB frames of the spins fanning out and refocusing from above the
+    magnet axis alongside the mean transverse signal trace every `frame_stride` recorded steps."""
+    span = np.linspace(0.0, echo_span)
+    shades = plt.get_cmap("coolwarm")(plt.Normalize()(detunings))[:, :3]   # [..., 3]
     states = iter(states)
     first = next(states)
     mv = first.context.multivector
-    # The spins seen from above the field, read as they are by the planes they turn in, twice over: the Bloch vector's
-    # x and y, in spacetime, where a spin is the patch of its plane, as in the conventional twin's space, where it is a
-    # vector.
+    # Pairing with twice `yz` and `zx` reads transverse `x` and `y` coordinates directly in both algebras.
     across, up = 2 * mv.yz, 2 * mv.zx
-    # The ball's equator: the elements these planes read one unit along x, turned about the field.
     unit = across.dual() / (across & across.dual())
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, N_RIM_SAMPLES, endpoint=False) / 2)).exp()
-    equator = turns >> unit                                                   # [rim samples]
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples, endpoint=False) / 2)).exp()
+    equator = turns >> unit                                                # [n_rim_samples]
     with charts.style():
-        figure, (top, trace) = charts.subplots(*ECHO_PX, ncols=2, width_ratios=(1, 1.4))
+        figure, (top, trace) = charts.subplots(*echo_px, ncols=2, width_ratios=(1, 1.4))
         top.set_xlim(-1.1, 1.1)
         top.set_ylim(-1.1, 1.1)
         top.set_aspect("equal")
@@ -200,20 +177,20 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         trace.plot(span, np.exp(-span / t2), "--", color="0.8")
         trace.axvline(delay, color="0.85", linewidth=charts.FRAME_WIDTH)
         trace.annotate("π pulse", (delay, 0.95), textcoords="offset points", xytext=(4, 0))
-        trace.set_xlim(0.0, ECHO_SPAN)
+        trace.set_xlim(0.0, echo_span)
         trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
         trace.spines[["top", "right"]].set_visible(False)
         figure.tight_layout()
         camera = offset_panel(top, across, up)
-        rim = simplices.strokes(equator, simplices.Topology.loops([N_RIM_SAMPLES]), EQUATOR_COLOUR, charts.LINE_PX,
+        rim = simplices.strokes(equator, Topology.loops([n_rim_samples]), equator_colour, charts.LINE_PX,
                                 camera)
-        spins = simplices.overlay(top, [rim])
+        spins = overlay(top, [rim])
         times, strength = [], []
         for index, rho in enumerate(chain((first,), states)):
             times.append(index * dt)
-            strength.append(signal(rho))
-            if index % every == 0:
-                spins.set_data(simplices.composited([
+            strength.append(coil_signal(rho))
+            if index % frame_stride == 0:
+                spins.set_data(drawing.composited([
                     rim, simplices.markers(rho.select.antibivector(), shades, charts.MARKER_PX / 2, camera)]))
                 so_far.set_data(times, strength)
                 yield capture(figure)

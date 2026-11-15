@@ -1,23 +1,22 @@
 """Typed discrete derivatives, viscous channel flow and independence of edge directions."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.fluids.dec_stokes import core, scenarios
+from examples.fluids.dec_stokes import core, render, scenarios
 
 
 def flow(topology, vertices, inlet, outlet):
     operators = core.Operators(topology, vertices)
-    ordinate = core.mv.y & vertices
-    streamfunction = 1.5 * (ordinate - 4 * ordinate.squared() * ordinate / (3 * scenarios.HEIGHT**2))
-    ends = topology.reading(np.concatenate((inlet, outlet)), 1)
-    prescribed = ~ends * (ends * (topology.d[0] * streamfunction))
+    prescribed = scenarios.boundary_flux(topology, vertices, inlet, outlet)
     boundary_circulation = operators.dual_patches * 0
-    result = core.stokes(operators, scenarios.VISCOSITY, prescribed, topology.exterior[1], boundary_circulation)
+    result = core.stokes_flow(operators, scenarios.viscosity, prescribed, topology.exterior[1], boundary_circulation)
     return operators, prescribed, result
 
 
 def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     topology, vertices, *_ = scenarios.channel(8)
+    V, E, F = topology.n_elements
     operators = core.Operators(topology, vertices)
     for derivative in (operators.d0, operators.d1):
         assert derivative.gatype == core.ga.gatype((core.Scalar, core.Scalar))
@@ -58,9 +57,9 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
         assert hodge.gatype == core.ga.gatype((core.Patch, core.Scalar))
     assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
 
-    vertex_values = core.mv.scalar(np.cos(np.arange(topology.n_vertices))[:, None]).field()
-    vertex_vorticity = (core.mv.xy * np.cos(np.arange(topology.n_vertices))).field()
-    edge_values = core.mv.scalar(np.sin(np.arange(topology.n_elements[1]))[:, None]).field()
+    vertex_values = core.mv.scalar(np.cos(np.arange(V))[:, None]).field()
+    vertex_vorticity = (core.mv.xy * np.cos(np.arange(V))).field()
+    edge_values = core.mv.scalar(np.sin(np.arange(E))[:, None]).field()
     dual_edges = operators.star1(edge_values)
     np.testing.assert_allclose(operators.star0.solve(operators.star0(vertex_values)).kernel,
                                vertex_values.kernel, atol=1e-11)
@@ -75,7 +74,7 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     np.testing.assert_allclose(vertex_work.kernel, dual_edge_work.kernel, atol=1e-11)
     np.testing.assert_allclose(dual_edge_work.kernel, primal_edge_work.kernel, atol=1e-11)
 
-    # Reflecting the mesh transforms the vorticity bivector by the reflection and leaves the viscous map unchanged.
+    # Reflecting the vertices transforms the vorticity bivector by the reflection and leaves the viscous map unchanged.
     mirror = core.mv.y
     mirrored = core.Operators(topology, mirror >> vertices)
     np.testing.assert_allclose(mirrored.curl(edge_values).kernel,
@@ -91,10 +90,10 @@ def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticit
         topology, vertices, inlet, outlet, _ = scenarios.plain_channel(n_divisions)
         operators, _, (_, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
         ordinate = core.mv.y & operators.face_centres
-        exact_velocity = core.mv.x.dual() * 1.5 * (1 - 4 * ordinate.squared() / scenarios.HEIGHT**2)
-        exact_pressure = -12 * scenarios.VISCOSITY * (core.mv.x & operators.circumcentres) / scenarios.HEIGHT**2
+        exact_velocity = core.mv.x.dual() * 1.5 * (1 - 4 * ordinate.squared() / scenarios.height**2)
+        exact_pressure = -12 * scenarios.viscosity * (core.mv.x & operators.circumcentres) / scenarios.height**2
         exact_pressure -= (exact_pressure * operators.areas).sites.sum() / operators.areas.sites.sum()
-        exact_vorticity = core.mv.xy * (12 * (core.mv.y & vertices) / scenarios.HEIGHT**2)
+        exact_vorticity = core.mv.xy * (12 * (core.mv.y & vertices) / scenarios.height**2)
 
         velocity_error = (((velocity - exact_velocity).norm_squared() * operators.areas).sites.sum()
                           / operators.areas.sites.sum()).square_root()
@@ -109,8 +108,9 @@ def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticit
     assert np.all(fine < [0.05, 0.08, 0.04])
 
 
-def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
+def test_obstacle_flow_balances_every_face_and_preserves_boundary_flux():
     topology, vertices, inlet, outlet, walls = scenarios.channel(12)
+    V, E, F = topology.n_elements
     operators, prescribed, (flux, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
     np.testing.assert_allclose((topology.d[1] * flux).kernel, 0, atol=1e-10)
     on_boundary = topology.reading(topology.exterior[1], 1)
@@ -119,26 +119,27 @@ def test_obstacle_flow_balances_every_cell_and_preserves_boundary_flux():
     np.testing.assert_allclose((on_walls * flux).kernel, 0, atol=1e-11)
 
     # Summing oriented face boundaries cancels every interior edge and reads the net throughflow.
-    one = core.mv.scalar(np.ones((topology.n_elements[2], 1))).field()
-    boundary = ~topology.d[1] * one
+    one = core.mv.scalar(np.ones((F, 1))).field()
+    boundary = topology.d[1].adjugate() * one
     outgoing = boundary * flux
     on_inlet = topology.reading(inlet, 1)
     on_outlet = topology.reading(outlet, 1)
-    np.testing.assert_allclose((on_inlet * outgoing).sites.sum().to_array(), -scenarios.HEIGHT, atol=1e-11)
-    np.testing.assert_allclose((on_outlet * outgoing).sites.sum().to_array(), scenarios.HEIGHT, atol=1e-11)
+    np.testing.assert_allclose((on_inlet * outgoing).sites.sum().to_array(), -scenarios.height, atol=1e-11)
+    np.testing.assert_allclose((on_outlet * outgoing).sites.sum().to_array(), scenarios.height, atol=1e-11)
 
     abscissa = (core.mv.x & operators.face_centres).to_array()
     pressure_values = pressure.to_array()
-    assert pressure_values[abscissa < 0.5].mean() > pressure_values[abscissa > scenarios.LENGTH - 0.5].mean()
+    assert pressure_values[abscissa < 0.5].mean() > pressure_values[abscissa > scenarios.length - 0.5].mean()
     assert (vorticity.norm_squared() * operators.dual_areas).sites.sum().to_array() > 0
     assert np.isfinite(velocity.kernel).all()
 
 
-def test_reversing_mesh_edges_changes_readings_and_preserves_physical_flow():
+def test_reversing_edges_changes_readings_and_preserves_physical_flow():
     topology, vertices, inlet, outlet, _ = scenarios.channel(12)
+    V, E, F = topology.n_elements
     _, _, result = flow(topology, vertices, inlet, outlet)
-    reversed_topology = core.Topology(topology.n_vertices, topology.elements[2].copy())
-    reversed_edges = np.arange(topology.n_elements[1]) % 3 == 0
+    reversed_topology = core.Topology(V, topology.elements[2].copy())
+    reversed_edges = np.arange(E) % 3 == 0
     reversed_topology.elements[1][reversed_edges] = reversed_topology.elements[1][reversed_edges, ::-1]
     reversed_topology.boundary_indices[0][reversed_edges] = reversed_topology.boundary_indices[0][reversed_edges, ::-1]
     reversed_topology.orientation[1][...] *= np.where(reversed_edges[reversed_topology.boundary_indices[1]], -1, 1)
@@ -148,3 +149,16 @@ def test_reversing_mesh_edges_changes_readings_and_preserves_physical_flow():
     np.testing.assert_allclose(changed[0].kernel, (result[0] * signs).kernel, atol=1e-10)
     for before, after in zip(result[1:], changed[1:]):
         np.testing.assert_allclose(after.kernel, before.kernel, atol=1e-9)
+
+
+def test_render_draws_triangulation_complex_fields_and_flow():
+    topology, vertices, inlet, outlet, _ = scenarios.channel(8)
+    operators, _, (flux, pressure, vorticity, velocity) = flow(topology, vertices, inlet, outlet)
+    streamfunction = (topology.d[0] * core.Scalar).lstsq(flux)
+    for fig in (
+        render.draw_triangulation(topology, vertices),
+        render.draw_complex(topology, vertices, operators.circumcentres, operators.dual_edges),
+        render.draw_fields(topology, vertices, pressure, vorticity, streamfunction),
+        render.draw_flow(topology, vertices, pressure, velocity),
+    ):
+        plt.close(fig)

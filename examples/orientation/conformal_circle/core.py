@@ -1,48 +1,66 @@
-"""A conformal circle carries either the order of its points or of its cutting surfaces.
+"""Conformal circles carry either the intrinsic order of three points or the extrinsic order of two cutting surfaces.
 
-Conformal geometric algebra models spheres and planes as vectors and points as null antivectors. The circle
-through three points is their join, intrinsic; the circle where two surfaces cut is their meet, extrinsic. The
-two can share coefficients and still reflect differently.
+Conformal geometric algebra models spheres and planes as extrinsic vectors and points as null intrinsic antivectors. Joining three ordered points with `&` forms an intrinsic circle (`Path-`), whereas intersecting two oriented surfaces with `^` forms an extrinsic circle (`Circle+`). Even when both circles share identical blade coefficients, reflecting in the circle's own plane preserves the point join while reversing the surface intersection, and pairing the intrinsic circle's dual with the sphere at infinity or a mirror plane selects Euclidean rotation or conformal boost generators along the circle.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
-from numga import NumpyContext
+from numga import NumpyContext, stack
 from numga.algebras import CGA3D
 
 ga = CGA3D
 mv = NumpyContext(ga).multivector
+Scalar = ga.gatype.scalar()                                                     # Scalar+
 Point = ga.gatype.antivector()                                                  # Antivector-
 Sphere = ga.gatype.vector()                                                     # Vector+
 Circle = ga.gatype.bivector()                                                   # Bivector+
 Path = ga.gatype.antitrivector()                                                # Antitrivector-
 
 
+# --- math -----------------------------------------------------------------------------
+def circle_constructions(points: Point, plane: Sphere, sphere: Sphere) -> tuple[Path, Circle]:
+    """Joining three ordered `points` (`[3] Point-`) gives an intrinsic circle (`[] Path-`), while
+    wedging `plane` and `sphere` (`[] Sphere+`) gives an extrinsic circle (`[] Circle+`)."""
+    point_join = (points[0] & points[1] & points[2]).normalized()               # [] Path-
+    surface_meet = (plane ^ sphere).normalized()                                # [] Circle+
+    return point_join, surface_meet
+
+
+def circle_motion_states(circle: Path, horizon: Sphere, reflector: Sphere, grid: Point,
+                         phases: np.ndarray, glide_amplitude: float) -> Iterator[Point]:
+    """Yields paired disk grids (`[2, n_radii + 1, n_angles] Point-`) carried along `circle` by rigid
+    rotation and by a hyperbolic glide reflection across `phases` (`[n_frames]`)."""
+    # Contracting the circle's dual with the sphere at infinity selects the Euclidean rotation generator about the circle's axis.
+    axis = (circle.dual() | horizon).normalized()                               # [] Circle+
+    rotations = (axis * (-phases / 2)).exp()                                    # [...] Rotor+
+    # Contracting the circle's dual with the reflecting plane selects the commuting conformal boost along the circle.
+    boost = reflector | circle.dual()                                           # [] Circle+
+    boost_rotors = (boost * (glide_amplitude * np.sin(phases))).exp()           # [...] Rotor+
+    glides = reflector * boost_rotors                                           # [...] Odd+
+    for rotation, glide in zip(rotations, glides):
+        yield stack([rotation >> grid, glide >> grid])
+
+
 # --- plumbing -------------------------------------------------------------------------
 def sphere_samples(seed: Point, equator: Circle, meridian: Circle,
                    longitudes: np.ndarray, latitudes: np.ndarray) -> Point:
-    """A sphere sampled by two rotations of its seed point, with latitude and longitude axes."""
-    longitude = (equator * (-longitudes[None, :] / 2)).exp()                    # [1, longitudes] Rotor+
-    latitude = (meridian * (-latitudes[:, None] / 2)).exp()                     # [latitudes, 1] Rotor+
-    return (longitude * latitude) >> seed
+    """Two orthogonal rotations carry `seed` across `latitudes` (`[n_parallels]`) and `longitudes`
+    (`[n_meridians]`) into a spherical grid (`[n_parallels, n_meridians] Point-`)."""
+    longitude_turns = (equator * (-longitudes[None, :] / 2)).exp()              # [1, ...] Rotor+
+    latitude_turns = (meridian * (-latitudes[:, None] / 2)).exp()               # [..., 1] Rotor+
+    return (longitude_turns * latitude_turns) >> seed
 
 
-def disk_samples(direction: Point, origin: Point, infinity: Point, rotation: Circle,
+def disk_samples(direction: Point, origin: Point, infinity: Point, axis: Circle,
                  radii: np.ndarray, angles: np.ndarray) -> Point:
-    """A polar grid of points, with radius and angle axes: the origin carried along a direction by each radius,
-    then turned by each angle."""
-    # The direction joined with the point at infinity, dualized, generates the translation along it.
-    shifts = ((infinity & direction).dual() * (-radii / 2)).exp()               # [radii] Rotor+
-    seeds = shifts >> origin                                                    # [radii] Point-
-    turns = (rotation * (angles / 2)).exp()                                     # [angles] Rotor+
-    return turns[None, :] >> seeds[:, None]
-
-
-# --- math -----------------------------------------------------------------------------
-def constructions(points: Point, plane: Sphere, sphere: Sphere) -> tuple[Path, Circle]:
-    """The circle through its ordered points and the circle cut by its ordered surfaces."""
-    through_points = (points[0] & points[1] & points[2]).normalized()           # [] Path-
-    from_surfaces = (plane ^ sphere).normalized()                               # [] Circle+
-    return through_points, from_surfaces
+    """Translating `origin` along `direction` by `radii` (`[n_radii + 1]`) and turning about `axis` by
+    `angles` (`[n_angles]`) samples a polar disk grid (`[n_radii + 1, n_angles] Point-`)."""
+    # Dualizing the join of the direction with the point at infinity gives the translation generator along that direction.
+    radial_shifts = ((infinity & direction).dual() * (-radii / 2)).exp()        # [...] Rotor+
+    radial_seeds = radial_shifts >> origin                                      # [...] Point-
+    angular_turns = (axis * (angles / 2)).exp()                                 # [...] Rotor+
+    return angular_turns[None, :] >> radial_seeds[:, None]

@@ -1,13 +1,13 @@
-"""Renders of the arm and its ellipsoids, ray traced on the GPU: the arm's boxes opaque, an ellipsoid translucent
-among them.
+"""GPU ray-traced views of the articulated arm's opaque link boxes under translucent manipulability ellipsoids.
 
-A box is the unit cube carried by its body map, bounded by six planes. A plane carried by the map pairs with each
-carried point as the cube's plane did with the point, so the box's planes in the world are the cube's, through the
-adjugate's inverse: `bodies.adjugate().solve(cube)`.
+Each link box is the unit cube carried by its body placement map. Because a carried plane pairs with each
+carried point just as the unit cube's face plane paired with the uncarried point, the world bounding planes
+of the five link boxes come from `bodies.adjugate().solve(cube_planes)`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from itertools import product
 
 import matplotlib.pyplot as plt
@@ -15,79 +15,131 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.manipulability import core
-from examples.util.wgsl import room, show_pixels, solids
+from numga.render import solids
+from examples.util.panels import room, show_pixels
 
 mv, w = core.mv, core.w
-box_colours = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])
-velocity_colour, force_colour = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.55, 0.20])
-# How much each of an ellipsoid's surfaces, front and back, hides of what lies behind it.
+box_colours = np.array([
+    [0.45, 0.47, 0.52],
+    [0.62, 0.64, 0.70],
+    [0.78, 0.60, 0.30],
+    [0.30, 0.55, 0.62],
+    [0.55, 0.40, 0.60],
+])
+velocity_colour = np.array([0.25, 0.45, 0.85])
+force_colour = np.array([0.92, 0.55, 0.20])
 quadric_opacity = 0.33
 background = np.ones(3)
-# The unit cube's six planes, half a unit from the origin across the axes, the cube on their negative sides.
-cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Plane+
-# Its eight corners.
-cube_corners = mv.point(list(product((-0.5, 0.5), repeat=3)))            # [8] Point-
-# The room a still's panel leaves around the arm and its ellipsoid on every side, as a share of their larger
-# half-width.
-margin = 0.3
+# Outward-facing planes and corners of the unit cube centred on the origin.
+cube_planes = solids.boxes(mv.rotor(), np.full(3, 0.5))                     # [6] Plane+
+cube_corners = mv.point(list(product((-0.5, 0.5), repeat=3)))               # [8] Point-
+panel_margin = 0.3
 
 
 # --- plumbing -------------------------------------------------------------------------
-def angles(view: tuple[float, float]) -> tuple[float, float]:
-    """An elevation and an azimuth in degrees, the azimuth measured from x, as `solids` takes them: in radians, the
-    azimuth measured from y."""
-    return np.radians(view[0]), np.radians(view[1] + 90)
+def camera_angles(view_degrees: tuple[float, float]) -> tuple[float, float]:
+    """Elevation and azimuth in radians, with azimuth converted from `+x` degrees to `solids`'s `+y` convention."""
+    return np.radians(view_degrees[0]), np.radians(view_degrees[1] + 90)
 
 
-def held(bodies: core.arm.PointMap, surface: core.Quadric, view: tuple[float, float], pixels: int) -> solids.View:
-    """A square view, from an elevation and azimuth in degrees, that holds the arm's boxes and a quadric with a margin
-    of `margin`, `pixels` across."""
-    elevation, azimuth = angles(view)
-    boxes = bodies[:, None](cube_corners)                                    # [boxes, 8] Point-
-    # The planes through the origin square to the image's right and up; shifted by `w * shift` they touch the quadric
-    # where they pair to zero with its dual, `plane & dual(plane)`, a quadratic in the shift.
-    screen = solids.aim(solids.origin, elevation, azimuth) >> stack((mv.x, mv.y))   # [2] Plane+
-    dual = surface.inverse()                                                 # [] Point- <- Plane+
-    square, linear, constant = w & dual(w), screen & dual(w), screen & dual(screen)
-    root = (linear.squared() - square * constant).square_root()
-    shifts = stack([(-linear - root) / square, (-linear + root) / square])   # [sides, 2]
-    # The quadric's outermost points across and up the image: the poles of its tangent planes there.
-    outermost = dual(screen + w * shifts)                                    # [sides, 2] Point-
-    return solids.view([boxes, outermost], 0.0, elevation, azimuth, margin, pixels).squared()
+def framed_view(
+    bodies: core.PointMap,
+    surface: core.Quadric,
+    view_degrees: tuple[float, float],
+    n_pixels: int,
+) -> solids.View:
+    """Square camera view framing both the arm's link boxes and the translucent quadric `surface` across `n_pixels`."""
+    elevation, azimuth = camera_angles(view_degrees)
+    box_vertices = bodies[:, None](cube_corners)                            # [5, 8] Point-
+    # Screen-right and screen-up planes shifted by `w * shifts` touch the quadric where `plane & dual_surface(plane) == 0`.
+    aim_motor = solids.aim(solids.origin, elevation, azimuth)               # [] Motor+
+    screen_planes = aim_motor >> stack((mv.x, mv.y))                        # [2] Plane+
+    dual_surface = surface.inverse()                                        # [] Point- <- Plane+
+    quadratic_a = w & dual_surface(w)                                       # [] Scalar+
+    quadratic_b = screen_planes & dual_surface(w)                           # [2] Scalar+
+    quadratic_c = screen_planes & dual_surface(screen_planes)               # [2] Scalar+
+    discriminant_root = (quadratic_b.squared() - quadratic_a * quadratic_c).square_root()   # [2] Scalar+
+    plane_shifts = stack([
+        (-quadratic_b - discriminant_root) / quadratic_a,
+        (-quadratic_b + discriminant_root) / quadratic_a,
+    ])                                                                      # [2, 2] Scalar+
+    tangent_points = dual_surface(screen_planes + w * plane_shifts)         # [2, 2] Point-
+    return solids.view([box_vertices, tangent_points], 0.0, elevation, azimuth, panel_margin, n_pixels).squared()
 
 
-def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, seen: solids.View) -> np.ndarray:
-    """One image of the arm's boxes, opaque, under a translucent quadric, as a view sees them: `[rows, columns, 3]`
-    bytes."""
-    boxes = bodies[:, None].adjugate().solve(cube)                           # [boxes, 6] Plane+
-    return solids.draw([(boxes, box_colours)], seen, background, inks=[],
-                       translucent=[(surface[None, None], colour, quadric_opacity)], meshes=[])
+def panel_image(
+    bodies: core.PointMap,
+    surface: core.Quadric,
+    colour: np.ndarray,
+    camera_view: solids.View,
+) -> np.ndarray:
+    """RGB byte image (`[n_rows, n_columns, 3]`) of the opaque link boxes under one translucent quadric `surface`."""
+    world_boxes = bodies[:, None].adjugate().solve(cube_planes)             # [5, 6] Plane+
+    return solids.draw(
+        [(world_boxes, box_colours)],
+        camera_view,
+        background,
+        inks=[],
+        translucent=[(surface[None, None], colour, quadric_opacity)],
+        meshes=[],
+    )
 
 
-def side_by_side(velocity: np.ndarray, force: np.ndarray) -> np.ndarray:
-    """The velocity ellipsoid's image beside the force ellipsoid's, a twentieth of a panel apart."""
-    gap = np.full((velocity.shape[0], velocity.shape[1] // 20, 3), 255, dtype=np.uint8)
-    return np.concatenate([velocity, gap, force], axis=1)
+def paired_panels(velocity_image: np.ndarray, force_image: np.ndarray) -> np.ndarray:
+    """Horizontal pair placing `velocity_image` beside `force_image` separated by a twentieth-panel white gap."""
+    gap = np.full((velocity_image.shape[0], velocity_image.shape[1] // 20, 3), 255, dtype=np.uint8)
+    return np.concatenate([velocity_image, gap, force_image], axis=1)
 
 
-def frame(pose, view, centre: np.ndarray, extent: float, pixels: int) -> np.ndarray:
-    """One animation frame: the velocity ellipsoid beside the force ellipsoid, in one fixed square view of half-width
-    extent about the centre, seen from an elevation and azimuth in degrees."""
+def pose_frame(
+    pose: tuple[core.PointMap, core.Point, core.Quadric, core.Quadric],
+    view_degrees: tuple[float, float],
+    workspace_centre: core.Point,
+    workspace_extent: float,
+    n_pixels: int,
+) -> np.ndarray:
+    """Single RGB animation frame showing the velocity and force ellipsoids side by side in a fixed workspace view."""
     bodies, _, velocity, force = pose
-    seen = solids.View(solids.aim(mv.point(centre), *angles(view)), np.full(2, extent), pixels)
-    return side_by_side(image(bodies, velocity, velocity_colour, seen), image(bodies, force, force_colour, seen))
+    camera_view = solids.View(
+        solids.aim(workspace_centre, *camera_angles(view_degrees)),
+        np.full(2, workspace_extent),
+        n_pixels,
+    )
+    return paired_panels(
+        panel_image(bodies, velocity, velocity_colour, camera_view),
+        panel_image(bodies, force, force_colour, camera_view),
+    )
 
 
-def draw_ellipsoids(poses, view) -> plt.Figure:
-    """One row per pose: the velocity ellipsoid beside the force ellipsoid, at the gripper, each panel framed to hold
-    the arm and its ellipsoid."""
+def animate_poses(
+    view_degrees: tuple[float, float],
+    workspace_centre: core.Point,
+    workspace_extent: float,
+    n_pixels: int,
+    poses: Iterable[tuple[core.PointMap, core.Point, core.Quadric, core.Quadric]],
+) -> Iterator[np.ndarray]:
+    """Yields side-by-side RGB frames across a stream of arm poses in a fixed workspace view."""
+    for pose in poses:
+        yield pose_frame(pose, view_degrees, workspace_centre, workspace_extent, n_pixels)
+
+
+def ellipsoids_figure(
+    poses: list[tuple[core.PointMap, core.Point, core.Quadric, core.Quadric]],
+    view_degrees: tuple[float, float],
+) -> plt.Figure:
+    """Multi-row figure with one pose per row and individually framed velocity and force ellipsoid panels."""
     figure, axes = plt.subplots(len(poses), 1, figsize=(5.5, 2.75 * len(poses)))
     axes = np.atleast_1d(axes)
-    # The rows' rooms alike: each panel as many pixels across as the two and the gap between them, a twentieth of a
-    # panel, fit in a row's room.
     columns, rows = room(axes[0])
-    pixels = min(rows, columns * 20 // 41)
+    n_pixels = min(rows, columns * 20 // 41)
     for ax, (bodies, _, velocity, force) in zip(axes, poses):
-        show_pixels(ax, side_by_side(image(bodies, velocity, velocity_colour, held(bodies, velocity, view, pixels)),
-                                     image(bodies, force, force_colour, held(bodies, force, view, pixels))))
+        velocity_view = framed_view(bodies, velocity, view_degrees, n_pixels)
+        force_view = framed_view(bodies, force, view_degrees, n_pixels)
+        show_pixels(
+            ax,
+            paired_panels(
+                panel_image(bodies, velocity, velocity_colour, velocity_view),
+                panel_image(bodies, force, force_colour, force_view),
+            ),
+        )
     return figure

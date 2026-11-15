@@ -1,14 +1,15 @@
-"""Ray tracing on the 3-sphere, on the GPU: each pixel's great circle meets the bodies' quadrics, then shading.
+"""WebGPU ray tracing of quadric ellipsoids on the 3-sphere.
 
-The ray from the eye `e` along the direction `d` of a pixel is the great circle `e * cos(t) + d * sin(t)`. A body's
-quadric bound to it is `A * u**2 + 2 * B * u + C` in `u = cot(t)`, with `A = e & Q(e)`, `B = e & Q(d)` and
-`C = d & Q(d)`, so the nearest hit, the smallest angle, is the largest root: the depth the screen conics give,
-taken here straight from the quadric. The point it reaches is `e * u + d`, kept with its own sign.
+Each pixel's ray from eye `e` along equatorial direction `d` traces a great circle parameterized by
+cotangent depth `u`, where a primal quadric evaluates to a scalar quadratic `A * u**2 + 2 * B * u + C`
+with `A = e & Q(e)`, `B = e & Q(d)`, and `C = d & Q(d)`. Selecting the largest real root across the
+scene finds the smallest positive arc angle, reconstructs the hit `e * u + d`, and shades its polar
+plane against a spherical point light.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -16,13 +17,13 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.s3_raytracer.core import Motor, Plane, Point, Quadric, ga, mv, origin
-from examples.util.wgsl import Shader, image_figure, supersampled
+from numga.wgsl import Shader, supersampled
+from examples.util.panels import image_figure
 
 background = 0.02
 
 source = """
-// The bodies' quadrics and colours; the motor carrying the eye's frame out from the origin's, the eye looking along
-// its own x, right along y and up along z; how far up the image's top edge looks, and the light.
+// Quadrics and colours of the bodies, the motor placing the eye frame, the screen half-height, and the light point.
 var<storage, read> quadrics: array<Quadric>;
 var<storage, read> colours: array<vec3<f32>>;
 var<uniform> eye_frame: Motor;
@@ -32,20 +33,19 @@ var<uniform> light: Point;
 alias Sample = vec3<f32>;
 
 const ambient = 0.15;
-// The glint's share and sharpness.
+// Specular highlight weight and exponent.
 const gloss = 0.35;
 const shininess = 40.0;
-// How far along the arc to the light a shadow test starts.
+// Arc offset from the hit before testing shadow occlusion toward the light.
 const clearance = 1e-4;
 
-// A point's direction along the sphere at a place on it, unit: its part square to the place.
-fn along(place: Point, toward: Point) -> Point {
-    return (toward - place * place.dot(toward)).normalized();
+// Unit tangent point orthogonal to `place` pointing toward `target` along the 3-sphere.
+fn tangent_toward(place: Point, target: Point) -> Point {
+    return (target - place * place.dot(target)).normalized();
 }
 
-// Whether the short arc from a hit to the light enters any body, without roots: it does when either end lies
-// inside, or the pairing with the light's polar plane falls below zero between them.
-fn shadowed(hit: Point) -> bool {
+// Tests whether the short great-circle arc from `hit` to `light` enters any quadric interior.
+fn in_shadow(hit: Point) -> bool {
     let start = hit + (light - hit) * clearance;
     for (var index = 0u; index < arrayLength(&quadrics); index++) {
         let polar = quadrics[index](light);
@@ -61,17 +61,16 @@ fn shadowed(hit: Point) -> bool {
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    // The eye, and the direction of the pixel's ray from it: a point a quarter turn away, straight ahead, and as far
-    // right and up as the pixel lies across the image.
+    // Eye point and the ray direction a quarter turn ahead, offset across the image plane.
     let eye = eye_frame >> origin;
-    let direction = eye_frame >> (frame * vec3<f32>(1.0, across.x, across.y)).sum();
+    let ray_direction = eye_frame >> (frame * vec3<f32>(1.0, across.x, across.y)).sum();
     var depth = -1e30;
     var body = 0u;
     for (var index = 0u; index < arrayLength(&quadrics); index++) {
         let quadric = quadrics[index];
         let a = eye & quadric(eye);
-        let b = eye & quadric(direction);
-        let c = direction & quadric(direction);
+        let b = eye & quadric(ray_direction);
+        let c = ray_direction & quadric(ray_direction);
         let discriminant = b * b - a * c;
         let nearest = (-b + sqrt(max(discriminant, 0.0))) / a;
         if (discriminant >= 0 && nearest > depth) {
@@ -82,22 +81,19 @@ fn sample(place: vec2<f32>) -> Sample {
     if (depth <= -1e30) {
         return vec3<f32>(background);
     }
-    let hit = (eye * depth + direction).normalized();
-    // The great circle out of the light reaches the hit along an arc; the surface is lit where that arc
-    // arrives from outside, which the pairing of its polar plane with the light decides, with the falloff
-    // of a point source on the sphere.
+    let hit = (eye * depth + ray_direction).normalized();
+    // Pairing the hit's polar plane with `light` determines front-facing illumination with spherical sin^-2 falloff.
     let polar = quadrics[body](hit);
     let arc = acos(clamp(hit.dot(light) / light.dot(light), -1.0, 1.0));
     let cosine = (polar & light) / (polar.norm() * sin(arc));
-    let lit = cosine < 0 && !shadowed(hit);
-    // Rolled off softly where the light is strongest, rather than clipped, so the brightest faces keep their form.
+    let lit = cosine < 0 && !in_shadow(hit);
+    // Soft hyperbolic rolloff preserves highlight detail on faces close to the point source.
     let lambert = select(0.0, tanh(-cosine / (sin(arc) * sin(arc))), lit);
-    // A glint where the normal, the polar plane's dual along the sphere and facing the eye, bisects the ways
-    // back to the eye and on to the light.
-    let to_eye = along(hit, eye);
-    let normal = along(hit, polar.dual());
+    // Blinn-Phong glint where the outward spherical normal bisects the tangent directions to the eye and light.
+    let to_eye = tangent_toward(hit, eye);
+    let normal = tangent_toward(hit, polar.dual());
     let facing = normal * select(-1.0, 1.0, normal.dot(to_eye) >= 0);
-    let halfway = along(hit, to_eye + along(hit, light));
+    let halfway = tangent_toward(hit, to_eye + tangent_toward(hit, light));
     let glint = select(0.0, pow(max(facing.dot(halfway), 0.0), shininess), lit);
     return colours[body] * (ambient + (1 - ambient) * lambert) + gloss * glint;
 }
@@ -107,29 +103,58 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    # The points a quarter turn from the origin along x, y and z, ahead, right and up from the origin's own view.
+    """Compiles and caches the supersampled WebGPU ray-tracing shader on the 3-sphere."""
+    # Equatorial points a quarter turn from `origin` along x, y, and z define forward, right, and up in the origin frame.
     frame = stack((mv.x, mv.y, mv.z)).dual()                                   # [3] Point-
-    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric, Motor=Motor),
-                  dict(origin=origin, frame=frame, background=background))
+    return Shader(
+        supersampled() + source,
+        ga,
+        dict(Point=Point, Plane=Plane, Quadric=Quadric, Motor=Motor),
+        dict(origin=origin, frame=frame, background=background),
+    )
 
 
-def picture(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-            shape: tuple[int, int]) -> np.ndarray:
-    """One RGB image, `[rows, columns, 3]` bytes, through a pinhole of the given field of view looking along the
-    eye frame's x."""
-    traced = shader()(shape, quadrics=surfaces, colours=colors, eye_frame=eye_frame,
-                      half_height=np.tan(fov / 2) * shape[0] / shape[1], light=light)["image"]
+def picture(
+    eye_frame: Motor,
+    surfaces: Quadric,
+    colors: np.ndarray,
+    light: Point,
+    fov: float,
+    shape: tuple[int, int],
+) -> np.ndarray:
+    """Renders one `[n_rows, n_columns, 3]` `uint8` RGB image of `surfaces` from `eye_frame`."""
+    n_rows, n_columns = shape
+    traced = shader()(
+        shape,
+        quadrics=surfaces,
+        colours=colors,
+        eye_frame=eye_frame,
+        half_height=np.tan(fov / 2) * n_rows / n_columns,
+        light=light,
+    )["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
-def frames(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-           shape: tuple[int, int]) -> Iterator[np.ndarray]:
-    """One RGB frame per eye frame."""
-    for eye in eye_frames:
-        yield picture(eye, surfaces, colors, light, fov, shape)
+def walk_animation(
+    surfaces: Quadric,
+    colors: np.ndarray,
+    light: Point,
+    fov: float,
+    shape: tuple[int, int],
+    eye_frames: Iterable[Motor],
+) -> Iterator[np.ndarray]:
+    """Yields one `[n_rows, n_columns, 3]` `uint8` RGB frame for each motor in `eye_frames`."""
+    for eye_frame in eye_frames:
+        yield picture(eye_frame, surfaces, colors, light, fov, shape)
 
 
-def draw_walk(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-              shape: tuple[int, int]) -> plt.Figure:
-    """The view from the eye's first frame."""
-    return image_figure(picture(eye_frames[0], surfaces, colors, light, fov, shape))
+def walk_figure(
+    eye_frame: Motor,
+    surfaces: Quadric,
+    colors: np.ndarray,
+    light: Point,
+    fov: float,
+    shape: tuple[int, int],
+) -> plt.Figure:
+    """Wraps the rendered view from `eye_frame` in a borderless image figure."""
+    return image_figure(picture(eye_frame, surfaces, colors, light, fov, shape))

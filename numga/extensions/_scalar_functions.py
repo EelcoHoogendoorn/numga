@@ -1,16 +1,18 @@
-"""The two scalar cases of an elementwise function, shared by norm, exp, log and the roots."""
+"""Elementwise scalar extension methods share canonical-sign normalization across `norm`, `exp`,
+`log`, and square roots."""
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from numga.extension import ExtensionMethod
 from numga.extensor import Extensor
 
 
-def register_scalar_function(method: ExtensionMethod, function: Callable[[Any, Any], Any]) -> None:
-    """A scalar stored against -1 is read back against +1 first, so the function acts on the scalar
-    and not on its negation; a scalar applies `function(context, kernel)` to its coefficients."""
+def register_scalar_function(method: ExtensionMethod, function: Callable) -> None:
+    """Scalars stored against the `-1` basis element are converted to canonical `+1` coefficients
+    first so `function` acts on the scalar value itself rather than on its negated storage."""
 
     @method.register(lambda t: t.is_reoriented_scalar)
     def reoriented_scalar(value: Extensor) -> Extensor:

@@ -1,49 +1,54 @@
-"""Penrose tilings: each face is a tile as often as its area, thick against thin in the golden ratio,
-the tiles of a patch follow it, and sliding the cut within itself selects the same faces."""
+"""Tests for Penrose tilings check shadow measures, golden-ratio frequencies, cut-shift invariance, and rendering."""
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.math.penrose import core, render, scenarios
 
-mv, axes = core.mv, core.axes
+axes = core.axes
 golden = (1 + np.sqrt(5)) / 2
 
 
-def test_faces_are_tiles_as_often_as_their_area_in_the_golden_ratio():
-    """The shadow of each dual cube square to the cut is as large as the face laid flat onto it."""
-    areas, volumes = core.shadows(scenarios.along)
-    np.testing.assert_allclose(volumes.to_array(), areas.to_array(), atol=1e-12)
-    thick = areas > areas.mean()                                              # [faces]
-    np.testing.assert_allclose(areas.to_array()[thick] / areas.to_array()[~thick][:, None], golden, rtol=1e-12)
+def test_dual_cube_shadows_match_tile_areas_in_the_golden_ratio():
+    """Dual-cube perpendicular shadow volumes equal projected tile areas, with thick over thin in the golden ratio."""
+    areas, volumes = core.shadow_measures(scenarios.cut_projection)
+    assert ((volumes - areas).abs() < 1e-12).all()
+    thick = areas > areas.mean()                                              # [10]
+    assert ((areas[thick] / areas[~thick][:, None] - golden).abs() < 1e-12).all()
 
 
-def test_thick_tiles_outnumber_thin_ones_by_the_golden_ratio():
-    """In a patch of a few hundred tiles, to within its edge."""
-    centres, _ = scenarios.faces(scenarios.along)
-    areas, _ = core.shadows(scenarios.along)
-    margins = core.margins(scenarios.shift, centres, core.reciprocal(scenarios.cut))
-    tiles = np.all(margins > 0, axis=-1)                                      # [points, faces]
-    thick = areas > areas.mean()                                              # [faces]
-    np.testing.assert_allclose(tiles[:, thick].sum() / tiles[:, ~thick].sum(), golden, rtol=5e-2)
+def test_patch_tile_counts_follow_the_golden_ratio():
+    """Selected thick and thin rhombi in the lattice patch match the golden ratio within finite-patch boundary spread."""
+    centres, _ = core.lattice_faces(scenarios.cut_projection, scenarios.lattice_radius)
+    areas, _ = core.shadow_measures(scenarios.cut_projection)
+    margins = core.cube_margins(scenarios.origin_shift, centres, core.reciprocal_frames(scenarios.cut))
+    selected = np.all(margins > 0, axis=-1)                                   # [..., 10]
+    thick = areas > areas.mean()                                              # [10]
+    assert abs(selected[:, thick].sum() / selected[:, ~thick].sum() - golden) < 5e-2 * golden
 
 
 def test_sliding_the_cut_within_itself_selects_the_same_faces():
-    """The reciprocal frames read nothing of the cut, so a shift within it only slides the tiling."""
-    frames = core.reciprocal(scenarios.cut)                                   # [faces, 3] Plane+
-    centres = core.lattice(2)[:, None] + axes[core.sides_index].sum(axis=-1) / 2   # [points, faces] Antivector-
-    shift = scenarios.shift                                                   # [] Antivector-
-    shift_within_cut = shift + scenarios.along(0.7 * axes[2] - 1.3 * axes[4])  # [] Antivector-
-    difference = core.margins(shift_within_cut, centres, frames) - core.margins(shift, centres, frames)
-    np.testing.assert_allclose(difference.to_array(), 0, atol=1e-11)
+    """Shifting the cut along a direction inside the cut leaves every dual-cube margin unchanged."""
+    frames = core.reciprocal_frames(scenarios.cut)                            # [10, 3] Plane+
+    centres, _ = core.lattice_faces(scenarios.cut_projection, 1)              # [243, 10] Point-
+    shifted_along_cut = scenarios.origin_shift + scenarios.cut_projection(0.7 * axes[2] - 1.3 * axes[4])  # [] Point-
+    difference = core.cube_margins(shifted_along_cut, centres, frames) - core.cube_margins(scenarios.origin_shift, centres, frames)
+    assert (difference.abs() < 1e-11).all()
 
 
-def test_the_tiling_and_one_frame_of_the_phasons_draw():
-    frames = core.reciprocal(scenarios.cut)
-    centres, corners = scenarios.faces(scenarios.along, lattice_radius=1)
-    areas, _ = core.shadows(scenarios.along)
-    reading = scenarios.view(scenarios.along)
-    render.draw_tiling(reading, corners, areas, core.margins(scenarios.shift, centres, frames), scenarios.extent)
-    flips = scenarios.flips(scenarios.phasons(scenarios.across, n_frames=1), centres, frames)
-    next(render.animate_flips(reading, corners, areas, flips, scenarios.extent))
+def test_tiling_figure_and_one_phason_frame_render():
+    """Static tiling figure and one streamed phason frame render on a minimal radius-1 lattice."""
+    frames = core.reciprocal_frames(scenarios.cut)                            # [10, 3] Plane+
+    centres, corners = core.lattice_faces(scenarios.cut_projection, 1)        # [243, 10] Point-, [243, 10, 4] Point-
+    areas, _ = core.shadow_measures(scenarios.cut_projection)                 # [10] Scalar+
+    reading = core.reading_planes(scenarios.cut_projection)                   # [2] Plane+
+    figure = render.tiling_figure(
+        reading, corners, areas, scenarios.view_extent, core.cube_margins(scenarios.origin_shift, centres, frames),
+    )
+    plt.close(figure)
+    loop_shifts = core.phason_loop(scenarios.phason_projection, scenarios.origin_shift, scenarios.phason_radius, 1)
+    states = core.margin_stream(loop_shifts, centres, frames)
+    frame = next(render.phason_frames(reading, corners, areas, scenarios.view_extent, states))
+    assert frame.ndim == 3 and frame.shape[2] == 3

@@ -1,19 +1,17 @@
-"""The superconducting Higgs mode: self-consistent Anderson pseudospins in a collisionless s-wave superconductor.
+"""Self-consistent Anderson pseudospin dynamics of the superconducting Higgs mode in a collisionless s-wave superconductor.
 
-Each pair of opposite-momentum orbitals carries a pseudospin, the state the pair is in, modelled like a spin
-as the intrinsic patch of the plane it turns in: its reading by the plane xy, `mv.xy & spin`, is the
-occupation minus one half, and its readings by the planes yz and zx are the pairing coherence. The field a
-pseudospin turns in is an extrinsic bivector: the dispersion in the plane xy, and the gap in the planes yz
-and zx. The pairing interaction is a correlation from pseudospins to fields, `Field <- Spin`,
-which reads the mean coherence by pairing, `mv.yz & spin`, into the gap; the gap feeds back into the field
-every pseudospin turns in, and the energy pairs each field with its pseudospin, `field & spin`. Energies
-are measured from the chemical potential and hbar is one.
+Each pair of opposite-momentum orbitals is modelled as a pseudospin, represented like a physical spin as the
+intrinsic patch of its turning plane (`Spin-`). Pairing with `xy` (`xy & spin`) reads the pair occupation
+relative to half filling, while pairing with `yz` and `zx` reads the pairing coherence. Each pseudospin
+precesses in an extrinsic bivector field (`Field+`) combining the band dispersion in `xy` with the collective
+gap in `yz` and `zx`. A duality map (`Field+ <- Spin-`) maps the band-averaged coherence into that shared gap,
+and pairing each field with its pseudospin (`field & spin`) gives the reduced BCS energy with energies measured
+from the chemical potential in units where Planck's reduced constant is one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -22,78 +20,68 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                           # Scalar+
-# A pseudospin, the state of a pair, is the intrinsic patch of the plane it turns in; that field is extrinsic.
+# + extrinsic, - intrinsic
+# A pseudospin is the intrinsic patch of the plane it turns in, paired with an extrinsic driving field.
 Spin = ga.gatype.antibivector()                       # Antibivector-
 Field = ga.gatype.bivector()                          # Bivector+
 Pairing = ga.gatype((Field, Spin))                    # Field+ <- Spin-
-Map = ga.gatype((Spin, Spin))                         # Spin- <- Spin-
+SpinMap = ga.gatype((Spin, Spin))                     # Spin- <- Spin-
 
 
 # --- math -----------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Condensate:
-    dispersion: Field                        # Field+[levels]
-    pairing: Pairing                         # [] Field+ <- Spin-
+# Pairing coherence in yz and zx produces a gap field in those same planes, while occupation in xy does not pair.
+coherence = mv.yz * (mv.yz & Spin) + mv.zx * (mv.zx & Spin)  # [] Field+ <- Spin-
 
-    def gap(self, spins: Spin) -> Field:
-        """The gap is the pairing field shared by all energy levels, read from the mean pseudospin."""
-        return self.pairing(spins.sites.mean())
 
-    def rate(self, spins: Spin) -> Spin:
-        """The pseudospins change at the rate of their precession in a field whose gap they supply themselves."""
-        field = self.dispersion - self.gap(spins)
-        return (-2 * field).commutator(spins)
+def ground_state(dispersion: Field, pairing: Pairing, seed_gap: Field, n_iterations: int) -> Spin:
+    """Repeated alignment sets each length-1/2 pseudospin square against the self-consistent field (`Spin-[levels]`)."""
+    gap = seed_gap                                    # [] Field+
+    for _ in range(n_iterations):
+        spins = -(dispersion - gap).dual().normalized() / 2  # Spin-[levels]
+        gap = pairing(spins.sites.mean())             # [] Field+
+    return spins
 
-    def equilibrium(self, seed: Field, n_iterations: int) -> Spin:
-        """At zero temperature each pseudospin, of length one half, is square to its field's plane and set against
-        it; repeated alignment makes the field and the gap the pseudospins produce consistent."""
-        gap = seed
-        for _ in range(n_iterations):
-            spins = -(self.dispersion - gap).dual().normalized() / 2
-            gap = self.gap(spins)
-        return spins
 
-    def response(self, spins: Spin) -> tuple[Map, Map]:
-        """The linearized motion is two maps, one acting on a local disturbance and one on its mean."""
-        field = self.dispersion - self.gap(spins)
-        # A disturbance changes both the spin being turned and its turning field.
-        local = (-2 * field).commutator(Spin)              # (Spin- <- Spin-)[levels]
-        feedback = (2 * self.pairing).commutator(spins)    # (Spin- <- Spin-)[levels]
-        return local, feedback
+def precession_rate(spins: Spin, dispersion: Field, pairing: Pairing) -> Spin:
+    """Each pseudospin precesses in the effective field whose gap comes from the band-averaged spin (`Spin-[levels]`)."""
+    gap = pairing(spins.sites.mean())                 # [] Field+
+    field = dispersion - gap                          # Field+[levels]
+    return (-2 * field).commutator(spins)             # Spin-[levels]
 
-    def energy(self, spins: Spin) -> Scalar:
-        """The energy per pair orbital pairs each field with its pseudospin, counting the shared interaction
-        only once."""
-        mean = spins.sites.mean()
-        return 2 * (self.dispersion & spins).sites.mean() - (self.pairing(mean) & mean)
+
+def bcs_energy(spins: Spin, dispersion: Field, pairing: Pairing) -> Scalar:
+    """Pairs each orbital's dispersion with its pseudospin and subtracts the shared pairing interaction once (`[...] Scalar+`)."""
+    mean_spin = spins.sites.mean()                    # [...] Spin-
+    return 2 * (dispersion & spins).sites.mean() - (pairing(mean_spin) & mean_spin)
+
+
+def response_maps(dispersion: Field, pairing: Pairing, equilibrium: Spin) -> tuple[SpinMap, SpinMap]:
+    """Linearizing about `equilibrium` gives the local precession map and the collective feedback map (`(Spin- <- Spin-)[levels]`)."""
+    field = dispersion - pairing(equilibrium.sites.mean())  # Field+[levels]
+    # Varying a disturbance turns the disturbed spin locally and shifts the shared pairing field across all levels.
+    local_map = (-2 * field).commutator(Spin)         # (Spin- <- Spin-)[levels]
+    feedback_map = (2 * pairing).commutator(equilibrium)  # (Spin- <- Spin-)[levels]
+    return local_map, feedback_map
 
 
 # --- plumbing -------------------------------------------------------------------------
 def energy_levels(n_levels: int, cutoff: float) -> Field:
-    """The dispersion, by midpoint quadrature, of a constant density of states between two energy cutoffs."""
+    """Midpoint quadrature places `n_levels` equally weighted orbitals across `[-cutoff, cutoff]` (`Field+[levels]`)."""
     energies = cutoff * (2 * (np.arange(n_levels) + 0.5) / n_levels - 1)
-    return (mv.xy * energies).field()
-
-
-def midpoint(state: Spin, rate: Callable[[Spin], Spin], dt: float, n_iterations: int) -> Spin:
-    """The implicit midpoint step, solved by fixed-point iteration; dt must resolve the fastest precession.
-
-    At convergence this preserves quadratic invariants, including spin lengths and
-    the reduced BCS energy. The iteration count controls the implicit solve accuracy.
-    """
-    end = state
-    for _ in range(n_iterations):
-        end = state + dt * rate((state + end) / 2)
-    return end
+    return (mv.xy * energies).field()                 # Field+[levels]
 
 
 def evolution(
     state: Spin, rate: Callable[[Spin], Spin], dt: float,
-    n_steps: int, steps_per_frame: int, n_iterations: int,
+    n_steps: int, n_steps_per_frame: int, n_iterations: int,
 ) -> Iterator[Spin]:
-    """The initial state and every steps_per_frame-th implicit midpoint step."""
+    """Yields the initial state and every `n_steps_per_frame`-th implicit midpoint update (`[...] Spin-[levels]`)."""
     yield state
-    for _ in range(n_steps // steps_per_frame):
-        for _ in range(steps_per_frame):
-            state = midpoint(state, rate, dt, n_iterations)
+    for _ in range(n_steps // n_steps_per_frame):
+        for _ in range(n_steps_per_frame):
+            # Fixed-point iteration evaluates the rate halfway across the step, preserving quadratic invariants.
+            end = state
+            for _ in range(n_iterations):
+                end = state + dt * rate((state + end) / 2)
+            state = end
         yield state

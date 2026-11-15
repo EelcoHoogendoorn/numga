@@ -1,4 +1,4 @@
-"""GPU mesh rendering for the Rubik's cube draws each sticker as a coloured square with darkened edges and shades the inner cut beneath the turning layer."""
+"""GPU surface rendering for the Rubik's cube draws each sticker as a coloured square with darkened edges and shades the inner cut beneath the turning layer."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate
 from examples.geometry.rubiks_cube import core
-from examples.util.wgsl import meshes, solids
+from numga.render import meshes, solids
 
 # The six face colours by side and axis (+x red, +y blue, +z white, -x orange, -y green, -z yellow),
 # together with the inner cut colour and the background colour.
@@ -41,24 +41,25 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 
 # --- plumbing -------------------------------------------------------------------------
-def picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: solids.View) -> np.ndarray:
-    """Render the cube's stickers as coloured squares with dark edges together with the dark inner cut beneath the turning layer."""
-    squares = concatenate([corners, cut.reshape(-1, cut.shape[-1])])                                  # [squares, corners] Point-
-    fills = np.concatenate([colours_by_face[colours], np.broadcast_to(cut_colour, (cut.shape[0] * cut.shape[1], 3))])  # [squares, 3]
-    places = solids.origin + solids.context.include_from_algebra(squares.reshape(-1))                           # [squares * corners] Point-
+def cube_picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: solids.View) -> np.ndarray:
+    """Renders the cube's stickers as coloured squares with dark edges together with the dark inner cut beneath the turning layer."""
+    squares = concatenate([corners, cut.reshape(-1, 4)])                                               # [72, 4] Point-
+    n_squares = len(squares)
+    fills = np.concatenate([colours_by_face[colours], np.broadcast_to(cut_colour, (18, 3))])           # [72, 3]
+    places = solids.origin + solids.context.include_from_algebra(squares.reshape(-1))                  # [288] Point-
     # The places of each square's corners, and its two triangles through them.
-    square_corners = np.arange(len(places)).reshape(squares.shape)                                    # [squares, corners]
-    faces = square_corners[:, square_triangles].reshape(-1, 3)                                        # [squares * 2, 3]
-    ink = np.tile(perimeter, (len(squares), 1)) * edge_darkness                                       # [faces, 3]
-    values = np.repeat(fills, 2, axis=0)[:, None]                                                     # [faces, 1, 3]
+    square_corners = np.arange(len(places)).reshape(squares.shape)                                     # [72, 4]
+    faces = square_corners[:, square_triangles].reshape(-1, 3)                                         # [144, 3]
+    ink = np.tile(perimeter, (n_squares, 1)) * edge_darkness                                           # [144, 3]
+    values = np.repeat(fills, 2, axis=0)[:, None]                                                      # [144, 1, 3]
     normals = meshes.flat(places, faces)
     return meshes.draw(places, faces, values, normals, view, background, face_values=ink, colour=edge_shader,
                        gloss=solids.gloss)
 
 
-def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray,
-            room: float = view_room) -> Iterator[np.ndarray]:
-    """Render each frame of the cube's sticker corners and inner cut from a fixed camera framed on the initial cube."""
+def cube_animation(colours: np.ndarray, states: Iterable[tuple[core.Point, core.Point]],
+                   room: float = view_room) -> Iterator[np.ndarray]:
+    """Yields rendered RGB frames of the cube's sticker corners and inner cut from a fixed camera framed on the initial cube."""
     states = iter(states)
     first_state = next(states)
     corners, _ = first_state
@@ -66,4 +67,4 @@ def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray
                                n_pixels)
     view = initial_view._replace(half=initial_view.half * room)
     for corners, cut in chain([first_state], states):
-        yield picture(corners, colours, cut, view)
+        yield cube_picture(corners, colours, cut, view)

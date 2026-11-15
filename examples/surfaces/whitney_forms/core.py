@@ -1,8 +1,8 @@
-"""Whitney forms interpolate vertex and edge data across triangle meshes.
+"""Whitney forms reconstruct continuous fields across triangles and tetrahedra from vertex, edge, and face values.
 
-The triangle's signed patch defines both corner gradients and edge forms. Their reconstruction maps let a material conductivity act on local fields, with the adjugate carrying its response back to the mesh.
+Each triangle's signed area patch determines both the constant corner simplex gradients and the linear edge 1-forms without a metric. Assembling those local maps across a triangulation commutes with the coboundary operators and pulls material conductivity back to vertex and edge conductances through the adjugate.
 
-One dimension up, in projective space, a tetrahedron's forms of every degree are one quotient: the join of the corners off a simplex over its join with the simplex's own corners. Pairing each edge form with each curl through the tetrahedron's volume links only opposite edges.
+In 3D projective space, joining the corners off a sub-simplex and dividing by all four corners joined produces the tetrahedral Whitney forms of every degree in one quotient, whose volume helicity pairing links only opposite edges.
 """
 
 from __future__ import annotations
@@ -16,198 +16,148 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga, PGA3D as space
 from numga.extensor import Extensor
 from numga.sparse import SparseExtensor, spdiag
-from examples.util.topology import Topology, simplex_parity
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
 Plane = ga.gatype.vector()                                                   # Vector+
-Bivector = ga.gatype.bivector()                                              # Bivector+
 Point = ga.gatype.antivector()                                               # Antivector-
-Conductivity = ga.gatype((Point, Plane))
-triangle = Topology(3, [[0, 1, 2]])
+Patch = ga.gatype.antibivector()                                             # Antibivector-
+Conductivity = ga.gatype((Point, Plane))                                     # Point- <- Plane+
 
-# The tetrahedron, in projective space: its corners are points of weight one, so that their joins are the planes, lines
-# and points through them.
+# The tetrahedron's projective space gives corners unit weight so their joins span planes, lines, and points.
 space_mv = NumpyContext(space).multivector
 SpaceScalar = space.gatype.scalar()                                          # Scalar+
-SpacePlane = space.gatype.vector()                                           # Vector+
-SpaceBivector = space.gatype.bivector()                                      # Bivector+
 SpacePoint = space.gatype.antivector()                                       # Antivector-
 
 
-# --- plumbing -------------------------------------------------------------------------
-def complements(topology: Topology, m: int) -> np.ndarray:
-    """`[k, n - m]`: the corners each of an n-simplex's m-simplices leaves out, in the order of `topology.corners[n, m]`,
-    run so that the m-simplex followed by them runs the n-simplex's own sense: facing each corner, its facet, outward;
-    across each edge of a tet, the opposite edge."""
-    n = topology.n_dim
-    simplices = topology.corners[n, m].T                                       # [k, m + 1]
-    top = topology.corners[n, 0][0]                                            # [corners]
-    left_out = np.stack([np.setdiff1d(top, simplex) for simplex in simplices])   # [k, n - m]
-    sense = simplex_parity(np.concatenate([simplices, left_out], axis=-1))   # [k]
-    return np.where(sense[:, None] > 0, left_out, left_out[:, ::-1])
+def simplex_gradients(topology: Topology, vertices: Point) -> tuple[Patch, Plane]:
+    """Each triangle's boundary edges determine its signed area patch (`Patch-[F]`) and three corner simplex gradients (`[3] Plane+[F]`)."""
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
+    # Dividing each opposite edge by twice the signed area patch gives the simplex gradient
+    # that rises by one from that edge to its corner without using a metric.
+    gradients = sides / (2 * patches)                                        # [3] Plane+[F]
+    return patches, gradients
 
 
-def part_middles(n_cuts: int) -> np.ndarray:
-    """`[parts, 3]`: the barycentric weights of the middles of a triangle's equal parts, each side cut in `n_cuts`:
-    the parts that point as the triangle does, then those that point the other way."""
-    steps = np.arange(n_cuts)
-    first, second = np.meshgrid(steps, steps, indexing="ij")
-    upright = first + second < n_cuts
-    inverted = first + second < n_cuts - 1
-    upright_corners = np.stack((first[upright], second[upright], n_cuts - 1 - first[upright] - second[upright]), axis=-1)
-    inverted_corners = np.stack((first[inverted], second[inverted], n_cuts - 2 - first[inverted] - second[inverted]),
-                                axis=-1)
-    return np.concatenate((upright_corners + 1 / 3, inverted_corners + 2 / 3)) / n_cuts
+def vertex_whitney_forms(topology: Topology, vertices: Point, points: Point) -> Scalar:
+    """Each corner's simplex gradient evaluates the affine vertex 0-forms (`[3, ...] Scalar+[F]`) across `points`."""
+    corners = topology.incidence[2, 0] * vertices                            # [3] Point-[F]
+    patches, gradients = simplex_gradients(topology, vertices)               # Patch-[F], [3] Plane+[F]
+    return 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [3, ...] Scalar+[F]
 
 
-# --- math -----------------------------------------------------------------------------
-def barycentric_hats(corners: Point, points: Point) -> tuple[Scalar, Plane]:
-    """The barycentric hat values at `points` and the constant corner gradients."""
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
-    patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
-    # Dividing each opposite edge by twice the signed area patch gives the gradient
-    # that falls by one from its corner to the opposite edge.
-    gradients = sides / (2 * patch)                                          # [corners] Plane+
-    hats = 1 + (gradients[:, None] & (points[None, :] - corners[:, None]))   # [corners, samples] Scalar+
-    return hats, gradients
-
-
-def edge_whitney_forms(corners: Point, points: Point) -> Plane:
-    """The three edge Whitney 1-forms evaluated at `points`, circulating around each edge's opposite corner."""
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]  # [corners] Point-
-    patch = (sides[0] & sides[1]) / 2                                        # [] Patch-
+def edge_whitney_forms(topology: Topology, vertices: Point, points: Point) -> Plane:
+    """Radial displacements from each opposite corner over twice the signed patch define the three local edge Whitney 1-forms (`[3, ...] Plane+[F]`) at `points`."""
+    corners = topology.incidence[2, 0] * vertices                            # [3] Point-[F]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)             # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                      # Patch-[F]
     # Along the two edges meeting at a corner, the radial displacement from that corner is parallel
-    # to the edge, while along the opposite edge its join with the edge equals twice the triangle patch.
-    return (points[None, :] - corners[:, None]) / (2 * patch)                # [corners, samples] Plane+
+    # to the edge, while along the opposite edge its join with the side equals twice the patch.
+    return (points[None, :] - corners[:, None]) / (2 * patches)              # [3, ...] Plane+[F]
 
 
-def tetrahedral_forms(topology: Topology, vertices: SpacePoint, m: int) -> Extensor:
-    """The Whitney m-forms of each tetrahedron's m-simplices, `[k] (m + 1)-vector+[tets]`, each in the sense its
-    m-simplex is stored: the join of the corners off the m-simplex over its join with the m-simplex's own corners. It
-    reads one on its own m-simplex's join and nothing on another's, which repeats a corner off its own, and its value
-    at a point `p` is `forms & p`: the ramp's height for a corner, for an edge the plane the edge across spans with
-    the point, for a face the line from the corner it faces through the point."""
-    # The corners off each m-simplex joined; the order they are joined in stands above and below the line alike, and
-    # cancels.
-    complements = reduce(and_, topology.off[3, m] * vertices)                # [k] (m + 1)-vector-[tets]
-    # Each m-simplex's own corners joined in the order it is stored, the one sense the form keeps.
-    spans = reduce(and_, topology.on[3, m] * vertices)                       # [k] (3 - m)-vector-[tets]
+def edge_whitney_map(topology: Topology, vertices: Point, points: Point) -> SparseExtensor:
+    """Local edge 1-forms weighted by oriented face boundaries assemble the evaluation map (`[...] (Plane+ <- Scalar+)[F <- E]`) at `points`."""
+    forms = edge_whitney_forms(topology, vertices, points)                   # [3, ...] Plane+[F]
+    boundaries = topology.boundary[2, 1][:, None]                            # [3, 1] Scalar+[F <- E]
+    return (spdiag(forms) * boundaries).sum(axis=0) * Scalar                 # [...] (Plane+ <- Scalar+)[F <- E]
+
+
+def tetrahedral_forms(topology: Topology, vertices: SpacePoint, degree: int) -> Extensor:
+    """Dividing the join of the corners off each `degree`-simplex by all four corners joined gives the tetrahedral Whitney forms (`[...] Extensor+[T]`)."""
+    # Reordering the off-simplex corners flips numerator and denominator alike and cancels.
+    complements = reduce(and_, topology.off[3, degree] * vertices)
+    spans = reduce(and_, topology.on[3, degree] * vertices)
     return complements / (complements & spans)
 
 
+def tetrahedral_helicity(topology: Topology, vertices: SpacePoint) -> SpaceScalar:
+    """Each edge's Whitney 1-form paired at the centroid with each edge's constant curl integrates to the symmetric volume helicity (`[6, 6] Scalar+[T]`)."""
+    corners = topology.incidence[3, 0] * vertices                            # [4] Point-[T]
+    forms = tetrahedral_forms(topology, vertices, 1)                         # [6] Bivector+[T]
+    # Each edge 1-form is linear across the tetrahedron while its curl equals twice the form and stays constant,
+    # so evaluating the 1-form at the centroid integrates their wedge product over the tetrahedron exactly.
+    curls = 2 * forms                                                        # [6] Bivector+[T]
+    centroid_forms = forms & corners.mean(axis=0)                            # [6] Plane+[T]
+    densities = ((centroid_forms[:, None] ^ curls[None, :]) + (centroid_forms[None, :] ^ curls[:, None])) / 2  # [6, 6] Trivector+[T]
+    volume = reduce(and_, corners[1:] - corners[0]) / 6                      # Volume-[T]
+    return densities & volume                                                # [6, 6] Scalar+[T]
+
+
 def tetrahedral_edge_pages(topology: Topology, vertices: SpacePoint, n_pages: int) -> SpacePoint:
-    """Level surfaces of the six edge Whitney 1-forms, `n_pages` of each at even steps of its unit circulation along
-    its edge: the triangles the edge across spans with points of the edge, each the edge across's first corner, the
-    point and its second, `[tet_edges, pages, 3] Point-[tets]`."""
-    corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
+    """Evenly spaced points along each edge span `n_pages` level-surface triangles (`[6, n_pages, 3] Point-[T]`) with the opposite edge."""
+    corners = topology.incidence[3, 0] * vertices                            # [4] Point-[T]
     tails, heads = topology.corners[3, 1]
     opposite_tails, opposite_heads = topology.complements[3, 1]
-    # The form reads its own edge evenly, so pages through evenly spaced points of the edge lie equal shares of its
-    # circulation apart.
-    fractions = np.arange(1, n_pages + 1) / (n_pages + 1)                    # [pages]
-    points = corners[tails, None] * (1 - fractions) + corners[heads, None] * fractions   # [tet_edges, pages] Point-[tets]
-    # The form at a point is the plane the edge across spans with it, so the triangle that edge spans with the point
-    # lies in the form's kernel throughout, a level surface of the form.
-    opposite_tail = corners[opposite_tails, None].broadcast_to(points.shape)             # [tet_edges, pages] Point-[tets]
-    opposite_head = corners[opposite_heads, None].broadcast_to(points.shape)             # [tet_edges, pages] Point-[tets]
-    return stack((opposite_tail, points, opposite_head), axis=-1)
+    fractions = np.arange(1, n_pages + 1) / (n_pages + 1)                    # [n_pages]
+    points = corners[tails, None] * (1 - fractions) + corners[heads, None] * fractions  # [6, n_pages] Point-[T]
+    # At any point, the edge 1-form evaluates to the plane through that point and the opposite edge,
+    # so every triangle spanned by the opposite edge and an edge point is a level surface of the form.
+    opposite_tail = corners[opposite_tails, None].broadcast_to(points.shape)  # [6, n_pages] Point-[T]
+    opposite_head = corners[opposite_heads, None].broadcast_to(points.shape)  # [6, n_pages] Point-[T]
+    return stack((opposite_tail, points, opposite_head), axis=-1)            # [6, n_pages, 3] Point-[T]
 
 
-def tetrahedral_face_lines(topology: Topology, vertices: SpacePoint, n_cuts: int) -> SpacePoint:
-    """Field lines of the four face Whitney 2-forms, through the middles of each face's equal parts, each side cut in
-    `n_cuts`: each from the corner the face faces to where it crosses the face, `[corners, lines, 2] Point-[tets]`."""
-    corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
-    # The corners of the face facing each corner, and the middles of its equal parts: the form's flux through its face
-    # is even, so each line through them carries an equal share of the unit flux.
-    facets = corners[topology.complements[3, 0].T]                           # [corners, 3] Point-[tets]
-    crossings = (facets[:, None] * part_middles(n_cuts)).sum(axis=-1)        # [corners, lines] Point-[tets]
-    # The form at a point is the line from the corner the face faces through the point, and reads no flux through any
-    # patch along it: its field lines run straight out of that corner.
-    return stack((corners[:, None].broadcast_to(crossings.shape), crossings), axis=-1)
+def tetrahedral_face_lines(topology: Topology, vertices: SpacePoint, face_weights: np.ndarray) -> SpacePoint:
+    """Straight segments from each tetrahedral corner to equal-area subtriangle centres on the opposite face trace the face 2-form field lines (`[4, ..., 2] Point-[T]`)."""
+    corners = topology.incidence[3, 0] * vertices                            # [4] Point-[T]
+    facets = corners[topology.complements[3, 0].T]                           # [4, 3] Point-[T]
+    crossings = (facets[:, None] * face_weights).sum(axis=-1)                # [4, ...] Point-[T]
+    # Evaluating a face 2-form at any point yields the line through the opposite corner and that point,
+    # so straight segments from the opposite corner carry equal shares of the uniform face flux.
+    return stack((corners[:, None].broadcast_to(crossings.shape), crossings), axis=-1)  # [4, ..., 2] Point-[T]
 
 
-def tetrahedral_helicity(topology: Topology, vertices: SpacePoint) -> SpaceScalar:
-    """The volume pairing of each edge's Whitney 1-form with each edge's curl, made symmetric: it links only opposite
-    edges, the same for every tetrahedron of the same sense, `[tet_edges, tet_edges] Scalar+[tets]`."""
-    corners = topology.incidence[3, 0] * vertices                            # [corners] Point-[tets]
-    forms = tetrahedral_forms(topology, vertices, 1)                         # [tet_edges] Bivector+[tets]
-    # A form's curl reads two steps as twice the form does, constant; the form itself is linear across the
-    # tetrahedron, so against a constant curl it integrates exactly at the centroid.
-    curls = 2 * forms                                                        # [tet_edges] Bivector+[tets]
-    centroid_forms = forms & corners.mean(axis=0)                            # [tet_edges] Plane+[tets]
-    densities = ((centroid_forms[:, None] ^ curls[None, :]) + (centroid_forms[None, :] ^ curls[:, None])) / 2  # [tet_edges, tet_edges] Trivector+[tets]
-    # The tetrahedron's volume, the join of its edges from its first corner in its own order, over six.
-    volume = reduce(and_, corners[1:] - corners[0]) / 6                      # Vector-[tets]
-    return densities & volume                                                # [tet_edges, tet_edges] Scalar+[tets]
+def simplex_gradient_map(topology: Topology, vertices: Point) -> SparseExtensor:
+    """Corner simplex gradients summed by face incidence map vertex potentials to piecewise-constant face gradients (`(Plane+ <- Scalar+)[F <- V]`)."""
+    patches, gradients = simplex_gradients(topology, vertices)               # Patch-[F], [3] Plane+[F]
+    return (spdiag(gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[F <- V]
 
 
-class Operators:
-    """Topological exterior derivatives and Whitney reconstruction maps on an oriented triangle mesh."""
-
-    def __init__(self, topology: Topology, vertices: Point):
-        self.topology = topology
-        self.d0 = topology.d[0] * Scalar                                     # (Scalar+ <- Scalar+)[edges <- vertices]
-        self.d1 = topology.d[1] * Scalar                                     # (Scalar+ <- Scalar+)[faces <- edges]
-        edges = topology.d[0] * vertices                                     # Point-[edges]
-        self.corners = topology.incidence[2, 0] * vertices                   # [corners] Point-[faces]
-        self.sides = topology.boundary[2, 1] * edges                         # [corners] Point-[faces]
-        self.patches = (self.sides[0] & self.sides[1]) / 2                   # Patch-[faces]
-        self.areas = self.patches.norm()                                     # Scalar+[faces]
-        self.centres = self.corners.sum(axis=0) / 3                          # Point-[faces]
-
-        # Each corner hat's gradient is constant across its face; assembling by corner maps
-        # vertex potentials to piecewise-constant face gradients without any metric.
-        self.corner_gradients = self.sides / (2 * self.patches)              # [corners] Plane+[faces]
-        self.gradient = (spdiag(self.corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- vertices]
-
-        # At each face centroid the three barycentric hats equal 1/3, so the edge 1-form
-        # reduces to one third of the difference of its endpoints' corner gradients.
-        tails, heads = topology.corners[2, 1]
-        centroid_forms = (self.corner_gradients[heads] - self.corner_gradients[tails]) / 3  # [corners] Plane+[faces]
-        self.whitney1 = (spdiag(centroid_forms) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[faces <- edges]
-
-        # The exterior derivative of each edge's Whitney 1-form is twice the wedge of its endpoints'
-        # gradients, matching the constant Whitney 2-form of unit integral over the face patch.
-        curls = 2 * (self.corner_gradients[tails] ^ self.corner_gradients[heads])  # [corners] Bivector+[faces]
-        self.curl = (spdiag(curls) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Bivector+ <- Scalar+)[faces <- edges]
-        self.whitney2 = mv.xy / (mv.xy & self.patches) * Scalar              # (Bivector+ <- Scalar+)[faces]
-
-        # Evaluating the linear Whitney 1-forms at the three edge midpoints integrates
-        # quadratic products over every triangle exactly.
-        midpoints = topology.incidence[2, 1] * (topology.incidence[1, 0].mean(axis=0) * vertices)  # [midpoints] Point-[faces]
-        midpoint_forms = (midpoints[:, None] - self.corners[None, :]) / (2 * self.patches)  # [midpoints, corners] Plane+[faces]
-        self.midpoint_whitney1 = (spdiag(midpoint_forms) * topology.boundary[2, 1]).sum(axis=1) * Scalar  # [midpoints] (Plane+ <- Scalar+)[faces <- edges]
+def cochain_maps(topology: Topology, vertices: Point) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor]:
+    """Corner simplex gradients and signed patches assemble the centroid edge 1-form map (`(Plane+ <- Scalar+)[F <- E]`), exterior curl (`(Bivector+ <- Scalar+)[F <- E]`), and face 2-form map (`(Bivector+ <- Scalar+)[F]`)."""
+    patches, gradients = simplex_gradients(topology, vertices)               # Patch-[F], [3] Plane+[F]
+    tails, heads = topology.corners[2, 1]
+    # At each face centroid all three vertex 0-forms equal 1/3, reducing each edge 1-form
+    # to one third of the difference between its endpoint simplex gradients.
+    centroid_forms = (gradients[heads] - gradients[tails]) / 3               # [3] Plane+[F]
+    whitney1 = (spdiag(centroid_forms) * topology.oriented[2, 1]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[F <- E]
+    curls = 2 * (gradients[tails] ^ gradients[heads])                        # [3] Bivector+[F]
+    curl = (spdiag(curls) * topology.oriented[2, 1]).sum(axis=0) * Scalar    # (Bivector+ <- Scalar+)[F <- E]
+    whitney2 = mv.xy / (mv.xy & patches) * Scalar                            # (Bivector+ <- Scalar+)[F]
+    return whitney1, curl, whitney2
 
 
-def edge_conductance(operators: Operators, conductivity: Conductivity) -> SparseExtensor:
-    """The 1-form conductance operator on edges, integrated exactly over each triangle from its three edge midpoints."""
-    # Each midpoint carries one third of the triangle's area; pulling the material map back
-    # through the midpoint evaluation maps and summing over the three midpoints is exact for quadratics.
-    weights = ((operators.areas / 3) * conductivity)[..., None]              # [..., midpoints] (Point- <- Plane+)[faces]
-    return operators.midpoint_whitney1.adjugate()(weights(operators.midpoint_whitney1)).sum(axis=-1)  # [...] (Amount- <- Scalar+)[edges <- edges]
+def steady_conduction(
+    topology: Topology,
+    vertices: Point,
+    conductivity: Conductivity,
+    electrodes: np.ndarray,
+    prescribed: Scalar,
+) -> tuple[Scalar, Point]:
+    """Pulling area-weighted conductivity back through the simplex gradient determines the steady vertex potential (`[...] Scalar+[V]`) and face current (`[...] Point-[F]`) for `prescribed` electrode potentials."""
+    V, E, F = topology.n_elements
+    patches, corner_gradients = simplex_gradients(topology, vertices)        # Patch-[F], [3] Plane+[F]
+    areas = patches.antinorm()                                               # Scalar+[F]
+    gradient = (spdiag(corner_gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar  # (Plane+ <- Scalar+)[F <- V]
+    # Pulling the area-weighted conductivity back through the simplex gradient gives the vertex conductance.
+    medium = areas * conductivity                                            # [...] (Point- <- Plane+)[F]
+    conductance = gradient.adjugate()(medium(gradient))                      # [...] (Antiscalar- <- Scalar+)[V <- V]
+    free_vertices = np.setdiff1d(np.arange(V), electrodes)
+    free = topology.reading(free_vertices, 0).adjugate() * Scalar            # (Scalar+ <- Scalar+)[V <- V_free]
+    rhs = -free.adjugate()(conductance(prescribed))                          # [...] Antiscalar-[V_free]
+    potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [...] Scalar+[V]
+    current = -conductivity(gradient(potential))                             # [...] Point-[F]
+    return potential, current
 
 
-def conduction(operators: Operators, conductivity: Conductivity,
-               electrodes: np.ndarray, prescribed: Scalar
-               ) -> tuple[Scalar, Point, Scalar]:
-    """Steady potential, face current, and streamfunction for prescribed electrode potentials."""
-    topology = operators.topology
-    # Pulling the area-weighted conductivity back through the face gradient gives the vertex conductance.
-    medium = operators.areas * conductivity                                  # [cases] (Point- <- Plane+)[faces]
-    conductance = operators.gradient.adjugate()(medium(operators.gradient))  # [cases] (Amount- <- Scalar+)[vertices <- vertices]
-    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * Scalar                      # (Scalar+ <- Scalar+)[vertices <- free]
-    rhs = -free.adjugate()(conductance(prescribed))                          # [cases] Amount-[free]
-    potential = prescribed + free(free.adjugate()(conductance(free)).solve(rhs))  # [cases] Scalar+[vertices]
-    current = -conductivity(operators.gradient(potential))                   # [cases] Point-[faces]
-
-    # Turning the face current by a quarter turn gives, through the unit isotropic conductivity `Plane.dual()`,
-    # the target gradient of the streamfunction whose level curves follow the current paths.
-    quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
-    isotropic_medium = operators.areas * Plane.dual()                        # (Point- <- Plane+)[faces]
-    laplacian = operators.gradient.adjugate()(isotropic_medium(operators.gradient))  # (Amount- <- Scalar+)[vertices <- vertices]
-    unpinned = ~topology.reading(np.arange(1, topology.n_vertices), 0) * Scalar # (Scalar+ <- Scalar+)[vertices <- unpinned]
-    stream_rhs = unpinned.adjugate()(operators.gradient.adjugate()(operators.areas * (quarter_turn >> current)))  # [cases] Amount-[unpinned]
-    streamfunction = unpinned(unpinned.adjugate()(laplacian(unpinned)).solve(stream_rhs))  # [cases] Scalar+[vertices]
-    return potential, current, streamfunction
+def edge_conductance(topology: Topology, vertices: Point, conductivity: Conductivity) -> SparseExtensor:
+    """Three-midpoint quadrature integrates quadratic products of linear edge 1-forms exactly into the edge conductance (`[...] (Antiscalar- <- Scalar+)[E <- E]`)."""
+    patches, corner_gradients = simplex_gradients(topology, vertices)        # Patch-[F], [3] Plane+[F]
+    areas = patches.antinorm()                                               # Scalar+[F]
+    midpoints = topology.incidence[2, 1] * (topology.incidence[1, 0].mean(axis=0) * vertices)  # [3] Point-[F]
+    midpoint_map = edge_whitney_map(topology, vertices, midpoints)           # [3] (Plane+ <- Scalar+)[F <- E]
+    weights = ((areas / 3) * conductivity)[..., None]                        # [..., 3] (Point- <- Plane+)[F]
+    return midpoint_map.adjugate()(weights(midpoint_map)).sum(axis=-1)       # [...] (Antiscalar- <- Scalar+)[E <- E]

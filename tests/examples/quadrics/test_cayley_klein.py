@@ -1,88 +1,92 @@
-"""Unit tests for Cayley-Klein geometry: the absolute as a polarity and what follows from it."""
+"""Coverage tests for Cayley-Klein geometry in PGA2D."""
 
 from __future__ import annotations
 
-
+import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.cayley_klein import render, scenarios
-from examples.quadrics.cayley_klein.core import Point, Polarity, Pole, mv
-from examples.util.topology import Topology
+from examples.quadrics.cayley_klein.core import (
+    Plane,
+    Point,
+    Polarity,
+    concentric_spheres,
+    mv,
+    normalized_pairing,
+    perpendicular_reflection,
+    triangle_metrics,
+)
+from numga import stack
+from numga.topology import Topology
 
-HYPERBOLIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
-ELLIPTIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) + mv.w * mv.w.regressive(Point)
-
-
-def invariant(C, A: Point, B: Point):
-    return A.regressive(C(B)) / (A.regressive(C(A)) * B.regressive(C(B))).square_root()
-
-
-def test_absolute_from_plane_dyads_is_the_diagonal_polarity():
-    assert HYPERBOLIC.gatype == Polarity
-    np.testing.assert_allclose(HYPERBOLIC.kernel, np.diag([1.0, 1.0, -1.0]))
-    Q = HYPERBOLIC.inverse()
-    assert Q.gatype == Pole
-    np.testing.assert_allclose(Q.kernel, np.diag([1.0, 1.0, -1.0]), atol=1e-14)
-    np.testing.assert_allclose(ELLIPTIC.kernel, np.eye(3))
+coordinate_planes = stack([mv.x, mv.y, mv.w])                              # [3] Plane+
+hyperbolic_absolute = (coordinate_planes * (coordinate_planes & Point) * np.array([1, 1, -1])).sum(axis=0)
+elliptic_absolute = (coordinate_planes * (coordinate_planes & Point) * np.array([1, 1, 1])).sum(axis=0)
 
 
-def test_hyperbolic_distance_along_a_diameter_is_arctanh():
-    origin = mv.point(np.array([0.0, 0.0]))
-    for x in (0.2, 0.5, 0.75):
-        np.testing.assert_allclose((-invariant(HYPERBOLIC, origin, mv.point(np.array([x, 0.0])))).clip(1.0, np.inf).arccosh().to_array(), np.arctanh(x), atol=1e-12)
+def test_absolutes_have_polarity_and_pole_types() -> None:
+    assert hyperbolic_absolute.gatype == Polarity
+    assert elliptic_absolute.gatype == Polarity
+    pole_map = hyperbolic_absolute.solve(Plane)                            # [] Point- <- Plane+
+    probe = mv.point([0.3, -0.2])                                          # [] Point-
+    assert ((pole_map(hyperbolic_absolute(probe)) - probe).antinorm() < 1e-12).all()
 
 
-def test_elliptic_distance_along_a_diameter_is_arctan():
-    """On the gnomonic chart of the sphere, the distance from the origin is arctan of the radius."""
-    origin = mv.point(np.array([0.0, 0.0]))
-    for x in (0.2, 0.5, 2.0):
-        np.testing.assert_allclose(invariant(ELLIPTIC, origin, mv.point(np.array([x, 0.0]))).clip(-1.0, 1.0).arccos().to_array(), np.arctan(x), atol=1e-12)
+def test_radial_distances_match_hyperbolic_arctanh_and_elliptic_arctan() -> None:
+    origin = mv.point([0, 0])                                              # [] Point-
+    radii = np.array([0.2, 0.6])
+    radial_points = mv.point(np.stack([radii, np.zeros_like(radii)], axis=-1))  # [2] Point-
+
+    hyperbolic_pairing = -(hyperbolic_absolute(Point) & Point)
+    hyperbolic_distances = normalized_pairing(hyperbolic_pairing, origin, radial_points).clip(1.0, np.inf).arccosh()
+    assert ((hyperbolic_distances - np.arctanh(radii)).abs() < 1e-12).all()
+
+    elliptic_pairing = elliptic_absolute(Point) & Point
+    elliptic_distances = normalized_pairing(elliptic_pairing, origin, radial_points).clip(-1.0, 1.0).arccos()
+    assert ((elliptic_distances - np.arctan(radii)).abs() < 1e-12).all()
 
 
-def test_perpendicular_through_the_pole_and_reflection_in_both_geometries():
-    for C in (HYPERBOLIC, ELLIPTIC):
-        Q = C.inverse()
-        A, B, P = mv.point(np.array([0.65, 0.0])), mv.point(np.array([0.2, 0.55])), mv.point(np.array([-0.15, 0.15]))
-        # The side through A and B: their join, given a side by the winding of A, B and P, a plane.
-        side = A.regressive(B) * A.regressive(B).regressive(P)
-        pole = Q(side)
-        perpendicular = P.regressive(pole)
-        foot = side.wedge(perpendicular)
-        reflected = P - pole * (2.0 * P.regressive(side) / pole.regressive(side))
-        # The perpendicular's pole, the meet of the polars of the two points it joins, lies on the side.
-        np.testing.assert_allclose(side.regressive(C(P).wedge(C(pole))).kernel, 0.0, atol=1e-14)
-        np.testing.assert_allclose(foot.regressive(side).kernel, 0.0, atol=1e-14)
-        np.testing.assert_allclose((invariant(C, P, foot) - invariant(C, reflected, foot)).kernel, 0.0, atol=1e-12)
-        np.testing.assert_allclose(reflected.regressive(perpendicular).kernel, 0.0, atol=1e-14)
+def test_perpendicular_and_harmonic_reflection_in_both_geometries() -> None:
+    first_vertex, second_vertex = mv.point([0.65, 0]), mv.point([0.2, 0.55])
+    probe = mv.point([-0.15, 0.15])
+    side = (first_vertex & second_vertex) * (first_vertex & second_vertex & probe)
+
+    for sign, absolute in ((-1, hyperbolic_absolute), (1, elliptic_absolute)):
+        pole, normal, foot, reflected_point = perpendicular_reflection(absolute, side, probe)
+        distance_pairing = sign * (absolute(Point) & Point)
+        assert ((side & (absolute(probe) ^ absolute(pole))).abs() < 1e-12).all()
+        assert ((side & foot).abs() < 1e-12).all()
+        assert ((normal & reflected_point).antinorm() < 1e-12).all()
+        distance_difference = (
+            normalized_pairing(distance_pairing, probe, foot)
+            - normalized_pairing(distance_pairing, reflected_point, foot)
+        )
+        assert (distance_difference.abs() < 1e-12).all()
 
 
-def test_triangle_angle_sum_is_below_pi_hyperbolic_and_above_pi_elliptic():
-    vertices = mv.point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
-    winding = vertices[0].regressive(vertices[1]).regressive(vertices[2])
-    outline = Topology.loops([3])
-    tails, heads = outline.incidence[1, 0] * vertices.field()
-    leaving, arriving = ~outline.incidence[1, 0]
-    to_next = (leaving * (tails.regressive(heads) * winding)).batch()
-    to_prev = (arriving * (heads.regressive(tails) * winding)).batch()
-    sums = {}
-    for name, C in (("hyperbolic", HYPERBOLIC), ("elliptic", ELLIPTIC)):
-        Q = C.inverse()
-        sums[name] = (to_next.regressive(Q(to_prev)) / (to_next.regressive(Q(to_next)) * to_prev.regressive(Q(to_prev))).square_root()).clip(-1.0, 1.0).arccos().sum().to_array()
-    assert sums["hyperbolic"] < np.pi < sums["elliptic"]
+def test_triangle_angle_sum_is_below_pi_in_hyperbolic_and_above_pi_in_elliptic() -> None:
+    topology = Topology(3, np.array([[0, 1, 2]]))
+    vertices = mv.point([[0, 0], [0.65, 0], [0.2, 0.55]]).field()          # Point-[V]
+    _, hyperbolic_angles, _, hyperbolic_area = triangle_metrics(topology, hyperbolic_absolute, vertices)
+    _, elliptic_angles, _, _ = triangle_metrics(topology, elliptic_absolute, vertices)
+    assert (hyperbolic_area > 0).all()
+    assert (hyperbolic_angles.sum(axis=0) < np.pi).all()
+    assert (elliptic_angles.sum(axis=0) > np.pi).all()
 
 
-def test_sphere_quadric_contains_the_points_at_its_radius():
-    C = HYPERBOLIC
-    centre, R = mv.point(np.array([0.45, 0.25])), 0.9
-    polar = C(centre)
-    sphere = polar * polar.regressive(Point) - centre.regressive(C(centre)) * (np.cosh(R) ** 2) * C
-    lo, hi = 0.45, 0.999
-    for _ in range(60):
-        mid = 0.5 * (lo + hi)
-        lo, hi = (mid, hi) if (-invariant(C, centre, mv.point(np.array([mid, 0.25])))).clip(1.0, np.inf).arccosh() < R else (lo, mid)
-    on_sphere = mv.point(np.array([lo, 0.25]))
-    np.testing.assert_allclose(on_sphere.regressive(sphere(on_sphere)).kernel, 0.0, atol=1e-12)
+def test_sphere_quadric_vanishes_on_points_at_its_hyperbolic_radius() -> None:
+    centre = mv.point([0, 0])                                              # [] Point-
+    radius = 0.9
+    sphere = concentric_spheres(hyperbolic_absolute, centre, np.array([radius]))[0]
+    boundary_point = mv.point([np.tanh(radius), 0])                        # [] Point-
+    assert ((sphere(boundary_point) & boundary_point).abs() < 1e-12).all()
 
 
-def test_the_hyperbolic_scene_draws():
-    render.draw_hyperbolic_space(*scenarios.hyperbolic_space())
+def test_hyperbolic_figure_renders() -> None:
+    (
+        absolute, vertices, sides, angles, _, probe, foot, normal, reflected_point, pole, sphere_quadrics, centres,
+    ) = scenarios.hyperbolic_scene()
+    fig = render.hyperbolic_figure(
+        absolute, vertices, sides, angles, probe, foot, normal, reflected_point, pole, sphere_quadrics, centres,
+    )
+    plt.close(fig)

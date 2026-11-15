@@ -1,23 +1,22 @@
-"""Quartz returns light through the polarizer it entered by; a Faraday rotator blocks it."""
+"""Tests for round-trip optical rotation and its mirror image."""
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from numga import stack
 from examples.orientation.optical_rotation import core, render, scenarios
 
 
-def test_isolator_and_its_mirror_image():
-    fields, depths = scenarios.isolator()
-    leaving = fields[:, :, 1, -1]                                                  # [media, setups] Field+
-    # The polarizer each setup's light entered through, and its mirror image.
-    axes = stack([scenarios.polarizer_axis, scenarios.mirror >> scenarios.polarizer_axis])   # [setups] Direction-
-    # Malus's law: the share of the returning light that passes the polarizer it entered through.
-    passed = (leaving & (axes & core.time)).squared()                              # [media, setups] Scalar+
+def test_isolator_and_mirror_image():
+    fields, depths = scenarios.isolator_comparison()
+    exit_fields = fields[:, :, 1, -1]                                             # [2, 2] Field+
+    polarizer_axes = stack([scenarios.polarizer_axis,
+                            scenarios.mirror >> scenarios.polarizer_axis])        # [2] Direction-
+    # Malus's law gives the transmitted fraction returning through each setup's entrance polarizer.
+    transmitted_shares = (exit_fields & (polarizer_axes & core.time)).squared()   # [2, 2] Scalar+
 
-    np.testing.assert_allclose(passed.to_array()[0], 1, atol=1e-12)
-    np.testing.assert_allclose(passed.to_array()[1], 0, atol=1e-12)
+    assert ((transmitted_shares[0] - 1).abs() < 1e-12).all()
+    assert (transmitted_shares[1].abs() < 1e-12).all()
 
-    figure = render.draw_isolator(fields, depths)
+    figure = render.isolator_figure(fields, depths)
     figure.canvas.draw()
     plt.close(figure)

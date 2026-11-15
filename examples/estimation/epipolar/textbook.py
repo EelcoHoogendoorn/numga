@@ -1,11 +1,6 @@
-"""Textbook matrix algorithms for epipolar geometry and two-view reconstruction.
+"""Eight-point matrix baseline computes the essential matrix, four-way pose decomposition, midpoint triangulation, and epipolar lines without geometric algebra.
 
-This module is the matrix baseline without geometric algebra: the Hartley and Zisserman
-8-point SVD, projection to the rank-2 manifold, SVD decomposition via the W matrix, testing
-of the four candidate poses, and two-by-two normal equations for triangulation.
-
-It is a point of comparison for `core`, which does the same with typed extensors and PGA3D
-operators.
+Hartley and Zisserman's singular-value solve fits an unconstrained three-by-three matrix to the bilinear ray constraints, projects onto the equal-singular-value manifold, factors four candidate rotation-translation pairs, selects the physical pair by positive depth counts in both camera frames, and triangulates skew sight rays through two-by-two normal equations.
 """
 
 from __future__ import annotations
@@ -14,123 +9,94 @@ import numpy as np
 
 
 def essential_matrix(rays_1: np.ndarray, rays_2: np.ndarray) -> np.ndarray:
-    """The essential matrix relates two sets of corresponding sight rays.
+    """Two singular value decompositions fit a rank-two essential matrix (`[3, 3]`) with equal nonzero singular values to calibrated sight-ray directions `rays_1` and `rays_2` (`[n_rays, 3]`)."""
+    # Each row flattens the outer product of one corresponding sight-ray pair so the bilinear constraint reads as design @ e == 0.
+    design = (rays_2[:, :, None] * rays_1[:, None, :]).reshape(len(rays_1), 9)
+    _, _, right_singular = np.linalg.svd(design)
+    raw_essential = right_singular[-1].reshape(3, 3)
 
-    rays_1 and rays_2 are unit direction vectors of shape (N, 3) from Camera 1 and
-    Camera 2. Each corresponding pair satisfies the epipolar coplanarity constraint:
-        rays_2[k].T @ E @ rays_1[k] == 0
-    """
-    # Form the linear constraint matrix a of shape (N, 9), whose row k is
-    # np.outer(rays_2[k], rays_1[k]).ravel():
-    a = (rays_2[:, :, None] * rays_1[:, None, :]).reshape(len(rays_1), 9)
-
-    # The optimal flattened matrix e minimizes np.linalg.norm(a @ e) subject to
-    # np.linalg.norm(e) == 1 (nullspace solve):
-    _, _, vh = np.linalg.svd(a)
-    e_raw = vh[-1].reshape(3, 3)
-
-    # Project onto the Essential manifold: its two non-zero singular values must be equal:
-    u, _, vt = np.linalg.svd(e_raw)
-    e_projected = u @ np.diag([1.0, 1.0, 0.0]) @ vt
-
-    return e_projected
+    # Enforcing equal nonzero singular values projects the unconstrained least-squares matrix onto the essential manifold.
+    left_factors, _, right_factors = np.linalg.svd(raw_essential)
+    return left_factors @ np.diag([1.0, 1.0, 0.0]) @ right_factors
 
 
-def decompose_essential(
+def candidate_pose(
     essential: np.ndarray,
     rays_1: np.ndarray,
     rays_2: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Decompose the Essential matrix into relative rotation R and translation direction t.
+    """Singular-value factorization of `essential` (`[3, 3]`) tests four candidate poses and selects the rotation (`[3, 3]`) and unit translation (`[3]`) giving positive depths along `rays_1` and `rays_2` (`[n_rays, 3]`)."""
+    left_factors, _, right_factors = np.linalg.svd(essential)
 
-    The essential matrix is the cross-product matrix of t times R, so it encodes rotation
-    and translation jointly. SVD factorization yields
-    four mathematically valid (R, t) pairs; the unique physical solution is selected
-    by the cheirality condition (positive depth in both camera frames).
-    """
-    u, _, vt = np.linalg.svd(essential)
+    quarter_turn = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    rotation_a = left_factors @ quarter_turn @ right_factors
+    rotation_b = left_factors @ quarter_turn.T @ right_factors
+    if np.linalg.det(rotation_a) < 0.0:
+        rotation_a = -rotation_a
+    if np.linalg.det(rotation_b) < 0.0:
+        rotation_b = -rotation_b
+    translation_axis = left_factors[:, 2]
 
-    w = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    r1 = u @ w @ vt
-    r2 = u @ w.T @ vt
-    if np.linalg.det(r1) < 0.0:
-        r1 = -r1
-    if np.linalg.det(r2) < 0.0:
-        r2 = -r2
-    t_candidate = u[:, 2]
-
-    best_r = r1
-    best_t = t_candidate
+    chosen_rotation = rotation_a
+    chosen_translation = translation_axis
     max_positive_depths = -1
 
-    for r_cand in (r1, r2):
+    for candidate_rotation in (rotation_a, rotation_b):
         for sign in (1.0, -1.0):
-            t_cand = sign * t_candidate
-            # In Camera 2's frame: r_cand @ (d1[k] * rays_1[k]) + t_cand == d2[k] * rays_2[k].
-            # Rearranged: np.stack([r_cand @ rays_1[k], -rays_2[k]], axis=-1) @ [d1[k], d2[k]] == -t_cand
-            r_r1 = (r_cand @ rays_1.T).T
-            m00 = np.sum(r_r1 * r_r1, axis=-1)
-            m01 = np.sum(r_r1 * -rays_2, axis=-1)
-            m11 = np.sum(rays_2 * rays_2, axis=-1)
-            det = m00 * m11 - m01 * m01
+            candidate_translation = sign * translation_axis
+            # Solving the 2x2 normal equations for ray depths in camera 2's frame counts points lying in front of both cameras.
+            rotated_rays_1 = (candidate_rotation @ rays_1.T).T
+            gram_00 = np.sum(rotated_rays_1 * rotated_rays_1, axis=-1)
+            gram_01 = np.sum(rotated_rays_1 * -rays_2, axis=-1)
+            gram_11 = np.sum(rays_2 * rays_2, axis=-1)
+            determinant = gram_00 * gram_11 - gram_01 * gram_01
 
-            rhs0 = np.sum(r_r1 * -t_cand, axis=-1)
-            rhs1 = np.sum(-rays_2 * -t_cand, axis=-1)
+            rhs_0 = np.sum(rotated_rays_1 * -candidate_translation, axis=-1)
+            rhs_1 = np.sum(-rays_2 * -candidate_translation, axis=-1)
 
-            d1 = (m11 * rhs0 - m01 * rhs1) / det
-            d2 = (-m01 * rhs0 + m00 * rhs1) / det
+            depths_1 = (gram_11 * rhs_0 - gram_01 * rhs_1) / determinant
+            depths_2 = (-gram_01 * rhs_0 + gram_00 * rhs_1) / determinant
 
-            positive_count = int(np.sum((d1 > 0.0) & (d2 > 0.0)))
+            positive_count = int(np.sum((depths_1 > 0.0) & (depths_2 > 0.0)))
             if positive_count > max_positive_depths:
                 max_positive_depths = positive_count
-                best_r = r_cand
-                best_t = t_cand
+                chosen_rotation = candidate_rotation
+                chosen_translation = candidate_translation
 
-    return best_r, best_t
+    return chosen_rotation, chosen_translation
 
 
-def triangulate_rays(
-    c1: np.ndarray,
+def ray_midpoints(
+    centre_1: np.ndarray,
     rays_1: np.ndarray,
-    c2: np.ndarray,
+    centre_2: np.ndarray,
     rays_2_world: np.ndarray,
 ) -> np.ndarray:
-    """Triangulate 3D world points from pairs of calibrated 3D sight rays.
+    """Midpoints (`[n_rays, 3]`) of the shortest segments between skew world-frame rays from `centre_1` along `rays_1` and `centre_2` along `rays_2_world` triangulate the 3D landmarks."""
+    baseline = centre_2 - centre_1
 
-    c1 and c2 are camera centers of shape (3,). rays_1 and rays_2_world are unit
-    directions of shape (N, 3) in world coordinates. Returns the 3D midpoint of the
-    shortest connecting segment between the two skew sight rays.
-    """
-    delta_c = c2 - c1
-    r1 = rays_1
-    r2 = rays_2_world
+    gram_00 = np.sum(rays_1 * rays_1, axis=-1)
+    gram_01 = np.sum(rays_1 * -rays_2_world, axis=-1)
+    gram_11 = np.sum(rays_2_world * rays_2_world, axis=-1)
+    determinant = gram_00 * gram_11 - gram_01 * gram_01
 
-    m00 = np.sum(r1 * r1, axis=-1)
-    m01 = np.sum(r1 * -r2, axis=-1)
-    m11 = np.sum(r2 * r2, axis=-1)
-    det = m00 * m11 - m01 * m01
+    rhs_0 = np.sum(rays_1 * baseline, axis=-1)
+    rhs_1 = np.sum(-rays_2_world * baseline, axis=-1)
 
-    rhs0 = np.sum(r1 * delta_c, axis=-1)
-    rhs1 = np.sum(-r2 * delta_c, axis=-1)
+    depths_1 = (gram_11 * rhs_0 - gram_01 * rhs_1) / determinant
+    depths_2 = (-gram_01 * rhs_0 + gram_00 * rhs_1) / determinant
 
-    s = (m11 * rhs0 - m01 * rhs1) / det
-    u = (-m01 * rhs0 + m00 * rhs1) / det
+    points_1 = centre_1 + depths_1[:, None] * rays_1
+    points_2 = centre_2 + depths_2[:, None] * rays_2_world
 
-    p1 = c1 + s[:, None] * r1
-    p2 = c2 + u[:, None] * r2
-
-    return 0.5 * (p1 + p2)
+    return 0.5 * (points_1 + points_2)
 
 
 def epipolar_lines(
     points_1: np.ndarray,
     essential: np.ndarray,
 ) -> np.ndarray:
-    """The epipolar lines in Camera 2 of points in Camera 1 have these 2D line coefficients.
-
-    points_1 has shape (N, 3) in normalized homogeneous coordinates (u, v, 1).
-    Returns normalized line coefficients (a, b, c) where a * x + b * y + c == 0 in Camera 2.
-    """
+    """Multiplying normalized homogeneous image points `points_1` (`[n_points, 3]`) by `essential` (`[3, 3]`) gives Euclidean-normalized epipolar line coefficients (`[n_points, 3]`) in camera 2."""
     lines = (essential @ points_1.T).T
-    norm = np.linalg.norm(lines[:, :2], axis=-1, keepdims=True)
-    return lines / norm
+    slope_norm = np.linalg.norm(lines[:, :2], axis=-1, keepdims=True)
+    return lines / slope_norm

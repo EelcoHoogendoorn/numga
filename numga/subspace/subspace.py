@@ -1,20 +1,38 @@
-"""Immutable coefficient axes: ordered bit masks with orientation signs."""
+"""Each structural axis of an `Extensor` is described by a `SubSpace`, an immutable sequence of
+distinct canonical blade masks paired with `+1` or `-1` basis-blade signs. Separating coordinate
+layout from algebraic support lets an algebra adopt human-readable basis conventions such as
+right-handed cyclic bivectors `("yz", "zx", "xy")` without altering canonical integer bit-mask
+arithmetic underneath; `"zx"` stores canonical mask `xz` with sign `-1`.
+
+Two levels of identity coexist on subspaces. `SubSpace` equality (`==`) and hashing compare the
+`Algebra` instance (`is`), exact mask ordering, and per-blade signs, because two extensors can
+share a raw coefficient array without reordering or sign flips only when their axis layouts match
+identically. `SupportKey`, `same_support`, and `support_is_subset_of` compare only the unordered
+set of canonical masks on the same `Algebra` instance, governing mathematical subspace containment
+and support-indexed operator caches across layouts.
+
+Set-like operations distinguish layout-preserving filtering from default-ordered support
+construction. `restrict`, `intersection`, `difference`, `degenerate`, and `nondegenerate` filter an
+existing `SubSpace` while preserving the surviving masks' order and signs, whereas `union` (`+`)
+and `complement` build new supports through `algebra.subspace.from_masks` in the algebra's default
+layout. `SubSpace` itself holds no flyweight pool so direct construction obeys the same structural
+equality contract as `SubSpaceFactory` interning. Signed canonical blade layouts and their role in
+structural kernel axes are described in `docs/internals.md` (section 3).
+"""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from functools import lru_cache
 from operator import index
 from types import NotImplementedType
-from typing import TYPE_CHECKING, Iterable, Iterator, Tuple
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from numga.algebra import Algebra
-    from numga.gatype import GAType
 
 
-def _normalize_masks(algebra: Algebra, masks: Iterable[int]) -> Tuple[int, ...]:
-    """Validate masks and return the epoch-one canonical coordinate order."""
-
+def _normalize_masks(algebra: Algebra, masks: Iterable[int]) -> tuple[int, ...]:
     upper_bound = 1 << algebra.dimension
     normalized = []
     seen = set()
@@ -32,17 +50,14 @@ def _normalize_masks(algebra: Algebra, masks: Iterable[int]) -> Tuple[int, ...]:
         seen.add(mask)
         normalized.append(mask)
 
+    # Canonical layout orders blades by ascending grade, then ascending bit mask.
     normalized.sort(key=lambda mask: (algebra.grade(mask), mask))
     return tuple(normalized)
 
 
 class SupportKey:
-    """Hashable, layout-independent identity of one algebraic blade support.
-
-    Algebra ownership intentionally uses object identity.  This prevents two
-    separately configured algebra instances from sharing structural caches even
-    if they happen to compare equal.
-    """
+    """Unordered canonical blade masks paired with `Algebra` object identity (`is`) form a hashable
+    support key independent of blade ordering and signs."""
 
     __slots__ = ("_algebra", "_masks", "_hash")
 
@@ -57,7 +72,7 @@ class SupportKey:
         return self._algebra
 
     @property
-    def masks(self) -> Tuple[int, ...]:
+    def masks(self) -> tuple[int, ...]:
         return self._masks
 
     def __setattr__(self, _name: str, _value: object) -> None:
@@ -76,12 +91,8 @@ class SupportKey:
 
 
 class SubSpace:
-    """One immutable coefficient axis described by ordered signed bit blades.
-
-    The value class deliberately contains no flyweight machinery.  A bound
-    :class:`SubSpaceFactory` owns canonical construction, while structural
-    equality and hashing keep direct construction correct as well.
-    """
+    """An ordered tuple of distinct canonical blade masks and `+1`/`-1` orientation signs defines
+    the coordinate basis of one structural `Extensor` axis."""
 
     __slots__ = (
         "_algebra",
@@ -121,9 +132,8 @@ class SubSpace:
         return self._algebra
 
     @property
-    def masks(self) -> Tuple[int, ...]:
-        """Canonical bit masks in coefficient-axis order."""
-
+    def masks(self) -> tuple[int, ...]:
+        """Canonical integer blade masks appear in the exact coordinate order of this axis."""
         return self._masks
 
     @property
@@ -133,14 +143,14 @@ class SubSpace:
     @property
     @lru_cache(maxsize=None)
     def canonical(self) -> SubSpace:
-        """This support in unsigned grade/mask order, independent of defaults."""
-
+        """Sorting this support by `(grade, mask)` with all `+1` signs strips any custom ordering
+        or blade sign conventions."""
         masks = _normalize_masks(self.algebra, self.masks)
         return self.algebra.subspace.from_layout(masks, (1,) * len(masks))
 
     def restrict(self, masks: Iterable[int]) -> SubSpace:
-        """Filter support without changing surviving coordinates."""
-
+        """Intersecting with `masks` keeps surviving blades in their existing axis order and
+        orientation signs."""
         support = frozenset(masks)
         entries = [(mask, sign) for mask, sign in zip(self.masks, self.signs) if mask in support]
         return self.algebra.subspace.from_layout(
@@ -149,13 +159,12 @@ class SubSpace:
 
     @property
     def support_key(self) -> SupportKey:
-        """A hashable support identity independent of axis layout."""
-
+        """All signed reorderings of the same blade set share one `SupportKey`."""
         return self._support_key
 
     def same_support(self, other: object) -> bool:
-        """Whether both axes belong to one algebra and span the same masks."""
-
+        """Two subspaces share support when they belong to the same `Algebra` instance and span
+        identical canonical masks regardless of order or signs."""
         return (
             isinstance(other, SubSpace)
             and self.algebra is other.algebra
@@ -163,17 +172,17 @@ class SubSpace:
         )
 
     def support_is_subset_of(self, other: object) -> bool:
-        """Whether this axis's canonical-mask support is contained in another."""
-
+        """Containment holds when `other` belongs to the same `Algebra` instance and includes every
+        canonical mask of `self`."""
         return (
             isinstance(other, SubSpace)
             and self.algebra is other.algebra
             and self._mask_set.issubset(other._mask_set)
         )
 
-    def union(self, other: "SubSpace") -> "SubSpace":
-        """Return the canonical SubSpace spanning either operand's support."""
-
+    def union(self, other: SubSpace) -> SubSpace:
+        """Joining two supports builds the `SubSpace` spanning blades in either axis, ordered
+        according to `algebra.subspace`."""
         if not isinstance(other, SubSpace):
             raise TypeError(
                 "SubSpace union requires another SubSpace; "
@@ -184,42 +193,35 @@ class SubSpace:
         right_only = tuple(mask for mask in other.masks if mask not in self._mask_set)
         return self.algebra.subspace.from_masks(self.masks + right_only)
 
-    def intersection(self, other: "SubSpace") -> "SubSpace":
-        """Intersect support, preserving this axis's order and signs."""
-
+    def intersection(self, other: SubSpace) -> SubSpace:
+        """Blades present in both subspaces survive in the order and signs of `self`."""
         if self.algebra is not other.algebra:
             raise ValueError("cannot intersect SubSpaces from different algebras")
         return self.restrict(other.masks)
 
-    def difference(self, other: "SubSpace") -> "SubSpace":
-        """The blades of this axis that are not in other, preserving this axis's order and signs."""
-
+    def difference(self, other: SubSpace) -> SubSpace:
+        """Removing every canonical mask of `other` keeps the remaining blades in the order and
+        signs of `self`."""
         if self.algebra is not other.algebra:
             raise ValueError("cannot subtract SubSpaces from different algebras")
         return self.restrict(mask for mask in self.masks if mask not in other._mask_set)
 
-    def complement(self) -> "SubSpace":
-        """The complementary blades, each the pseudoscalar with this blade's generators removed."""
-
+    def complement(self) -> SubSpace:
+        """Toggling every generator bit against the pseudoscalar maps each blade to its
+        complementary grade in `algebra.subspace` order."""
         return self.algebra.subspace.from_masks(self.algebra.complement(self.masks).tolist())
 
-    def degenerate(self) -> "SubSpace":
-        """The blades of this axis that contain a null generator."""
-
+    def degenerate(self) -> SubSpace:
+        """Filtering to blades that contain at least one null generator preserves the order and
+        signs of `self`."""
         return self.restrict(mask for mask in self.masks if mask & self.algebra.degenerate_mask)
 
-    def nondegenerate(self) -> "SubSpace":
-        """The blades of this axis that contain no null generator."""
-
+    def nondegenerate(self) -> SubSpace:
+        """Filtering to blades with no null generator preserves the order and signs of `self`."""
         return self.restrict(mask for mask in self.masks if not mask & self.algebra.degenerate_mask)
 
-    def __contains__(self, item: "SubSpace | int") -> bool:
-        """A SubSpace is in this one when its support is contained in it; a mask, when it is one
-        of its blades."""
-
-        if isinstance(item, SubSpace):
-            return item.support_is_subset_of(self)
-        return item in self._mask_set
+    def __contains__(self, mask: int) -> bool:
+        return mask in self._mask_set
 
     def __len__(self) -> int:
         return len(self.masks)
@@ -244,27 +246,24 @@ class SubSpace:
         return self._hash
 
     def __add__(self, other: object) -> SubSpace | NotImplementedType:
-        """The union of two supports. Operations on subspaces build subspaces; expressions are built
-        from types, as which a subspace passed into one is read."""
-
+        """Adding two `SubSpace` instances forms the union of their supports via `union`."""
         if isinstance(other, SubSpace):
             return self.union(other)
         return NotImplemented
 
-    def __reduce__(self) -> tuple[type[SubSpace], tuple[Algebra, tuple[int, ...], tuple[int, ...]]]:
+    def __reduce__(self) -> tuple:
         return type(self), (self.algebra, self.masks, self.signs)
 
     @property
     def blade_names(self) -> tuple[str, ...]:
-        """The oriented blade names in coefficient order, as ``algebra.subspace`` reads them."""
-
+        """Signed blade names follow axis coordinate order and round-trip through
+        `algebra.subspace.from_blades`."""
         return tuple(self.algebra.oriented_blade_name(mask, sign) for mask, sign in zip(self.masks, self.signs))
 
     @property
     def type_name(self) -> str:
-        """The named subspace with this support, or the smallest one containing it: bivector,
-        in bivector. Where two named subspaces coincide, the earlier name wins."""
-
+        """Display formatting names the first matching standard support (such as `"bivector"`), or
+        `"in <name>"` for the smallest named support containing `self`."""
         named = self.algebra.subspace.named()
         exact = next((name for name, space in named if space.same_support(self)), None)
         containing = min((len(space), i, name) for i, (name, space) in enumerate(named)

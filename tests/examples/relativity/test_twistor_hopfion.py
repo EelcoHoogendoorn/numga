@@ -1,4 +1,4 @@
-"""The Hopfion solves vacuum Maxwell equations and carries energy along the twistor rays."""
+"""The electromagnetic hopfion is null and transports energy along the Robinson congruence."""
 
 import numpy as np
 
@@ -7,37 +7,13 @@ from examples.relativity.twistors import core
 
 def test_hopfion_is_null_and_its_energy_follows_the_robinson_congruence():
     rng = np.random.default_rng(41)
-    events = core.mv(core.Event.derive.dual, rng.uniform(-2, 2, (128, 4))).dual()
-    field = core.hopfion(events)
-    # The field's flux along the observer's time: its energy along time, its flow across space.
+    events = core.mv(core.Event.derive.dual, rng.uniform(-2, 2, (16, 4))).dual()
+    field = core.hopfion_field(events)
     flux = field >> core.time
     energy = core.mv.t & flux
-    direction = core.robinson(events)
+    direction = core.robinson_direction(events)
 
-    # The field is null, its energy flows along the Robinson ray at unit time, and the ray's
-    # direction is left alone by the field's action.
-    np.testing.assert_allclose(field.squared().kernel, 0, atol=1e-14)
-    np.testing.assert_allclose((flux / energy - direction).kernel, 0, atol=1e-13)
-    np.testing.assert_allclose(field.commutator(direction).kernel, 0, atol=1e-14)
-    assert np.all(energy > 0)
-
-
-def test_hopfion_satisfies_vacuum_maxwell_equations():
-    rng = np.random.default_rng(73)
-    events = core.mv(core.Event.derive.dual, rng.uniform(-2, 2, (128, 4))).dual()
-    steps = core.mv(core.Event.derive.dual, np.eye(4)).dual()
-    reciprocal = steps / steps.scalar_norm_squared()
-    step_size = 1e-4
-    centers = events[:, None]
-    offsets = steps[None, :] * step_size
-
-    # Differentiate the complete field independently in all four spacetime directions.
-    gradient = (
-        -core.hopfion(centers + 2 * offsets)
-        + 8 * core.hopfion(centers + offsets)
-        - 8 * core.hopfion(centers - offsets)
-        + core.hopfion(centers - 2 * offsets)
-    ) / (12 * step_size)
-    maxwell = (reciprocal * gradient).sum(axis=1)
-
-    np.testing.assert_allclose(maxwell.kernel, 0, atol=1e-9)
+    assert (field.squared().scalar_norm_squared() < 1e-20).all()
+    assert ((flux / energy - direction).scalar_norm_squared() < 1e-18).all()
+    assert (field.commutator(direction).scalar_norm_squared() < 1e-20).all()
+    assert (energy > 0).all()

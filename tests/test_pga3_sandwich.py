@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numga import Algebra, CoefficientOrthogonal, Extensor, GATypeError, NumpyContext, ReverseProductOne, Versor
+from numga import Algebra, CoefficientOrthogonal, Extensor, GATypeError, NumpyContext, ReverseProductOne, Versor, stack
 from numga.algebras import PGA3D
 from numga.extensions.inverse import inverse_orthogonal
 
@@ -154,3 +154,21 @@ def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
     pullback = motor << Line
     assert pullback.axes == (Line.output_subspace, Line.output_subspace)
     np.testing.assert_allclose(pullback.kernel, motor.reverse().transform(Line).kernel)
+
+
+def test_a_sandwich_refuses_an_operand_whose_type_holds_both_parities():
+    """A versor applies as many reflections as it has vector factors, and whether that count is even or odd sets the
+    sign of what it acts on. A type holding both parities does not say which, so its sandwich is refused: a motor and
+    a glide reflection set side by side, and a sum of a scalar and a vector."""
+    mv = NumpyContext(PGA3D).multivector
+    motor = (0.3 * mv.yz + 0.5 * mv.xw).exp()
+    glide = mv.x.normalized() * motor
+    plane = mv.x - 0.8 * mv.w
+
+    mixed = stack((motor, glide))
+    with pytest.raises(GATypeError):
+        mixed >> plane
+    with pytest.raises(GATypeError):
+        mixed << plane
+    with pytest.raises(GATypeError):
+        (1.0 + mv.x) >> plane

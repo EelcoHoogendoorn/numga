@@ -1,11 +1,11 @@
-"""Continuum patch tests, electromechanical reciprocity, charge balance, and beam convergence."""
+"""Patch tests, electromechanical reciprocity, charge balance, beam convergence, and rendering checks."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from numga import stack
-from numga.sparse import SparseExtensor
-from examples.electromagnetism.piezoelectric import core, scenarios
+from examples.electromagnetism.piezoelectric import core, render, scenarios
 
 
 WIDTH = 5
@@ -20,198 +20,254 @@ def material():
 
 @pytest.fixture(scope="module")
 def device(material):
-    topology, vertices, poling = core.strip(10, 1, 40, 6)
+    topology, coordinates, layer_poling, top_weights, tip_weights = scenarios.bimorph(10, 1, 16, 4)
+    vertices = core.mv(core.Plane, coordinates).dual().field()
+    poling = core.mv.scalar(layer_poling).field()
+    top_electrode = core.mv.scalar(top_weights).field()
+    tip_distribution = core.mv.scalar(tip_weights).field()
     areas, gradients = core.triangles(topology, vertices)
-    return topology, vertices, gradients, poling, core.assemble(topology, areas, gradients, *material, poling, WIDTH)
+    blocks = core.assemble(topology, areas, gradients, *material, poling, WIDTH)
+    return topology, vertices, areas, gradients, poling, top_electrode, tip_distribution, blocks
 
 
-@pytest.mark.parametrize("motion", [(core.mv.xy * .27).exp(), core.mv.x], ids=["rotation", "reflection"])
+@pytest.mark.parametrize("motion", [(core.mv.xy * 0.27).exp(), core.mv.x], ids=["rotation", "reflection"])
 def test_material_follows_its_directions_under_rigid_transformations(material, motion):
     elastic, polarization, permittivity = material
-    transformed = scenarios.pzt5a(motion >> stack((core.mv.x, core.mv.y)))
-    displacement = .12 * core.axis - .3 * core.pole
-    test_displacement = -.2 * core.axis + .1 * core.pole
-    gradient = .7 * core.mv.x + .2 * core.mv.y
-    test_gradient = -.6 * core.mv.x + .8 * core.mv.y
-    electric = .3 * core.mv.xt + .7 * core.mv.yt
+    reoriented_material = scenarios.pzt5a(motion >> stack((core.mv.x, core.mv.y)))
+    displacement = 0.12 * core.axis - 0.3 * core.pole
+    test_displacement = -0.2 * core.axis + 0.1 * core.pole
+    gradient = 0.7 * core.mv.x + 0.2 * core.mv.y
+    test_gradient = -0.6 * core.mv.x + 0.8 * core.mv.y
+    electric_field = 0.3 * core.mv.xt + 0.7 * core.mv.yt
 
     work = elastic(displacement, gradient, test_displacement, test_gradient)
-    transformed_work = transformed[0](motion >> displacement, motion >> gradient,
-                                      motion >> test_displacement, motion >> test_gradient)
-    np.testing.assert_allclose((transformed_work - work).kernel, 0, atol=1e-13)
-    np.testing.assert_allclose((transformed[1](motion >> displacement, motion >> gradient)
-                               - (motion >> polarization(displacement, gradient))).kernel, 0, atol=1e-13)
-    np.testing.assert_allclose((transformed[2](motion >> electric)
-                               - (motion >> permittivity(electric))).kernel, 0, atol=1e-13)
+    reoriented_work = reoriented_material[0](
+        motion >> displacement, motion >> gradient, motion >> test_displacement, motion >> test_gradient,
+    )
+    assert (reoriented_work - work).abs() < 1e-12
+    assert ((reoriented_material[1](motion >> displacement, motion >> gradient)
+             - (motion >> polarization(displacement, gradient))).norm() < 1e-12).all()
+    assert ((reoriented_material[2](motion >> electric_field)
+             - (motion >> permittivity(electric_field))).norm() < 1e-12).all()
 
 
-@pytest.mark.parametrize("electric, extension, shear, free_permittivity, direction", [
+@pytest.mark.parametrize("electric_field, extension, shear, free_permittivity, direction", [
     (core.mv.yt, (-171e-12, 374e-12), 0, 1700, core.pole),
     (core.mv.xt, (0, 0), 584e-12, 1730, core.axis),
 ], ids=["parallel", "transverse"])
 def test_stress_free_response_matches_measured_pzt5a_data(
-        material, electric, extension, shear, free_permittivity, direction):
+        material, electric_field, extension, shear, free_permittivity, direction):
     elastic, polarization, permittivity = material
-    # Table A3 gives free piezoelectric strains and permittivity. The constitutive maps
-    # use fixed-strain data, so allowing these strains must recover the measurements.
-    changes = ((core.axis, core.mv.x, extension[0] * scenarios.field_unit),
-               (core.pole, core.mv.y, extension[1] * scenarios.field_unit),
-               (core.axis, core.mv.y, shear * scenarios.field_unit / 2),
-               (core.pole, core.mv.x, shear * scenarios.field_unit / 2))
-    for test_displacement, test_gradient in ((core.axis, core.mv.x),
-                                            (core.pole, core.mv.y), (core.axis, core.mv.y)):
-        mechanical = sum(elastic(displacement, gradient, test_displacement, test_gradient) * amplitude
-                         for displacement, gradient, amplitude in changes)
-        electrical = electric & (polarization(test_displacement, test_gradient) & core.time)
-        # The published constants are rounded before conversion to the stored material data.
-        np.testing.assert_allclose((mechanical - electrical).kernel, 0, atol=1e-5)
+    changes = (
+        (core.axis, core.mv.x, extension[0] * scenarios.field_unit),
+        (core.pole, core.mv.y, extension[1] * scenarios.field_unit),
+        (core.axis, core.mv.y, shear * scenarios.field_unit / 2),
+        (core.pole, core.mv.x, shear * scenarios.field_unit / 2),
+    )
+    for test_displacement, test_gradient in ((core.axis, core.mv.x), (core.pole, core.mv.y), (core.axis, core.mv.y)):
+        mechanical = sum(
+            elastic(displacement, gradient, test_displacement, test_gradient) * amplitude
+            for displacement, gradient, amplitude in changes
+        )
+        electrical = electric_field & polarization(test_displacement, test_gradient)
+        assert (mechanical - electrical).abs() < 1e-5
 
-    induced = sum((polarization(displacement, gradient) * amplitude
-                   for displacement, gradient, amplitude in changes), permittivity(electric))
-    measured = direction * (free_permittivity * 8.8541878128e-12 / scenarios.permittivity_unit)
-    np.testing.assert_allclose((induced - measured).kernel, 0, atol=1e-5)
+    total_excitation = sum(
+        (polarization(displacement, gradient) * amplitude for displacement, gradient, amplitude in changes),
+        permittivity(electric_field),
+    )
+    measured = (direction & core.time) * (free_permittivity * 8.8541878128e-12 / scenarios.permittivity_unit)
+    assert ((total_excitation - measured).norm() < 1e-5).all()
 
 
-def solve(topology, blocks, voltage, force, floating):
-    movement, electric = core.boundary_maps(topology, floating)
+def solve_state(topology, top_electrode, tip_distribution, blocks, voltage, force, floating_nodes):
+    free_motion, free_voltage = scenarios.boundary_maps(topology, floating_nodes)
     displacement, potential = core.equilibrium(
-        *blocks, movement, electric, core.electrode_potential(topology, voltage), core.tip_load(topology, force))
+        *blocks, free_motion, free_voltage, voltage * top_electrode, (core.mv.y * force) * tip_distribution,
+    )
     charges = -(blocks[1].adjugate()(displacement) + blocks[2](potential))
     return displacement, potential, charges
 
 
 def test_affine_fields_and_rigid_motion_are_reproduced(device):
-    topology, vertices, gradients, _, (mechanical, coupling, dielectric) = device
+    topology, vertices, _, gradients, _, top_electrode, _, (mechanical, coupling, dielectric) = device
     horizontal, vertical = core.mv.x & vertices, core.mv.y & vertices
-    translation = vertices * 0 + core.axis * .3 + core.pole * .7
-    turning = vertices.commutator(core.mv.xy * .2)
+    translation = vertices * 0 + core.axis * 0.3 + core.pole * 0.7
+    turning = vertices.commutator(core.mv.xy * 0.2)
     for displacement in (translation, turning):
-        np.testing.assert_allclose(core.strain(topology, displacement, gradients).kernel, 0, atol=1e-12)
-        np.testing.assert_allclose(mechanical(displacement).kernel, 0, atol=1e-10)
-        np.testing.assert_allclose(coupling.adjugate()(displacement).kernel, 0, atol=1e-10)
+        local_strain = core.strain(topology, displacement, gradients)
+        assert ((local_strain(core.axis) & core.axis).abs() < 1e-12).all()
+        assert ((local_strain(core.pole) & core.pole).abs() < 1e-12).all()
+        assert ((local_strain(core.pole) & core.axis).abs() < 1e-12).all()
+        assert ((core.mv.x & mechanical(displacement)).abs() < 1e-10).all()
+        assert ((core.mv.y & mechanical(displacement)).abs() < 1e-10).all()
+        assert (coupling.adjugate()(displacement).antinorm() < 1e-10).all()
 
-    displacement = (core.axis * (.2 * horizontal + .07 * vertical)
-                    + core.pole * (.07 * horizontal - .3 * vertical))
-    strain = core.strain(topology, displacement, gradients)
-    np.testing.assert_allclose((core.axis & strain(core.axis)).kernel, .2, atol=1e-12, rtol=0)
-    np.testing.assert_allclose((core.pole & strain(core.pole)).kernel, -.3, atol=1e-12, rtol=0)
-    np.testing.assert_allclose((core.axis & strain(core.pole)).kernel, .07, atol=1e-12, rtol=0)
+    displacement = (
+        core.axis * (0.2 * horizontal + 0.07 * vertical)
+        + core.pole * (0.07 * horizontal - 0.3 * vertical)
+    )
+    local_strain = core.strain(topology, displacement, gradients)
+    assert (((local_strain(core.axis) & core.axis) - 0.2).abs() < 1e-12).all()
+    assert (((local_strain(core.pole) & core.pole) + 0.3).abs() < 1e-12).all()
+    assert (((local_strain(core.pole) & core.axis) - 0.07).abs() < 1e-12).all()
 
-    potential = 2 * horizontal - 3 * vertical + .7
-    expected = -(2 * core.mv.x - 3 * core.mv.y) ^ core.mv.t
-    electric = -((topology.incidence[2, 0] * potential).batch() * (gradients.batch() ^ core.mv.t)).sum(axis=-2)
-    np.testing.assert_allclose((electric - expected).kernel, 0, atol=1e-11)
-    constant = core.electrode_potential(topology, 0) + 1
-    np.testing.assert_allclose(coupling(constant).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose(dielectric(constant).kernel, 0, atol=1e-11)
+    potential = 2 * horizontal - 3 * vertical + 0.7
+    expected = (2 * core.mv.x - 3 * core.mv.y) ^ (-core.mv.t)
+    electric_field = ((topology.incidence[2, 0] * potential).batch() * (gradients.batch() ^ (-core.mv.t))).sum(axis=-2)
+    assert (((electric_field - expected) & (core.axis & core.time)).abs() < 1e-11).all()
+    assert (((electric_field - expected) & (core.pole & core.time)).abs() < 1e-11).all()
+    constant = 0 * top_electrode + 1
+    assert ((core.mv.x & coupling(constant)).abs() < 1e-11).all()
+    assert ((core.mv.y & coupling(constant)).abs() < 1e-11).all()
+    assert (dielectric(constant).antinorm() < 1e-11).all()
 
 
 def test_actuation_and_short_circuit_sensing_are_reciprocal(device):
-    topology, _, _, _, blocks = device
-    fixed = np.array([], dtype=int)
-    actuator, _, _ = solve(topology, blocks, VOLTAGE, 0, fixed)
-    _, _, sensor_charge = solve(topology, blocks, 0, FORCE, fixed)
-    tip = topology.reading(topology.tip, 0)
-    top = topology.reading(topology.top, 0)
-    weights = np.ones(len(topology.tip))
-    weights[[0, -1]] = 0.5
-    tip_motion = ((core.mv.y & (tip * actuator)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()
+    topology, _, _, _, _, top_electrode, tip_distribution, blocks = device
+    fixed_nodes = np.array([], dtype=int)
+    actuator_motion, _, _ = solve_state(topology, top_electrode, tip_distribution, blocks, VOLTAGE, 0, fixed_nodes)
+    _, _, sensor_charges = solve_state(topology, top_electrode, tip_distribution, blocks, 0, FORCE, fixed_nodes)
+    tip_motion = ((core.mv.y & actuator_motion) * tip_distribution).sites.sum()
     motion_per_voltage = tip_motion / VOLTAGE
-    charge_per_force = (core.mv.scalar([1]) & (top * sensor_charge)).sites.sum() / FORCE
+    charge_per_force = (top_electrode & sensor_charges).sites.sum() / FORCE
 
-    assert np.abs(motion_per_voltage.kernel).max() > 1
-    np.testing.assert_allclose((motion_per_voltage - charge_per_force).kernel, 0, atol=1e-9)
+    assert motion_per_voltage.abs() > 1
+    assert (motion_per_voltage - charge_per_force).abs() < 1e-9
 
 
 def test_floating_electrode_is_equipotential_and_conserves_charge(device):
-    topology, _, _, _, (mechanical, coupling, dielectric) = device
-    displacement, potential, charges = solve(topology, (mechanical, coupling, dielectric), 0, FORCE, topology.top)
-    n_vertices = topology.n_vertices
-    interior = np.setdiff1d(np.arange(n_vertices), np.concatenate((topology.bottom, topology.top)))
-    free = np.setdiff1d(np.arange(n_vertices), topology.clamped)
-    top = topology.reading(topology.top, 0)
+    topology, _, _, _, _, top_electrode, tip_distribution, (mechanical, coupling, dielectric) = device
+    displacement, potential, charges = solve_state(
+        topology, top_electrode, tip_distribution, (mechanical, coupling, dielectric), 0, FORCE, topology.top_nodes,
+    )
+    V, E, F = topology.n_elements
+    interior_nodes = np.setdiff1d(np.arange(V), np.concatenate((topology.bottom_nodes, topology.top_nodes)))
+    free_nodes = np.setdiff1d(np.arange(V), topology.clamp_nodes)
+    top = topology.reading(topology.top_nodes, 0)
     voltage = (top * potential).sites.mean()
 
-    assert np.abs(voltage.kernel).max() > 1e-6
-    np.testing.assert_allclose((top * potential - voltage).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((topology.reading(topology.bottom, 0) * potential).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((core.mv.scalar([1]) & (top * charges)).sites.sum().kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((topology.reading(interior, 0) * charges).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose(charges.sites.sum().kernel, 0, atol=1e-11)
+    assert voltage.abs() > 1e-6
+    assert ((top * potential - voltage).abs() < 1e-12).all()
+    assert ((topology.reading(topology.bottom_nodes, 0) * potential).abs() < 1e-12).all()
+    assert (top_electrode & charges).sites.sum().abs() < 1e-11
+    assert ((topology.reading(interior_nodes, 0) * charges).antinorm() < 1e-11).all()
+    assert charges.sites.sum().antinorm() < 1e-11
 
-    # The clamp carries the applied force; all other nodes are in mechanical equilibrium.
-    load = core.tip_load(topology, FORCE)
+    load = (core.mv.y * FORCE) * tip_distribution
     reaction = mechanical(displacement) + coupling(potential) - load
-    np.testing.assert_allclose((topology.reading(free, 0) * reaction).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((topology.reading(topology.clamped, 0) * displacement).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((reaction.sites.sum() + load.sites.sum()).kernel, 0, atol=1e-11)
+    assert ((core.mv.x & (topology.reading(free_nodes, 0) * reaction)).abs() < 1e-11).all()
+    assert ((core.mv.y & (topology.reading(free_nodes, 0) * reaction)).abs() < 1e-11).all()
+    assert ((topology.reading(topology.clamp_nodes, 0) * displacement).antinorm() < 1e-12).all()
+    assert (core.mv.y & (reaction.sites.sum() + load.sites.sum())).abs() < 1e-11
 
 
 def test_reversing_poling_reverses_the_coupled_responses(device, material):
-    topology, vertices, gradients, poling, blocks = device
-    areas, _ = core.triangles(topology, vertices)
-    reversed_blocks = core.assemble(topology, areas, gradients, *material, -poling, WIDTH)
-    fixed = np.array([], dtype=int)
-    displacement, potential, charges = solve(topology, blocks, VOLTAGE, 0, fixed)
-    reverse_displacement, reverse_potential, reverse_charges = solve(topology, reversed_blocks, VOLTAGE, 0, fixed)
-    np.testing.assert_allclose((displacement + reverse_displacement).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((potential - reverse_potential).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((charges - reverse_charges).kernel, 0, atol=1e-11)
+    topology, _, areas, gradients, poling, top_electrode, tip_distribution, blocks = device
+    opposite_blocks = core.assemble(topology, areas, gradients, *material, -poling, WIDTH)
+    fixed_nodes = np.array([], dtype=int)
+    displacement, potential, charges = solve_state(
+        topology, top_electrode, tip_distribution, blocks, VOLTAGE, 0, fixed_nodes,
+    )
+    reverse_displacement, reverse_potential, reverse_charges = solve_state(
+        topology, top_electrode, tip_distribution, opposite_blocks, VOLTAGE, 0, fixed_nodes,
+    )
+    assert ((displacement + reverse_displacement).antinorm() < 1e-11).all()
+    assert ((potential - reverse_potential).abs() < 1e-11).all()
+    assert ((charges - reverse_charges).antinorm() < 1e-11).all()
 
-    displacement, potential, _ = solve(topology, blocks, 0, FORCE, topology.top)
-    reverse_displacement, reverse_potential, _ = solve(topology, reversed_blocks, 0, FORCE, topology.top)
-    np.testing.assert_allclose((displacement - reverse_displacement).kernel, 0, atol=1e-11)
-    np.testing.assert_allclose((potential + reverse_potential).kernel, 0, atol=1e-11)
+    displacement, potential, _ = solve_state(
+        topology, top_electrode, tip_distribution, blocks, 0, FORCE, topology.top_nodes,
+    )
+    reverse_displacement, reverse_potential, _ = solve_state(
+        topology, top_electrode, tip_distribution, opposite_blocks, 0, FORCE, topology.top_nodes,
+    )
+    assert ((displacement - reverse_displacement).antinorm() < 1e-11).all()
+    assert ((potential + reverse_potential).abs() < 1e-11).all()
 
 
-def test_assembled_loads_are_the_variation_of_material_enthalpy(material):
-    topology, vertices, poling = core.strip(10, 1, 16, 4)
-    areas, gradients = core.triangles(topology, vertices)
-    mechanical, coupling, dielectric = core.assemble(topology, areas, gradients, *material, poling, WIDTH)
+def test_assembled_loads_match_enthalpy_variation(device, material):
+    topology, vertices, areas, gradients, poling, _, _, (mechanical, coupling, dielectric) = device
     horizontal, vertical = core.mv.x & vertices, core.mv.y & vertices
-    displacement = (core.axis * (.001 * horizontal.squared() + .002 * horizontal * vertical)
-                    + core.pole * (.003 * horizontal * vertical - .004 * vertical.squared()))
-    potential = .002 * horizontal * vertical + .003 * horizontal.squared() - .004 * vertical
-    movement = core.axis * (.3 * horizontal * vertical) + core.pole * (.2 * horizontal.squared() + .4 * vertical.squared())
-    voltage = .3 * horizontal.squared() - .7 * horizontal * vertical + .2 * vertical.squared()
+    displacement = (
+        core.axis * (0.001 * horizontal.squared() + 0.002 * horizontal * vertical)
+        + core.pole * (0.003 * horizontal * vertical - 0.004 * vertical.squared())
+    )
+    potential = 0.002 * horizontal * vertical + 0.003 * horizontal.squared() - 0.004 * vertical
+    perturbation = (
+        core.axis * (0.3 * horizontal * vertical)
+        + core.pole * (0.2 * horizontal.squared() + 0.4 * vertical.squared())
+    )
+    voltage_step = 0.3 * horizontal.squared() - 0.7 * horizontal * vertical + 0.2 * vertical.squared()
 
-    def enthalpy(displacement, potential):
-        density = core.enthalpy(core.strain(topology, displacement, gradients),
-                                -((topology.incidence[2, 0] * potential).batch() * (gradients.batch() ^ core.mv.t)).sum(axis=-2), *material, poling.batch())
+    def total_enthalpy(trial_displacement, trial_potential):
+        electric_field = (
+            (topology.incidence[2, 0] * trial_potential).batch() * (gradients.batch() ^ (-core.mv.t))
+        ).sum(axis=-2)
+        density = core.enthalpy(
+            core.strain(topology, trial_displacement, gradients), electric_field, *material, poling.batch(),
+        )
         return (WIDTH * areas.batch() * density).sum()
 
     step = 1e-4
-    difference = (enthalpy(displacement + step * movement, potential + step * voltage)
-                  - enthalpy(displacement - step * movement, potential - step * voltage)) / (2 * step)
-    work = ((mechanical(displacement) + coupling(potential)) & movement).sites.sum()
-    work += ((coupling.adjugate()(displacement) + dielectric(potential)) & voltage).sites.sum()
-    np.testing.assert_allclose((difference - work).kernel, 0, atol=1e-10)
+    variation = (
+        total_enthalpy(displacement + step * perturbation, potential + step * voltage_step)
+        - total_enthalpy(displacement - step * perturbation, potential - step * voltage_step)
+    ) / (2 * step)
+    work = ((mechanical(displacement) + coupling(potential)) & perturbation).sites.sum()
+    work += (voltage_step & (coupling.adjugate()(displacement) + dielectric(potential))).sites.sum()
+    assert (variation - work).abs() < 1e-10
 
 
 def test_refinement_approaches_the_slender_bimorph_response(material):
-    length, thickness = 10, 1
-    # Zero transverse stress gives these axial coefficients. Constant electric displacement
-    # through the thickness includes the electric field induced by the bending itself.
+    strip_length, strip_thickness = 10, 1
     compliance, free_coupling = 16.4e-12, -171e-12
     free_permittivity = 1700 * 8.8541878128e-12
     stiffness = 1 / compliance / scenarios.stress_unit
-    piezoelectric = free_coupling / compliance * scenarios.field_unit / scenarios.stress_unit
+    piezo_constant = free_coupling / compliance * scenarios.field_unit / scenarios.stress_unit
     permittivity = (free_permittivity - free_coupling**2 / compliance) / scenarios.permittivity_unit
-    beam_response = (1.5 * piezoelectric * permittivity
-                     / (stiffness * permittivity + piezoelectric**2 / 4) * (length / thickness)**2)
+    beam_response = (
+        1.5 * piezo_constant * permittivity
+        / (stiffness * permittivity + piezo_constant**2 / 4) * (strip_length / strip_thickness)**2
+    )
     errors = []
-    for n_length, n_thickness in ((20, 4), (40, 8), (80, 16)):
-        topology, vertices, poling = core.strip(length, thickness, n_length, n_thickness)
+    for n_along, n_across in ((12, 2), (24, 4), (48, 8)):
+        topology, coordinates, layer_poling, top_weights, tip_weights = scenarios.bimorph(
+            strip_length, strip_thickness, n_along, n_across,
+        )
+        vertices = core.mv(core.Plane, coordinates).dual().field()
+        poling = core.mv.scalar(layer_poling).field()
+        top_electrode = core.mv.scalar(top_weights).field()
+        tip_distribution = core.mv.scalar(tip_weights).field()
         areas, gradients = core.triangles(topology, vertices)
         blocks = core.assemble(topology, areas, gradients, *material, poling, WIDTH)
-        displacement, _, _ = solve(topology, blocks, VOLTAGE, 0, np.array([], dtype=int))
-        tip = topology.reading(topology.tip, 0)
-        weights = np.ones(len(topology.tip))
-        weights[[0, -1]] = 0.5
-        tip_motion = ((core.mv.y & (tip * displacement)) * core.mv.scalar(weights[:, None]).field()).sites.sum() / weights.sum()
-        response = tip_motion.kernel[0] / VOLTAGE
+        displacement, _, _ = solve_state(
+            topology, top_electrode, tip_distribution, blocks, VOLTAGE, 0, np.array([], dtype=int),
+        )
+        tip_motion = ((core.mv.y & displacement) * tip_distribution).sites.sum()
+        response = float((tip_motion / VOLTAGE).to_array())
         errors.append(abs(response / beam_response - 1))
 
-    assert errors[1] < .7 * errors[0]
-    assert errors[2] < .7 * errors[1]
-    assert errors[2] < .08
+    assert errors[1] < 0.7 * errors[0]
+    assert errors[2] < 0.7 * errors[1]
+    assert errors[2] < 0.08
+
+
+def test_render_strip_device_and_single_frame(device):
+    topology, vertices, areas, gradients, _, top_electrode, tip_distribution, blocks = device
+    displacement, potential, _ = solve_state(
+        topology, top_electrode, tip_distribution, blocks, VOLTAGE, 0, np.array([], dtype=int),
+    )
+    axial_strain = core.strain(topology, displacement, gradients)(core.axis) & core.axis
+    strip_fig = render.draw_strip(topology, vertices)
+    device_fig = render.draw_device(
+        topology, vertices, areas, displacement, potential, axial_strain, 100, VOLTAGE, 2e-5,
+    )
+    frames = list(render.animate(
+        topology, vertices, areas, 100, VOLTAGE, 2e-5,
+        core.load_cycle(displacement, potential, axial_strain, 2),
+    ))
+    plt.close(strip_fig)
+    plt.close(device_fig)
+    assert len(frames) == 2
+    assert frames[0].ndim == 3 and frames[0].shape[-1] == 3

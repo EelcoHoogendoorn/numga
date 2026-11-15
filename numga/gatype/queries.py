@@ -1,13 +1,21 @@
-"""What a type says about its axes, its forms, its sites and its self-products, each a namespace on
-the type: `gatype.axis_roles`, `gatype.form`, `gatype.over_sites` and `gatype.self_products`. Like the
-derivations, each is computed once per type."""
+"""Cached query namespaces on `GAType` group structural and semantic inspections by domain so the
+core `GAType` class stays focused on representation and algebra. Each property (`gatype.axis_roles`,
+`gatype.form`, `gatype.over_sites`, and `gatype.self_products`) constructs its lightweight wrapper
+once per `GAType` instance and caches repeated queries.
+
+`AxisRoles` inspects output (`0`) and input (`1..arity`) axes for index contractions, pairings, and
+subtype domain restrictions when binding operands. `Form` tests whether a binary scalar-valued map
+acts symmetrically on a single space or forms a compatible linear system with a right-hand side.
+`OverSites` extends endomorphism, correlation, and linear-system checks to extensors whose axes
+carry coupled field sites, distinguishing coupled site operators from site-by-site systems.
+`SelfProducts` extracts certified nullary `ProductFact` categories and positive-arity
+`ProductRelation` or `ClosureRelation` laws per self-product family.
+"""
 
 from __future__ import annotations
 
 from functools import cached_property, lru_cache
 from typing import TYPE_CHECKING
-
-from numga.subspace import SubSpace
 
 from .traits import ClosureRelation, ProductFact, ProductRelation, ProductResult, SelfProduct
 
@@ -25,80 +33,82 @@ class _Queries:
 
 
 class AxisRoles(_Queries):
-    """The axes of a type, output 0 and inputs from 1: which carry an index, which pair, and what an
-    operand given for an input binds there."""
+    """Axis-index queries on `gatype.axis_roles` number the output `0` and inputs `1..arity`."""
 
     @cached_property
     def indexed(self) -> tuple[int, ...]:
-        """The axes that carry an index: the output unless it is scalar, and every input."""
+        """Axes available for contraction include every input axis plus any non-scalar output axis."""
         gatype = self._gatype
         output = () if gatype.output_subspace.same_support(gatype.algebra.subspace.scalar()) else (0,)
         return output + tuple(range(1, len(gatype.input_subspaces) + 1))
 
     @property
     def pair(self) -> tuple[int, int]:
-        """The only two axes that carry an index."""
+        """When exactly two axes carry indices, they form the unique default contraction pair."""
         if len(self.indexed) != 2:
             raise TypeError(f"name the two axes to pair; {self._gatype} has {len(self.indexed)} axes that carry an index")
         return self.indexed
 
     @lru_cache(maxsize=None)
-    def paired(self, first: int, second: int) -> tuple[int, int]:
-        """Two axes to pair, in order, each one that carries an index."""
-        first, second = sorted((first, second))
-        if first not in self.indexed:
-            raise TypeError(f"axis {first} carries no index in {self._gatype}: a scalar output pairs with nothing")
-        return first, second
+    def paired(self, first_axis: int, second_axis: int) -> tuple[int, int]:
+        """Two indexed axes sort in ascending order for regressive or trace pairing, rejecting
+        scalar outputs."""
+        first_axis, second_axis = sorted((first_axis, second_axis))
+        if first_axis not in self.indexed:
+            raise TypeError(f"axis {first_axis} carries no index in {self._gatype}: a scalar output pairs with nothing")
+        return first_axis, second_axis
 
     @lru_cache(maxsize=None)
-    def contracted(self, first: int, second: int) -> tuple[int, int]:
-        """Two axes to pair through the inner product: two inputs must share one space."""
-        first, second = self.paired(first, second)
+    def contracted(self, first_axis: int, second_axis: int) -> tuple[int, int]:
+        """Metric inner-product contraction requires two input axes to share the same blade support."""
+        first_axis, second_axis = self.paired(first_axis, second_axis)
         inputs = self._gatype.input_subspaces
-        if first and not inputs[second - 1].same_support(inputs[first - 1]):
-            raise TypeError(f"contract pairs inputs of one space; got {inputs[first - 1]} and {inputs[second - 1]}")
-        return first, second
+        if first_axis and not inputs[second_axis - 1].same_support(inputs[first_axis - 1]):
+            raise TypeError(f"contract pairs inputs of one space; got {inputs[first_axis - 1]} and {inputs[second_axis - 1]}")
+        return first_axis, second_axis
 
     @lru_cache(maxsize=None)
-    def narrowing(self, axis: int, operand: GAType) -> Extensor | None:
-        """The identity map restricting an argument's domain to the given subtype, or None when
-        the type already matches and no restriction is needed."""
+    def narrowing(self, input_index: int, operand: GAType) -> Extensor | None:
+        """Passing a narrower `GAType` as a map argument restricts that input domain via its identity
+        map; exact matches return `None` and unsupported blades raise `TypeError`."""
         gatype = self._gatype
         space = operand.output_subspace
-        own = gatype.input_subspaces[axis]
-        if space.same_support(own) and operand.orientation is gatype.input_orientations[axis]:
+        own = gatype.input_subspaces[input_index]
+        if space.same_support(own) and operand.orientation is gatype.input_orientations[input_index]:
             return None
-        if space not in own:
+        if not space.support_is_subset_of(own):
             raise TypeError(
-                f"axis {axis} takes {own}; {space} is not inside it, so a cast must say what is projected away"
+                f"axis {input_index} takes {own}; {space} is not inside it, so a cast must say what is projected away"
             )
         return gatype.algebra.operator.identity(operand)
 
     def same_as(self, other: GAType) -> bool:
-        """The same spaces, orientations and sites, whatever facts either type carries."""
+        """Two types have identical axis roles when their subspaces, orientations, and field sites
+        match regardless of value traits."""
         gatype = self._gatype
         return (gatype.subspaces == other.subspaces and gatype.orientations == other.orientations
                 and gatype.fields == other.fields)
 
 
 class Form(_Queries):
-    """A type read as a form, a scalar-valued map of two axes."""
+    """Queries on `gatype.form` inspect scalar-valued bilinear forms (`arity == 2`)."""
 
     @cached_property
     def is_square(self) -> bool:
-        """A form pairing one space with itself: the same blades and the same orientation in both axes."""
+        """Square forms pair a single blade support and orientation with itself across both inputs."""
         gatype = self._gatype
         return (gatype.is_form and gatype.subspaces[1].same_support(gatype.subspaces[2])
                 and gatype.orientations[1] is gatype.orientations[2])
 
     def matches(self, other: GAType) -> bool:
-        """Both square forms on the same space, in the same orientations."""
+        """Two square forms match when they act on the same blade support with identical orientations."""
         gatype = self._gatype
         return (self.is_square and other.form.is_square
                 and gatype.subspaces[2].same_support(other.subspaces[2]) and gatype.orientations == other.orientations)
 
     def is_system(self, rhs: GAType) -> bool:
-        """A form against a scalar-valued extensor whose last input matches the form's last input."""
+        """A bilinear form solves against a scalar-valued `rhs` whose final input matches the form's
+        test-input space."""
         gatype = self._gatype
         return (
             gatype.is_form
@@ -109,12 +119,13 @@ class Form(_Queries):
 
 
 class OverSites(_Queries):
-    """A type with fields read as one map or form over the sites of its axes."""
+    """Queries on `gatype.over_sites` view field-bearing maps and forms as single block operators
+    across coupled sites."""
 
     @cached_property
     def is_square(self) -> bool:
-        """A map, or a scalar form of two axes, between one space over the same sites, either side
-        ranging over them."""
+        """Unary maps or site-free-output bilinear forms are square over sites when both coupled
+        axes share identical subspaces, orientations, and site counts."""
         gatype = self._gatype
         sites = dict(gatype.fields)
         if gatype.arity == 1:
@@ -128,25 +139,27 @@ class OverSites(_Queries):
 
     @cached_property
     def is_endomorphism(self) -> bool:
+        """Site-coupled unary maps are endomorphisms when input and output share subspace,
+        orientation, and site count."""
         return self._gatype.arity == 1 and self.is_square
 
     @cached_property
     def is_correlation(self) -> bool:
-        """A map from a space to its dual over the same sites, as from a field of scalars to a field of
-        amounts: its eigenvectors exist only against a second correlation."""
+        """Site-coupled duality maps take a space to its oppositely oriented complement over equal
+        site counts, requiring a second duality map as metric in eigensystems."""
         gatype = self._gatype
         sites = dict(gatype.fields)
         return gatype.is_correlation and sites.get(0) == sites.get(1)
 
     def is_map_system(self, rhs: GAType) -> bool:
-        """A map with sites whose output takes the right-hand side's output, the right-hand side ranging
-        over sites or not."""
+        """Site-coupled unary maps solve against any `rhs` whose output support lies inside the map's
+        output subspace."""
         gatype = self._gatype
         return gatype.arity == 1 and gatype.has_fields and rhs.output_subspace.support_is_subset_of(gatype.output_subspace)
 
     def is_form_system(self, rhs: GAType) -> bool:
-        """A scalar form of two axes with sites against a scalar-valued extensor ending in the form's last
-        axis."""
+        """Site-coupled bilinear forms solve against scalar-valued `rhs` extensors whose final input
+        matches the form's test space in both blade support and site count."""
         gatype = self._gatype
         scalar = gatype.algebra.subspace.scalar()
         return (
@@ -161,10 +174,9 @@ class OverSites(_Queries):
         )
 
     def is_site_by_site_system(self, rhs: GAType) -> bool:
-        """A map, or a form against a scalar-valued extensor ending in its last axis, without sites, against
-        a right-hand side with sites: the same system at every site. A form's right-hand side ranges over
-        sites in its output or in its last axis, not both, as either gives its sites to the solution's
-        output."""
+        """Site-free maps or forms applied to a site-bearing `rhs` solve the same system independently
+        at each site, provided a form's `rhs` carries sites on either its output or its final input
+        rather than both."""
         gatype = self._gatype
         sites = dict(rhs.fields)
         return not gatype.has_fields and rhs.has_fields and (
@@ -173,23 +185,27 @@ class OverSites(_Queries):
 
 
 class SelfProducts(_Queries):
-    """What a type's facts say about the products of its values with their own transforms."""
+    """Queries on `gatype.self_products` look up certified self-product facts and propagation
+    relations per `SelfProduct` family."""
 
     def result(self, family: SelfProduct) -> ProductResult | None:
-        """The strongest result this type entails in exactly this self-product family."""
+        """Entailment checks select the strongest `ProductResult` certified in the given family, or
+        `None` when uncertified."""
         for result in (ProductResult.ONE, ProductResult.NONZERO, ProductResult.ZERO, ProductResult.SCALAR):
             if self._gatype.entails(ProductFact(family, result)):
                 return result
         return None
 
     def relation(self, family: SelfProduct) -> ProductRelation | None:
-        """This type's relation in one self-product family; different families never substitute."""
+        """Positive-arity types carry at most one `ProductRelation` per self-product family, and
+        distinct families never substitute for one another."""
         return next((
             trait for trait in self._gatype.traits
             if isinstance(trait, ProductRelation) and trait.self_product == family
         ), None)
 
     @lru_cache(maxsize=None)
-    def closure(self, kind: type[ClosureRelation]) -> ClosureRelation | None:
-        """This type's relation carrying a family closed under its operation, versors or blades."""
-        return next((trait for trait in self._gatype.traits if isinstance(trait, kind)), None)
+    def closure(self, relation_type: type[ClosureRelation]) -> ClosureRelation | None:
+        """Positive-arity types carry at most one closure relation of a given `ClosureRelation`
+        subclass (`VersorProduct` or `BladeProduct`)."""
+        return next((trait for trait in self._gatype.traits if isinstance(trait, relation_type)), None)

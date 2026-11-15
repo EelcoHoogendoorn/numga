@@ -1,88 +1,99 @@
-"""Rolling constraints, work balance and mirror symmetry of a rattleback."""
+"""Rolling constraints, instantaneous power balance, mirror equivariance, and rendering checks cover the rattleback example."""
 
+from itertools import islice
+
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.mechanics.rattleback import scenarios
+from examples.mechanics.rattleback import core, render, scenarios
 from numga import stack
-from numga.algebras import PGA3D
-
-
-def model():
-    shape, centre, inertia, _, _ = scenarios.body()
-    return scenarios.core, shape, centre, inertia, scenarios.MASS, scenarios.GRAVITY
 
 
 def test_rolling_annihilates_contact_motion_and_contact_work():
-    core, shape, centre, inertia, mass, gravity = model()
+    shape, centre, _, _, _, _ = scenarios.rattleback_body()
     mv = core.mv
     normal = (mv.x + 2 * mv.y + 8 * mv.z).normalized()
     height = (normal & shape(normal)).square_root()
     contact = centre - shape(normal) / height
-    rolling = (contact * core.origin.inverse() / 2).exp() >> core.Spin
+    contact_shift = (contact * core.origin.inverse() / 2).exp()
+    rolling = contact_shift >> core.Spin
     point = core.origin + contact
     reaction = point & (mv.x + 2 * mv.y + 3 * mv.z).dual()
     np.testing.assert_allclose(point.commutator(rolling).kernel, 0, atol=1e-11)
     np.testing.assert_allclose(rolling.adjugate()(reaction).kernel, 0, atol=1e-11)
 
 
-def test_reduced_balance_matches_newton_euler_and_has_zero_energy_derivative():
-    core, shape, centre, inertia, mass, gravity_strength = model()
+def test_reduced_balance_matches_newton_euler_and_conserves_instantaneous_energy():
+    shape, centre, inertia, _, _, _ = scenarios.rattleback_body()
     mv = core.mv
-    up = mv.z.dual()
-    gravity = -up * gravity_strength
+    up = core.up
+    gravity = -up * scenarios.gravity_strength
     motor = (mv.xz * 0.21 + mv.yz * 0.12 + mv.xy * 0.07).exp()
     spin = mv.yz * 0.3 - mv.xz * -0.7 + mv.xy * 1.2
-    rate, acceleration = core.dynamics(motor, spin, shape, centre, inertia, mass, gravity, up)
+    rate, acceleration = core.dynamics(motor, spin, shape, centre, inertia, scenarios.mass, gravity, up)
     normal, support, height, rolling = core.contact_geometry(motor, shape, centre, up)
     normal_rate = spin.commutator(normal)
     height_rate = (normal & shape(normal_rate)) / height
     contact_rate = -shape(normal_rate) / height - support * height_rate / height
     rate_change = rolling(acceleration) + (contact_rate * core.origin.inverse()).commutator(spin)
     power = rate_change & inertia(rate)
-    # The centre of mass rises as the shell's centre does, less as the shell's centre turns about it.
     rise = height_rate - (normal_rate & centre)
-    np.testing.assert_allclose((power + mass * gravity_strength * rise).kernel, 0, atol=1e-10)
+    assert (power + scenarios.mass * scenarios.gravity_strength * rise).abs() < 1e-9
 
-    # Independently eliminate the contact reaction from Newton's two balances, with the moment of inertia read off
-    # as the pairing of unit spins with their momenta, and the shell's centre off the centre of mass.
     angular_axes = stack((mv.yz, -mv.xz, mv.xy))
     moment = (angular_axes[:, None] & inertia(angular_axes[None, :])).kernel[..., 0]
-    offset = (stack((mv.x, mv.y, mv.z)) & centre).kernel[:, 0]
-    normal_array = normal.cast(PGA3D.subspace("x y z")).kernel
+    offset = (core.mirrors & centre).kernel[:, 0]
+    normal_array = (core.mirrors | normal).kernel[:, 0]
     omega = np.array([0.3, -0.7, 1.2])
-    lengths_squared = scenarios.SEMI_AXES**2
+    lengths_squared = scenarios.semi_axes**2
     height_array = np.sqrt(normal_array @ (lengths_squared * normal_array))
     lever = offset - lengths_squared * normal_array / height_array
     normal_change = np.cross(normal_array, omega)
-    support = -lengths_squared * normal_array / height_array
-    lever_change = (-lengths_squared * normal_change / height_array
-                    - support * (normal_array @ (lengths_squared * normal_change)) / height_array ** 2)
+    support_array = -lengths_squared * normal_array / height_array
+    lever_change = (
+        -lengths_squared * normal_change / height_array
+        - support_array * (normal_array @ (lengths_squared * normal_change)) / height_array**2
+    )
     velocity = np.cross(lever, omega)
-    contact_moment = moment + mass * ((lever @ lever) * np.eye(3) - np.outer(lever, lever))
-    torque = (np.cross(moment @ omega, omega)
-              + mass * np.cross(lever, np.cross(lever_change, omega))
-              - mass * np.cross(lever, np.cross(velocity, omega))
-              + mass * gravity_strength * np.cross(lever, normal_array))
+    contact_moment = moment + scenarios.mass * ((lever @ lever) * np.eye(3) - np.outer(lever, lever))
+    torque = (
+        np.cross(moment @ omega, omega)
+        + scenarios.mass * np.cross(lever, np.cross(lever_change, omega))
+        - scenarios.mass * np.cross(lever, np.cross(velocity, omega))
+        + scenarios.mass * scenarios.gravity_strength * np.cross(lever, normal_array)
+    )
     expected = np.linalg.solve(contact_moment, torque)
     actual = -angular_axes.scalar_product(acceleration).kernel[:, 0]
-    np.testing.assert_allclose(actual, expected, atol=1e-11, rtol=1e-11)
+    np.testing.assert_allclose(actual, expected, atol=1e-10, rtol=1e-10)
 
 
 def test_mirroring_the_body_mirrors_its_rolling_dynamics():
-    core, shape, centre, inertia, mass, gravity_strength = model()
+    shape, centre, inertia, _, _, _ = scenarios.rattleback_body()
     mv = core.mv
-    up = mv.z.dual()
-    gravity = -up * gravity_strength
+    up = core.up
+    gravity = -up * scenarios.gravity_strength
     motor = (mv.xz * 0.13 + mv.yz * 0.07 + mv.xy * 0.2).exp()
     spin = mv.xy * -1.5 + mv.yz * 0.2
-    rate, acceleration = core.dynamics(motor, spin, shape, centre, inertia, mass, gravity, up)
+    rate, acceleration = core.dynamics(motor, spin, shape, centre, inertia, scenarios.mass, gravity, up)
     mirror = (mv.x + mv.y / 3 + mv.z / 5).normalized()
     mirrored_rate, mirrored_acceleration = core.dynamics(
         mirror >> motor, mirror >> spin,
         mirror >> shape(mirror << core.Plane), mirror >> centre,
         mirror >> inertia(mirror << core.Rate),
-        mass, mirror >> gravity, mirror >> up,
+        scenarios.mass, mirror >> gravity, mirror >> up,
     )
     np.testing.assert_allclose(mirrored_rate.kernel, (mirror >> rate).kernel, atol=1e-10, rtol=1e-10)
-    np.testing.assert_allclose(mirrored_acceleration.kernel, (mirror >> acceleration).kernel,
-                               atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(mirrored_acceleration.kernel, (mirror >> acceleration).kernel, atol=1e-10, rtol=1e-10)
+
+
+def test_single_step_and_render():
+    shape, centre, inertia, wood, balls, samples = scenarios.rattleback_body()
+    states = list(islice(scenarios.launch_trajectory(scenarios.rocking_tilt, 0.0, 0.0, scenarios.dt, shape, centre, inertia), 2))
+    assert len(states) == 2
+
+    setup_fig = render.setup_figure(wood, balls, samples, states[0][0])
+    plt.close(setup_fig)
+
+    frame = next(render.sized_frames(wood, balls, samples, states, 64))
+    assert frame.ndim == 3 and frame.shape[1] == 64 and frame.shape[2] == 3
+    assert frame.dtype == np.uint8

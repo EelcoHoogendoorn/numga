@@ -12,8 +12,9 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.util import charts
-from examples.util.wgsl import flow as ink, simplices
-from examples.util.wgsl.camera import Camera, panel
+from numga.topology import Topology
+from numga.render import Camera, drawing, flow as ink, simplices
+from examples.util.panels import overlay, panel
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -41,7 +42,7 @@ def rgb(colour: str) -> np.ndarray:
 
 
 def _cross(ax, across: str, up: str) -> None:
-    """No scales: a faint cross through the origin, its lines named at their ends, each along itself,
+    """A faint cross through the origin with no scales, its lines named at their ends, each along itself,
     the line across named just past its end."""
     ax.axhline(0.0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.axvline(0.0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
@@ -63,21 +64,21 @@ def _zero_axes(ax, across: str, up: str) -> None:
 
 
 def _links(beads: core.Point) -> tuple[core.Point, core.Point]:
-    """The three-link body through its nine beads `[9]`: the chain through the beads and the hinges `[11] Point-`,
-    and the two hinges `[2] Point-`."""
+    """The three-link body through its nine beads: the chain through the beads and the hinges, and the two
+    hinges."""
     # Left arm (beads 0, 1, 2), centre bar (beads 3, 4, 5), right arm (beads 6, 7, 8); each hinge half a bead's
     # spacing beyond the end of the centre bar.
     left_hinge = 1.5 * beads[3:4] - 0.5 * beads[4:5]                             # [1] Point-
     right_hinge = 1.5 * beads[5:6] - 0.5 * beads[4:5]                            # [1] Point-
-    chain = concatenate([beads[0:3], left_hinge, beads[3:6], right_hinge, beads[6:9]])
+    chain = concatenate([beads[0:3], left_hinge, beads[3:6], right_hinge, beads[6:9]])   # [11] Point-
     return chain, concatenate([left_hinge, right_hinge])
 
 
 def _swimmer(beads: core.Point, colour: str, camera: Camera, pixels: float) -> list[np.ndarray]:
-    """The three-link body and its nine hydrodynamic beads `[9] Point-`: the chain, the beads in white rims and the
-    hinges, white in coloured rims, at `pixels` a point."""
+    """The three-link body and its nine hydrodynamic beads: the chain, the beads in white rims and the hinges,
+    white in coloured rims, at `pixels` a point."""
     chain, hinges = _links(beads)
-    return [simplices.strokes(chain, simplices.Topology.chains([len(chain)]), rgb(colour), chain_width * pixels, camera),
+    return [simplices.strokes(chain, Topology.chains([len(chain)]), rgb(colour), chain_width * pixels, camera),
             simplices.markers(beads, np.ones(3), (bead_radius + bead_rim / 2) * pixels, camera),
             simplices.markers(beads, rgb(colour), (bead_radius - bead_rim / 2) * pixels, camera),
             simplices.markers(hinges, rgb(colour), (hinge_radius + hinge_rim / 2) * pixels, camera),
@@ -85,8 +86,8 @@ def _swimmer(beads: core.Point, colour: str, camera: Camera, pixels: float) -> l
 
 
 def _trail(track: core.Point, width: float, camera: Camera) -> np.ndarray:
-    """A swimmer's centre's trail through its places `[steps] Point-`, `width` pixels wide."""
-    return simplices.strokes(track, simplices.Topology.chains([len(track)]), rgb(trail_colour), width, camera)
+    """The trail of a swimmer's centre through its places, `width` pixels wide."""
+    return simplices.strokes(track, Topology.chains([len(track)]), rgb(trail_colour), width, camera)
 
 
 @charts.style()
@@ -97,15 +98,14 @@ def draw_summary(
     grid: core.Point,
     flow: core.Direction,
 ) -> plt.Figure:
-    """Left: instantaneous Stokes flow around Purcell's swimmer with its centre trail;
-    middle: centre displacement along x over the three cycles for both strokes; right: the two strokes
-    in hinge-angle space."""
+    """The instantaneous Stokes flow around Purcell's swimmer with the trail of its centre, both swimmers' centres
+    along x over the cycles, and the two strokes in hinge-angle space, side by side."""
     # The whole column: the surrounding flow and two trajectory plots.
     figure, (ax_flow, ax_path, ax_hinge) = charts.subplots(800, 260, ncols=3)
 
     mv = core.mv
-    beads = world_sites.batch()                                                 # [steps, swimmers, beads] Point-
-    along = (mv.x & positions).to_array()                                       # [steps + 1, swimmers]
+    beads = world_sites.batch()                                                 # [..., 2, 9] Point-
+    x_readings = (mv.x & positions).to_array()                                  # [..., 2]
 
     # The flow's panel spans the grid, from its first sample to its last.
     limits = (stack((mv.x, mv.y))[:, None] & stack((grid[0, 0], grid[-1, -1]))).to_array()   # [2, 2]
@@ -113,9 +113,9 @@ def draw_summary(
     ax_flow.set_aspect("equal")
     ax_flow.set_axis_off()
 
-    t = np.linspace(0.0, 1.0, len(along))
-    ax_path.plot(t, along[:, 0], color=purcell_colour)
-    ax_path.plot(t, along[:, 1], color=scallop_colour, linestyle="--")
+    times = np.linspace(0.0, 1.0, len(x_readings))
+    ax_path.plot(times, x_readings[:, 0], color=purcell_colour)
+    ax_path.plot(times, x_readings[:, 1], color=scallop_colour, linestyle="--")
     _zero_axes(ax_path, "time", "$x$")
 
     ax_hinge.plot(angles[:, 0, 0], angles[:, 0, 1], color=purcell_colour)
@@ -126,11 +126,11 @@ def draw_summary(
     _cross(ax_hinge, "left hinge", "right hinge")
 
     figure.tight_layout()
-    topology = ink.Topology.grid(*grid.shape)
+    topology = Topology.grid(*grid.shape)
     points, directions = grid.reshape(-1), flow[0].reshape(-1)
     reference_speed = float(directions.dual().norm().max().to_array())
     camera = panel(ax_flow, core.mv.x, core.mv.y, core.mv.w)
-    simplices.overlay(ax_flow, [
+    overlay(ax_flow, [
         ink.layer(points, topology, directions, camera, reference_speed, rgb(flow_colour)),
         _trail(positions[:, 0], summary_trail_width * charts.DPI / 72, camera),
         *_swimmer(beads[0, 0], purcell_colour, camera, charts.DPI / 72)])
@@ -144,37 +144,38 @@ def animate_swimmers(
     flows: Iterable[core.Direction],
     every: int,
 ) -> Iterator[np.ndarray]:
-    """Both swimmers' instantaneous velocities share fixed seeds and a fixed magnitude scale."""
-    beads = world_sites.batch()[::every]                                        # [frames, swimmers, beads] Point-
+    """The frames of both swimmers stroking in their instantaneous flows, Purcell's above and the reciprocal flapper
+    below, the streaks on fixed seeds at one speed scale."""
+    beads = world_sites.batch()[::every]                                        # [..., 2, 9] Point-
     # Each swimmer's centre's places, swimmer by swimmer.
-    paths = stack([positions[:, swimmer] for swimmer in range(positions.shape[1])])   # [swimmers, steps + 1] Point-
-    topology = ink.Topology.grid(*grid.shape)
-    points = grid.reshape(-1)                                                  # [samples] Point-
+    paths = stack([positions[:, swimmer] for swimmer in range(positions.shape[1])])   # [2, ...] Point-
+    topology = Topology.grid(*grid.shape)
+    points = grid.reshape(-1)                                                  # [...] Point-
     flows = iter(flows)
-    first = next(flows)
-    directions = first.reshape(first.shape[0], -1)
+    first_flow = next(flows)
+    directions = first_flow.reshape(first_flow.shape[0], -1)
     reference_speed = float(np.percentile(directions.dual().norm().to_array(), 95))
     # The stretch of water the Purcell swimmer's track and the origin span along x, the margin either way.
-    along = core.mv.x & positions[:, 0]                                        # [steps + 1] Scalar+
-    left = float((along.min() - water_margin).clip(-np.inf, -water_margin).to_array())
-    right = float((along.max() + water_margin).clip(water_margin, np.inf).to_array())
+    x_readings = core.mv.x & positions[:, 0]                                   # [...] Scalar+
+    left_edge = float((x_readings.min() - water_margin).clip(-np.inf, -water_margin).to_array())
+    right_edge = float((x_readings.max() + water_margin).clip(water_margin, np.inf).to_array())
     # As wide as the stretch of water each panel shows, at the height the two panels share.
     figure_height = 4.6
-    figure_width = figure_height / 2 * (right - left) / (2 * water_half_height)
+    figure_width = figure_height / 2 * (right_edge - left_edge) / (2 * water_half_height)
     dpi = 55
     figure, axes = plt.subplots(2, 1, figsize=(figure_width, figure_height), dpi=dpi)
     figure.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, hspace=0.06)
     for ax in axes:
-        ax.set(xlim=(left, right), ylim=(-water_half_height, water_half_height), aspect="equal")
+        ax.set(xlim=(left_edge, right_edge), ylim=(-water_half_height, water_half_height), aspect="equal")
         ax.set_axis_off()
     views = [panel(ax, core.mv.x, core.mv.y, core.mv.w) for ax in axes]
-    textures = [simplices.overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(axes, views)]
-    for frame, fields in enumerate(chain((first,), flows)):
+    textures = [overlay(ax, [np.zeros(view.shape + (4,))]) for ax, view in zip(axes, views)]
+    for frame, fields in enumerate(chain((first_flow,), flows)):
         directions = fields.reshape(fields.shape[0], -1)
         step_end = frame * every + 1
         for swimmer, (texture, view, field, colour) in enumerate(
                 zip(textures, views, directions, (purcell_colour, scallop_colour))):
-            texture.set_data(simplices.composited([
+            texture.set_data(drawing.composited([
                 ink.layer(points, topology, field, view, reference_speed, rgb(flow_colour)),
                 _trail(paths[swimmer, :step_end], animation_trail_width * dpi / 72, view),
                 *_swimmer(beads[frame, swimmer], colour, view, dpi / 72)]))

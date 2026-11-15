@@ -1,5 +1,4 @@
-"""Scenes for the arm's velocity and force ellipsoids: two poses side by side, and the arm swept around
-a closed loop through joint space."""
+"""Scene parameters and verification run for the articulated arm's velocity and force ellipsoids."""
 
 from __future__ import annotations
 
@@ -7,81 +6,92 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from numga import stack
 from examples.mechanics.manipulability import core
 
-# Joint angles: base yaw, shoulder, elbow and wrist pitch.
-REACHING = (0.35, 0.5, 1.2, 0.4)
-NEARLY_STRAIGHT = (0.35, 0.2, 0.15, 0.1)
-# How much the velocity ellipsoid is grown and the force ellipsoid shrunk for display; their radii are
-# reciprocal.
-VELOCITY_SCALE = 0.25
-FORCE_SCALE = 2.5
-# The loop through joint space: each joint swings about a centre, with an amplitude, a frequency and a
-# phase, in radians; the elbow stays bent by at least half a radian, so neither ellipsoid degenerates.
-LOOP_CENTRES = np.array([0.35, 0.35, 1.25, 0.4])
-LOOP_AMPLITUDES = np.array([0.9, 0.35, 0.75, 0.8])
-LOOP_FREQUENCIES = np.array([1, 1, 1, 2])
-LOOP_PHASES = np.array([0.0, 1.5, 0.3, 0.0])
-# The view, (elevation, azimuth) in degrees; and the animation's fixed frame of the whole workspace, its centre and
-# half-width.
-VIEW, CENTRE, EXTENT = (18, -60), np.array([-0.9, 0.25, 1.3]), 2.2
-# Pixels across each panel of the animation, the frames of the loop, and the duration of a frame in milliseconds.
-FRAME_PIXELS = 300
-N_FRAMES = 144
-FRAME_DURATION = 40
-# Unit tip forces checked against the joint torques they produce.
-CHECKED_FORCES = np.array([[0.3, -0.2, 0.5], [1.0, 0.4, -0.7]])
-
-
-# --- math -----------------------------------------------------------------------------
-def ellipsoids(joint_angles: tuple, velocity_scale: float, force_scale: float):
-    """The arm in one pose: body maps, tip, and its velocity and force ellipsoids as point quadrics.
-
-    Both are built from the joint twists, independently; the display scales grow the velocity
-    ellipsoid and shrink the force ellipsoid, whose radii are reciprocal to it.
-    """
-    bodies, tip, axes = core.arm_axes(joint_angles)
-    # The velocity ellipsoid as a point quadric.
-    velocity = core.velocity_ellipsoid(tip, axes * velocity_scale).inverse()   # [] Plane+ <- Point-
-    force = core.force_ellipsoid(tip, axes * force_scale)                      # [] Plane+ <- Point-
-    return bodies, tip, velocity, force
-
-
-def sweep(n_frames: int) -> Iterator[tuple]:
-    """The arm around the closed loop through joint space, turning and reshaping its ellipsoids."""
-    for phase in np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False):
-        angles = LOOP_CENTRES + LOOP_AMPLITUDES * np.sin(LOOP_FREQUENCIES * phase + LOOP_PHASES)
-        yield ellipsoids(tuple(angles), VELOCITY_SCALE, FORCE_SCALE)
+# Joint angles (base yaw, shoulder, elbow, and wrist pitch) for a comfortable reach and a nearly straight arm.
+reaching_angles = (0.35, 0.5, 1.2, 0.4)
+straight_angles = (0.35, 0.2, 0.15, 0.1)
+# Reciprocal display scales that enlarge the velocity ellipsoid and shrink the force ellipsoid.
+velocity_scale = 0.25
+force_scale = 2.5
+# Sinusoidal closed loop in joint space keeping the elbow bent by at least half a radian.
+loop_centres = np.array([0.35, 0.35, 1.25, 0.4])
+loop_amplitudes = np.array([0.9, 0.35, 0.75, 0.8])
+loop_frequencies = np.array([1, 1, 1, 2])
+loop_phases = np.array([0.0, 1.5, 0.3, 0.0])
+# Camera elevation/azimuth in degrees and fixed workspace view centre and half-width.
+view_degrees = (18, -60)
+workspace_centre = core.mv.point([-0.9, 0.25, 1.3])                         # Point-
+workspace_extent = 2.2
+n_pixels = 300
+n_frames = 144
+frame_duration_ms = 40
+# Sample force directions at the gripper tip for virtual-work verification.
+sample_directions = core.mv.direction([[0.3, -0.2, 0.5], [1.0, 0.4, -0.7]])  # [2] Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
+    """Renders the static two-pose figure and the joint-space loop animation, then verifies polar reciprocity."""
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.manipulability import render
 
-    poses = [ellipsoids(angles, VELOCITY_SCALE, FORCE_SCALE) for angles in (REACHING, NEARLY_STRAIGHT)]
-    save_figure(render.draw_ellipsoids(poses, VIEW), "manipulability")
-    frames = (render.frame(pose, VIEW, CENTRE, EXTENT, FRAME_PIXELS) for pose in sweep(N_FRAMES))
-    save_animation(frames, "manipulability_sweep", FRAME_DURATION)
+    static_poses = [
+        core.pose_ellipsoids(angles, velocity_scale, force_scale)
+        for angles in (reaching_angles, straight_angles)
+    ]
+    save_figure(render.ellipsoids_figure(static_poses, view_degrees), "manipulability")
+
+    streamed_poses: list[tuple[core.PointMap, core.Point, core.Quadric, core.Quadric]] = []
+
+    def recorded_poses() -> Iterator[tuple[core.PointMap, core.Point, core.Quadric, core.Quadric]]:
+        for pose in core.joint_loop_poses(
+            n_frames,
+            loop_centres,
+            loop_amplitudes,
+            loop_frequencies,
+            loop_phases,
+            velocity_scale,
+            force_scale,
+        ):
+            streamed_poses.append(pose)
+            yield pose
+
+    frames = render.animate_poses(view_degrees, workspace_centre, workspace_extent, n_pixels, recorded_poses())
+    save_animation(frames, "manipulability_sweep", frame_duration_ms)
 
     # checks
-    # In each pose the force ellipsoid is the velocity ellipsoid's polar in the unit sphere about the tip.
-    # A unit tip force lies on the force ellipsoid exactly when its joint torques, each joint's twist paired
-    # with the force's line through the tip, have unit squared sum; and the velocity ellipsoid reaches,
-    # along a direction, as far as a unit force that way loads the joints.
-    for angles in (REACHING, NEARLY_STRAIGHT):
+    basis_points = stack([core.mv.w, core.mv.x, core.mv.y, core.mv.z]).dual()   # [4] Point-
+    unit_directions = sample_directions / sample_directions.antinorm()          # [2] Point-
+    for _, pose_tip, scaled_velocity, scaled_force in [*static_poses, streamed_poses[0], streamed_poses[n_frames // 2]]:
+        # Removing the display scales recovers exact polar reciprocity in the unit sphere centred on the tip.
+        sphere = core.unit_sphere(pose_tip)                                     # [] Plane+ <- Point-
+        unscaled_velocity = (
+            (scaled_velocity.inverse() + pose_tip * (core.Plane & pose_tip)) / (velocity_scale**2)
+            - pose_tip * (core.Plane & pose_tip)
+        )                                                                       # [] Point- <- Plane+
+        unscaled_force = (
+            (scaled_force + core.w * (core.w & core.Point)) / (force_scale**2)
+            - core.w * (core.w & core.Point)
+        )                                                                       # [] Plane+ <- Point-
+        polar_residual = (unscaled_force - sphere(unscaled_velocity(sphere(core.Point))))(basis_points[None, :]) & basis_points[:, None]  # [4, 4] Scalar+
+        assert (polar_residual.abs() < 1e-8).all()
+
+    for angles in (reaching_angles, straight_angles):
         _, tip, axes = core.arm_axes(angles)
-        unit_velocity, unit_force = core.velocity_ellipsoid(tip, axes), core.force_ellipsoid(tip, axes)
-        sphere = core.unit_sphere(tip)
-        np.testing.assert_allclose(unit_force.kernel, sphere(unit_velocity(sphere(core.Point))).kernel, rtol=1e-8, atol=1e-8)
-        along = core.mv.direction(CHECKED_FORCES / np.linalg.norm(CHECKED_FORCES, axis=-1, keepdims=True))   # [forces] Direction-
-        torques = (axes[:, None] & (tip & along)).to_array()                   # [joints, forces]
-        held = tip + along
-        np.testing.assert_allclose((held & unit_force(held)).to_array(), 1 - (torques**2).sum(axis=0), atol=1e-8)
-        radius = np.sqrt((torques**2).sum(axis=0))
-        normal = along.dual()
-        tangent = normal - core.w * (normal & (tip + along * radius))
-        np.testing.assert_allclose((tangent & unit_velocity(tangent)).to_array(), 0.0, atol=1e-8)
+        unit_velocity = core.velocity_ellipsoid(tip, axes)                      # [] Point- <- Plane+
+        unit_force = core.force_ellipsoid(tip, axes)                            # [] Plane+ <- Point-
+        sphere = core.unit_sphere(tip)                                          # [] Plane+ <- Point-
+        # A unit tip force evaluates on the force quadric to `torque_norm_sq - 1`, vanishing when joint torques sum to 1.
+        torques = axes[:, None] & (tip & unit_directions)                       # [4, 2] Scalar+
+        torque_norm_sq = torques.squared().sum(axis=0)                          # [2] Scalar+
+        loaded_points = tip + unit_directions                                   # [2] Point-
+        assert (((unit_force(loaded_points) & loaded_points) - (torque_norm_sq - 1)).abs() < 1e-8).all()
+        # Along each direction, the velocity ellipsoid's tangent plane sits at radius `sqrt(torque_norm_sq)` from the tip.
+        reach_radii = torque_norm_sq.square_root()                              # [2] Scalar+
+        tangent_planes = sphere(tip + unit_directions / reach_radii)            # [2] Plane+
+        assert ((tangent_planes & unit_velocity(tangent_planes)).abs() < 1e-8).all()
 
 
 if __name__ == "__main__":

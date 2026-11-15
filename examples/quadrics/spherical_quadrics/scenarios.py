@@ -1,41 +1,44 @@
-"""A spherical conic with its foci, its tangent great circles, its cone and its polhodes."""
+"""Scene setup and verification for a spherical conic, its foci, its tangent envelope, and its polhodes."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from examples.quadrics.spherical_quadrics.core import Plane, Point, mv, oval, polarity
+from examples.quadrics.spherical_quadrics.core import (
+    DualPolarity,
+    Plane,
+    Point,
+    Polarity,
+    Scalar,
+    conic_locus,
+    mv,
+    principal_polarity,
+)
 
-# The polarity's eigenvalues on the planes x, y and z, and the turn that places it, by its two planes.
-EIGENVALUES = np.array([1.0, 0.4, -0.8])
-TURN_XY, TURN_YZ = 0.25, 0.15
-# Points along the oval, and the one the geodesics from the foci run to.
-N_CURVE = 200
-SAMPLE = 25
+# Principal eigenvalues on the coordinate planes x, y, z and the rotor bivector angles that place the conic.
+eigenvalues = np.array([1.0, 0.4, -0.8])
+turn_xy, turn_yz = 0.25, 0.15
+# Sample count along the spherical oval and index of the point reached by the focal geodesics.
+n_oval = 200
+sample_index = 25
 
 
 # --- math -----------------------------------------------------------------------------
-def spherical_conic():
-    """The oval comes with its foci and one point of it, its semi-major arc, its tangent great circles, and the
-    polarity and its dual."""
-    # In principal axes both the polarity, from points to planes, and its dual, from planes to points,
-    # are diagonal; a rotor moves either by the same sandwich.
-    rotor = (mv.xy * TURN_XY + mv.yz * TURN_YZ).exp()                          # [] Rotor+
-    principal = polarity(EIGENVALUES)                                          # [] Plane+ <- Point-
-    conic = rotor >> principal(rotor << Point)                                 # [] Plane+ <- Point-
-    dual = rotor >> principal.solve(rotor << Plane)                            # [] Point- <- Plane+
+def spherical_conic_scene() -> tuple[Point, Point, Point, Scalar, Plane, Polarity, DualPolarity]:
+    """Places a diagonal spherical polarity by a rotor and collects its oval (`[n_oval] Point-`), foci (`[2] Point-`), sample point, semi-major arc, tangent planes, polarity, and dual polarity."""
+    rotor = (mv.xy * turn_xy + mv.yz * turn_yz).exp()                           # [] Rotor+
+    principal = principal_polarity(eigenvalues)                                 # [] Plane+ <- Point-
+    conic = rotor >> principal(rotor << Point)                                  # [] Plane+ <- Point-
+    dual = rotor >> principal.solve(rotor << Plane)                             # [] Point- <- Plane+
 
-    # Points along the spherical oval and its foci, carried into the world.
-    unturned, unturned_foci, semi_major = oval(EIGENVALUES, np.linspace(0, 2 * np.pi, N_CURVE))
-    curve = rotor >> unturned                                                  # [curve] Point-
-    foci = rotor >> unturned_foci                                              # [2] Point-
+    rest_oval, rest_foci, semi_major = conic_locus(principal, np.linspace(0, 2 * np.pi, n_oval))
+    oval_points = (rotor >> rest_oval).retyped(Point)                           # [n_oval] Point-
+    foci = (rotor >> rest_foci).retyped(Point)                                  # [2] Point-
 
-    # The polar plane of a point of the oval is its tangent great circle.
-    tangents = conic(curve).normalized()                                       # [curve] Plane+
-
-    # For the figure: one point of the oval, which the geodesics from both foci run to.
-    sample = curve[SAMPLE]
-    return curve, foci, sample, semi_major, tangents, conic, dual
+    # The polar plane of each point on the oval is its tangent great circle.
+    tangents = conic(oval_points).normalized()                                  # [n_oval] Plane+
+    sample_point = oval_points[sample_index]                                    # [] Point-
+    return oval_points, foci, sample_point, semi_major, tangents, conic, dual
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -43,21 +46,19 @@ def main() -> None:
     from examples.util.animation import save_figure
     from examples.quadrics.spherical_quadrics import render
 
-    curve, foci, sample, semi_major, tangents, conic, dual = spherical_conic()
-    save_figure(render.draw_spherical_conic(curve, foci, sample, tangents, conic), "spherical_quadrics")
+    oval_points, foci, sample_point, semi_major, tangents, conic, dual = spherical_conic_scene()
+    save_figure(render.conic_figure(oval_points, foci, sample_point, tangents, conic), "spherical_quadrics")
 
     # checks
-    # Every point of the oval lies on its own polar. The distance between unit points on the sphere is
-    # `curve.dot(focus).arccos()`, and the sum of the distances to both foci is twice the semi-major arc.
-    # Every tangent great circle lies on the dual conic, and the product of the sines of the foci's distances
-    # to the tangent circles, each the norm of the focus joined with the circle, is constant.
-    first, second = foci
-    focal_sum = curve.dot(first).clip(-1.0, 1.0).arccos() + curve.dot(second).clip(-1.0, 1.0).arccos()
-    dual_product = (first & tangents).norm() * (second & tangents).norm()
-    np.testing.assert_allclose((curve & conic(curve)).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose(focal_sum.to_array(), 2.0 * semi_major, atol=1e-11)
-    np.testing.assert_allclose((tangents & dual(tangents)).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose(dual_product.to_array(), dual_product.mean().to_array(), atol=1e-14)
+    # Every point of the oval lies on its own polar, the geodesic distances to both foci sum to twice the
+    # semi-major arc, every tangent great circle lies on the dual conic, and the product of the sines of the
+    # foci's distances to the tangent circles is constant.
+    focal_sum = (oval_points[:, None].reverse() | foci).clip(-1.0, 1.0).arccos().sum(axis=-1)  # [n_oval] Scalar+
+    dual_product = (tangents[:, None] & foci).abs().cumprod(axis=-1)[:, -1]     # [n_oval] Scalar+
+    assert ((conic(oval_points) & oval_points).abs() < 1e-12).all()
+    assert ((focal_sum - 2 * semi_major).abs() < 1e-11).all()
+    assert ((tangents & dual(tangents)).abs() < 1e-12).all()
+    assert ((dual_product - dual_product.mean()).abs() < 1e-13).all()
 
 
 if __name__ == "__main__":

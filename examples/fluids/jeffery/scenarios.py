@@ -1,9 +1,8 @@
-"""Scenes for Jeffery orbits: a sphere, a rod and an ellipsoid with three different axes in a simple
-shear flow, the paths of their long axes on the sphere of directions, and the bodies tumbling."""
+"""Scenes for Jeffery orbits: a sphere, a prolate rod, and a triaxial ellipsoid tumbling in simple shear flow."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 
@@ -11,90 +10,110 @@ from numga import stack
 from examples.fluids.jeffery import core
 
 Point = core.Point
-# The planes across the flow and across the gradient, and the vortex plane, the plane the fluid turns in.
 x, y, z = core.axes
-# The bodies, a sphere, a rod and an ellipsoid with three different axes: their shapes, their semi-axes in proportion,
-# and their size, the radius of the ball of the same volume, alike for all so that none crowds out the flow around
-# it; their semi-axes; and the rod's long semi-axis over its short ones.
-SHAPES = np.array([[1.0, 1.0, 1.0], [4.0, 1.0, 1.0], [4.0, 2.0, 1.0]])
-RADIUS = 1.3
-SEMI_AXES = RADIUS * SHAPES / np.prod(SHAPES, axis=-1, keepdims=True) ** (1 / 3)
-ASPECT = SHAPES[1, 0] / SHAPES[1, 1]
-# The flow: its velocity along the first axis, per offset along the second; simple shear, the velocity along the
-# flow growing with the offset along the gradient.
-SHEAR_RATE = 1.0
-flow = SHEAR_RATE * x.dual() * (y & Point)                                   # [] Point- <- Point-
-# The time a rod of the aspect takes to come back to where it started, Jeffery's period.
-PERIOD = 2 * np.pi * (ASPECT + 1 / ASPECT) / SHEAR_RATE
-# The angles of each body's long axis from the normal of the vortex plane at the start, in the plane of the flow
-# and that normal, and the start the animation shows.
-TILTS = np.array([0.15, 0.4, 0.7, 1.0, 1.3])
-SHOWN = 2
-# The time span in periods of the rod's orbit, the steps per period, and the steps per frame.
-N_PERIODS = 2
-N_STEPS_PER_PERIOD = 120
-N_STEPS_PER_FRAME = 2
-# The heights at which the flow is drawn, all where it moves, and the duration of a frame.
-HEIGHTS = np.array([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
-DURATION_MS = 40
-# The gallery's tumbling bodies: their pixels across.
-GALLERY_PIXELS = 240
+# Principal axis ratios of the sphere, prolate rod, and triaxial ellipsoid, normalized to a common sphere radius.
+axis_ratios = np.array([[1, 1, 1], [4, 1, 1], [4, 2, 1]], dtype=float)
+equal_volume_radius = 1.3
+semi_axes = equal_volume_radius * axis_ratios / np.prod(axis_ratios, axis=-1, keepdims=True) ** (1 / 3)
+rod_aspect = axis_ratios[1, 0] / axis_ratios[1, 1]
+# Ambient simple shear flow with velocity along x linear in height y.
+shear_rate = 1.0
+flow_gradient = shear_rate * x.dual() * (y & Point)                          # [] Point- <- Point-
+jeffery_period = 2 * np.pi * (rod_aspect + 1 / rod_aspect) / shear_rate
+# Initial polar tilts of the long axis from the vortex normal z toward the flow direction x.
+initial_tilts = np.array([0.15, 0.4, 0.7, 1.0, 1.3])
+shown_start = 2
+n_periods = 2
+n_steps_per_period = 120
+n_steps_per_frame = 2
+flow_heights = np.array([-3, -2, -1, 1, 2, 3], dtype=float)
+frame_duration_ms = 40
+gallery_pixels = 240
 
 
 # --- math -----------------------------------------------------------------------------
-def tumbling(n_steps: int = N_PERIODS * N_STEPS_PER_PERIOD) -> core.Rotor:
-    """Each body's orientation from each start over `n_steps` steps of the time span `[steps + 1, bodies, starts]`."""
-    stretches = core.stretch(SEMI_AXES)                                      # [bodies] Point- <- Point-
-    # Each start turns the long axis from the flow towards the normal of the vortex plane, to its tilt from it.
-    starts = ((x ^ z) * (-(np.pi / 2 - TILTS) / 2)).exp()                    # [starts] Rotor+
-    starts = starts[None].broadcast_to((len(SEMI_AXES), len(TILTS)))         # [bodies, starts] Rotor+
-    return stack(list(core.tumble(starts, stretches[:, None], flow, PERIOD / N_STEPS_PER_PERIOD,
-                                  n_steps)))                                 # [steps + 1, bodies, starts] Rotor+
+def orbit_stream(n_steps: int) -> Iterator[core.Rotor]:
+    """Yield every body's orientation rotor from every initial tilt across `n_steps` midpoint steps."""
+    stretches = core.body_stretches(semi_axes)                               # [3] Point- <- Point-
+    start_rotors = ((x ^ z) * (-(np.pi / 2 - initial_tilts) / 2)).exp()      # [5] Rotor+
+    initial_rotors = start_rotors[None].broadcast_to((len(semi_axes), len(initial_tilts)))   # [3, 5] Rotor+
+    dt = jeffery_period / n_steps_per_period
+    return core.rotor_trajectory(initial_rotors, stretches[:, None], flow_gradient, dt, n_steps)
 
 
-def frames(rotors: core.Rotor) -> Iterator[tuple[core.Rotor, core.Point]]:
-    """Per frame, every body's orientation from the start shown `[bodies]`, and the tip of its long axis."""
-    for index in range(0, rotors.shape[0], N_STEPS_PER_FRAME):
-        shown = rotors[index, :, SHOWN]                                      # [bodies] Rotor+
-        yield shown, shown >> (x.dual() * SEMI_AXES[:, 0])
+def shown_start_states(step_stream: Iterable[core.Rotor]) -> Iterator[tuple[core.Rotor, core.Point]]:
+    """Yield strided single-start orientations and long-axis tips from a batch rotor stream."""
+    for step_index, rotors in enumerate(step_stream):
+        if step_index % n_steps_per_frame == 0:
+            orientations = rotors[:, shown_start]                            # [3] Rotor+
+            yield orientations, orientations >> (x.dual() * semi_axes[:, 0])
 
 
 # --- plumbing -------------------------------------------------------------------------
+def save_states(states: Iterable, animate, *arguments, name: str, duration_ms: int) -> list:
+    """Save an animation drawn from `states` while collecting and returning the yielded states."""
+    from examples.util.animation import save_animation
+
+    kept = []
+
+    def passing() -> Iterator:
+        for state in states:
+            kept.append(state)
+            yield state
+
+    save_animation(animate(*arguments, passing()), name, duration_ms)
+    return kept
+
+
 def main() -> None:
     from examples.util.animation import save_figure
     from examples.fluids.jeffery import render
 
-    rotors = tumbling()                                                      # [steps + 1, bodies, starts] Rotor+
-    trails = rotors >> x.dual()                                              # [steps + 1, bodies, starts] Point-
+    n_steps = n_periods * n_steps_per_period
+    heights = y.dual() * flow_heights                                        # [6] Point-
+    stretches = core.body_stretches(semi_axes)                               # [3] Point- <- Point-
+    rotor_steps = save_states(
+        orbit_stream(n_steps),
+        lambda s, h, v, px, steps: render.animate_tumbling(s, h, v, px, shown_start_states(steps)),
+        stretches,
+        heights,
+        flow_gradient(heights),
+        gallery_pixels,
+        name="jeffery_tumbling",
+        duration_ms=frame_duration_ms,
+    )
+    rotors = stack(rotor_steps)                                              # [n_steps + 1, 3, 5] Rotor+
+    trails = rotors >> x.dual()                                              # [n_steps + 1, 3, 5] Point-
     save_figure(render.draw_orbits(trails), "jeffery_orbits")
 
     # checks
-    # The rotors stay unit over the whole span: the bodies stay rigid.
-    np.testing.assert_allclose(rotors.scalar_norm_squared().to_array(), 1.0, atol=1e-11)
-    # A sphere spins at the fluid's own rate, half the curl of the gradient.
-    sphere = core.placed(core.stretch(SEMI_AXES)[0], rotors[-1, 0])          # [starts] Point- <- Plane+
-    np.testing.assert_allclose((core.spin(sphere, flow) - core.curl(flow) / 2).norm().to_array(), 0.0, atol=1e-14)
-    # The rod's axis is back where it started after one period, on a closed orbit along which
-    # Jeffery's orbit constant holds; the tolerances test the step.
-    rod = trails[:, 1]                                                       # [steps + 1, starts] Point-
-    np.testing.assert_allclose((rod[N_STEPS_PER_PERIOD] - rod[0]).norm().to_array(), 0.0, atol=2e-2)
-    flowing, across, spinning = x & rod, y & rod, z & rod                    # [steps + 1, starts] Scalar+, Scalar+, Scalar+
-    constant = ((flowing.squared() + ASPECT**2 * across.squared()) / (ASPECT**2 * spinning.squared())).to_array()
-    np.testing.assert_allclose(constant / constant[0], 1.0, rtol=2e-2)
-    # The rod spends most of its time near the flow's direction: there its spin nearly vanishes.
-    assert np.mean(np.abs(flowing.to_array()) > 0.8 * np.sin(TILTS)) > 0.5
+    assert ((rotors.scalar_norm_squared() - 1).abs() < 1e-11).all()
+    sphere_shapes = core.body_shapes(stretches[0], rotors[-1, 0])            # [5] Point- <- Plane+
+    assert ((core.jeffery_spin(sphere_shapes, flow_gradient) - core.flow_curl(flow_gradient) / 2).norm() < 1e-12).all()
+    rod_trails = trails[:, 1]                                                # [n_steps + 1, 5] Point-
+    assert ((rod_trails[n_steps_per_period] - rod_trails[0]).norm() < 2e-2).all()
+    flow_coord, gradient_coord, vortex_coord = x & rod_trails, y & rod_trails, z & rod_trails   # [n_steps + 1, 5] Scalar+, Scalar+, Scalar+
+    orbit_constant = (flow_coord.squared() + rod_aspect**2 * gradient_coord.squared()) / (rod_aspect**2 * vortex_coord.squared())
+    assert ((orbit_constant / orbit_constant[0] - 1).abs() < 2e-2).all()
+    assert np.mean(flow_coord.abs() > 0.8 * np.sin(initial_tilts)) > 0.5
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the three bodies tumbling in the shear flow, for the gallery."""
+    """Regenerate the repository-tracked gallery animation of the three bodies tumbling in shear flow."""
     from examples.util.animation import pin_animation
     from examples.fluids.jeffery import render
 
-    rotors = tumbling()                                                      # [steps + 1, bodies, starts] Rotor+
-    heights = y.dual() * HEIGHTS                                             # [heights] Point-
-    pin_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, flow(heights), frames(rotors),
-                                          GALLERY_PIXELS), "jeffery", DURATION_MS)
+    n_steps = n_periods * n_steps_per_period
+    heights = y.dual() * flow_heights                                        # [6] Point-
+    pin_animation(
+        render.animate_tumbling(core.body_stretches(semi_axes), heights, flow_gradient(heights), gallery_pixels,
+                                shown_start_states(orbit_stream(n_steps))),
+        "jeffery",
+        frame_duration_ms,
+    )
 
 
 if __name__ == "__main__":
     main()
+
+

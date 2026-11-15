@@ -1,4 +1,15 @@
-"""numga: geometric algebra and extensors in NumPy, JAX and PyTorch."""
+"""The top-level `numga` namespace exposes geometric algebras (`Algebra`), blade subspaces
+(`SubSpace`), extensor types and traits (`GAType`, `Orientation`, `Trait`), multilinear values and
+maps (`Extensor`, `MultivectorFactory`, `OperatorFactory`), and backend execution contexts
+(`ExactContext`, `NumpyContext`, `JaxContext`, `TorchContext`). Optional JAX and PyTorch contexts
+load lazily on attribute access so importing `numga` requires only NumPy.
+
+Algebraic conventions and product rules are introduced in `docs/conventions.md`, extensor map and
+binding syntax in `docs/extensor_syntax.md`, intrinsic and extrinsic orientation in
+`docs/orientation.md`, discrete fields over sites in `docs/fields.md`, and type-dispatch and backend
+internals in `docs/internals.md`."""
+
+from __future__ import annotations
 
 from .algebra import Algebra, AlgebraDescription
 from .backend import Context, ExactContext, NumpyContext
@@ -43,15 +54,13 @@ from .multivector import MultivectorFactory
 from .operator import OperatorFactory, SymbolicKernel
 from .subspace import SubSpace, SubSpaceFactory, SupportKey
 
-# Core classes are now available; register defaults without changing the
-# descriptor mechanism used by end-user overloads.
+# Default extension overloads register once core classes exist.
 from . import extensions as _extensions
 
 __version__ = "2.0.0a0"
 
 
 def __getattr__(name: str) -> type[Context]:
-    # Optional backends import their array library only when asked for.
     if name == "JaxContext":
         from .backend.jax import JaxContext
         return JaxContext

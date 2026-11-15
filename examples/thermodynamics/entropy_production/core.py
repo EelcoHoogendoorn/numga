@@ -1,64 +1,66 @@
-"""Entropy production as heat passes between two finite bodies.
+"""Two insulated bodies at different temperatures exchange heat until their temperatures equalize.
 
-A state holds the two bodies' energies, an antivector of the plane spanned by `mv.a.dual()` and `mv.b.dual()`. The
-entropy's gradient, each body's received heat over its temperature, `mv.a / temperature_a + mv.b / temperature_b`,
-pairs with a change to the entropy it produces. The mobility is a map from gradients to changes of state: a dyad that
-sends every gradient into the direction trading one body's energy for the other's, with a positive strength. It sends
-the entropy's gradient to the heat flow, and the total energy's gradient, `mv.a + mv.b`, to nothing, so the flow
-conserves energy and never lowers the entropy.
+The algebra `a0 b0` has one degenerate quantity direction for each body's internal energy. A state is modelled as an
+antivector `energy_a * a.dual() + energy_b * b.dual()`, and a thermodynamic potential is a vector that pairs with a
+change of state. The entropic potential `a / temperature_a + b / temperature_b` pairs with a change of state to give
+the entropy produced, while `a + b` reads the change in total energy. The mobility maps potentials to rates of state
+change through a positive dyad along `transfer = b.dual() - a.dual()`, the step that moves a unit of energy from body
+`a` to body `b`. Because `a + b` pairs to zero with `transfer`, the heat flow driven by the entropic potential
+conserves total energy and produces nonnegative entropy.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra
-from numga.backend.jax import JaxContext
+from numga import Algebra, NumpyContext
 
 ga = Algebra("a0b0")
-mv = JaxContext(ga, np.float64).multivector
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                               # Scalar+
 State = ga.gatype.antivector()                            # Antivector-
-Gradient = ga.gatype.vector()                             # Vector+
-Mobility = ga.gatype((State, Gradient))                   # State- <- Gradient+
+Potential = ga.gatype.vector()                            # Vector+
+Mobility = ga.gatype((State, Potential))                  # State- <- Potential+
 
 energy_a = mv.a & State                                   # [] Scalar+ <- State-
 energy_b = mv.b & State                                   # [] Scalar+ <- State-
-# The total energy's gradient, and the direction trading body a's energy for body b's, which it reads as nothing.
-energy_gradient = mv.a + mv.b                             # [] Gradient+
-total_energy = energy_gradient & State                    # [] Scalar+ <- State-
+# Total-energy potential and the energy-conserving unit transfer from body a to body b, which pair to zero.
+energy_potential = mv.a + mv.b                            # [] Potential+
 transfer = mv.b.dual() - mv.a.dual()                      # [] State-
-# The mobility of unit strength: it sends every gradient along the transfer, by the gradient's reading of it.
-unit_mobility = transfer * (Gradient & transfer)          # [] State- <- Gradient+
+# Unit mobility dyad sending any potential along transfer in proportion to how that potential reads transfer.
+unit_mobility = transfer * (Potential & transfer)         # [] State- <- Potential+
 
 
 # --- math -----------------------------------------------------------------------------
 def temperatures(state: State, capacity_a: float, capacity_b: float) -> tuple[Scalar, Scalar]:
+    """Absolute temperatures of the two bodies from their internal energies and heat capacities."""
     return energy_a(state) / capacity_a, energy_b(state) / capacity_b
 
 
 def entropy(state: State, capacity_a: float, capacity_b: float) -> Scalar:
-    """Total entropy with temperatures measured relative to one reference temperature."""
-    temperature_a, temperature_b = temperatures(state, capacity_a, capacity_b)
+    """Total entropy of the two bodies relative to a unit reference temperature."""
+    temperature_a, temperature_b = temperatures(state, capacity_a, capacity_b)    # [...] Scalar+, Scalar+
     return capacity_a * temperature_a.log() + capacity_b * temperature_b.log()
 
 
-def entropy_gradient(state: State, capacity_a: float, capacity_b: float) -> Gradient:
-    temperature_a, temperature_b = temperatures(state, capacity_a, capacity_b)
-    # Each body's entropy increases by its received heat divided by its temperature.
+def entropy_potential(state: State, capacity_a: float, capacity_b: float) -> Potential:
+    """Thermodynamic potential that pairs with a change of state to give the entropy produced."""
+    temperature_a, temperature_b = temperatures(state, capacity_a, capacity_b)    # [...] Scalar+, Scalar+
+    # Each body's entropy rises by the heat it receives divided by its temperature.
     return mv.a / temperature_a + mv.b / temperature_b
 
 
 def mobility(state: State, capacity_a: float, capacity_b: float, conductance: float) -> Mobility:
-    temperature_a, temperature_b = temperatures(state, capacity_a, capacity_b)
-    # Every response follows the energy-conserving direction, with positive strength.
+    """Positive dyad mapping potentials to energy-conserving rates of state change."""
+    temperature_a, temperature_b = temperatures(state, capacity_a, capacity_b)    # [...] Scalar+, Scalar+
+    # Scaling by both temperatures makes the heat flow proportional to the temperature difference.
     return unit_mobility * (conductance * temperature_a * temperature_b)
 
 
 def advance(state: State, capacity_a: float, capacity_b: float, conductance: float, dt: float) -> State:
-    """The state after a nonnegative time interval, the heat flow integrated exactly over it."""
+    """State after integrating the heat exchange analytically over time step `dt`."""
     inverse_capacity = 1 / capacity_a + 1 / capacity_b
-    # The temperature difference decays exponentially, giving the integrated transfer strength.
+    # Exponential decay of the temperature gap integrates to one mobility step with an effective conductance.
     integrated_conductance = -np.expm1(-conductance * inverse_capacity * dt) / inverse_capacity
-    integrated_mobility = mobility(state, capacity_a, capacity_b, integrated_conductance)
-    return state + integrated_mobility(entropy_gradient(state, capacity_a, capacity_b))
+    integrated_mobility = mobility(state, capacity_a, capacity_b, integrated_conductance)   # [...] State- <- Potential+
+    return state + integrated_mobility(entropy_potential(state, capacity_a, capacity_b))

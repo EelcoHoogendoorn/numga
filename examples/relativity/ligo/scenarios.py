@@ -1,123 +1,162 @@
-"""Scenes for gravitational-wave antenna patterns: the two LIGO detectors, at Hanford, Washington, and
-Livingston, Louisiana, their responses to waves from every direction on the sky, and Hanford's response
-as the wave's polarization turns half around."""
+"""Scenes for gravitational-wave antenna patterns place the Hanford and Livingston LIGO detectors on Earth, evaluate their all-sky responses, and sweep Hanford's response over a half-turn polarization cycle."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 import numpy as np
 
+from numga import stack
 from examples.relativity.ligo import core
 
-# The detectors: their names, latitudes and longitudes in degrees, and the azimuths of their two arms,
-# in degrees clockwise from north.
-NAMES = ["Hanford", "Livingston"]
-SITE_LATITUDES = [46.4553, 30.5631]
-SITE_LONGITUDES = [-119.4078, -90.7744]
-AZIMUTHS = [[324, 234], [252, 162]]
-# The sky, by the point on Earth each direction is straight above: latitudes from pole to pole, and twice
-# as many longitudes once around.
-N_SKY_SAMPLES = 61
-# The polarization's half turn in frames, the free masses on the ring, and the strain drawn on the
-# ring, far beyond any real one so that it shows.
-N_FRAMES = 96
-N_MASSES = 24
-STRAIN_SHOWN = 0.3
-DURATION_MS = 40
-# The polarization animation's size, in pixels, and the gallery's, with the gallery's colours, enough for the response's
-# bands, the ring's and the site's inks and their edges.
-POLARIZATION_SIZE = (600, 200)
-GALLERY_SIZE = (720, 240)
-N_GALLERY_COLOURS = 48
+# Detector names, latitudes and longitudes in degrees, and arm azimuths in degrees clockwise from north.
+detector_names = ["Hanford", "Livingston"]
+site_latitudes = [46.4553, 30.5631]
+site_longitudes = [-119.4078, -90.7744]
+arm_azimuths = [[324, 234], [252, 162]]
+n_detectors = len(detector_names)
+
+# Sky grid counts: latitudes from south pole to north pole and longitudes once around.
+n_sky_samples = 61
+
+# Polarization sweep counts, free-mass ring resolution, exaggerated ring strain, and frame duration.
+n_frames = 96
+n_masses = 24
+strain_scale = 0.3
+frame_duration_ms = 40
+
+# Animation pixel sizes and gallery palette size.
+polarization_size = (600, 200)
+gallery_size = (720, 240)
+n_gallery_colours = 48
 
 
-# --- math -----------------------------------------------------------------------------
-def detectors() -> tuple[core.Rotor, core.Point]:
-    """Each detector's site frame `[detectors]` and arms `[detectors, 2]`."""
-    sites = core.place(np.radians(SITE_LATITUDES), np.radians(SITE_LONGITUDES))   # [detectors] Rotor+
-    return sites, core.arms(sites, np.radians(AZIMUTHS))
+def site_geometries() -> tuple[core.Rotor, core.Point]:
+    """Site frames (`[2] Rotor+`) and unit arm displacements (`[2, 2] Point-`) place the Hanford and Livingston interferometers."""
+    sites = core.earth_frame(np.radians(site_latitudes), np.radians(site_longitudes))   # [2] Rotor+
+    arms = core.detector_arms(sites, np.radians(arm_azimuths))                          # [2, 2] Point-
+    return sites, arms
 
 
-def sky(n_samples: int = N_SKY_SAMPLES) -> core.Rotor:
-    """The frame of each direction on the sky: its first axis to the direction, the others across."""
+def sky_grid(n_samples: int) -> core.Rotor:
+    """Arrival frames (`[n_samples, 2 * n_samples - 1] Rotor+`) cover the celestial sphere from pole to pole."""
     latitudes = np.radians(np.linspace(-90, 90, n_samples))
     longitudes = np.radians(np.linspace(-180, 180, 2 * n_samples - 1))
-    return core.place(latitudes[:, None], longitudes)                        # [latitudes, longitudes] Rotor+
+    return core.earth_frame(latitudes[:, None], longitudes)                             # [n_samples, 2 * n_samples - 1] Rotor+
 
 
-def patterns(arms: core.Point, frames: core.Rotor) -> tuple[core.Scalar, core.Scalar]:
-    """Each detector's responses to the plus and cross strains of waves from each frame's direction."""
-    plus, cross = core.strains(frames)                                       # [latitudes, longitudes] Plane+ <- Point-, Plane+ <- Point-
-    return core.response(arms[:, None, None], plus), core.response(arms[:, None, None], cross)
+def sky_patterns(arms: core.Point, sky_frames: core.Rotor) -> tuple[core.Scalar, core.Scalar]:
+    """Plus and cross antenna responses (`[n_detectors, n_latitudes, n_longitudes] Scalar+`) evaluate every detector over `sky_frames`."""
+    plus, cross = core.wave_strains(sky_frames)                                         # [..., ...] Plane+ <- Point-, Plane+ <- Point-
+    return core.arm_response(arms[:, None, None], plus), core.arm_response(arms[:, None, None], cross)
 
 
-def polarization(site: core.Rotor, arms: core.Point, frames: core.Rotor, angles: np.ndarray
-                 ) -> tuple[core.Scalar, core.Point]:
-    """One detector's response to the plus strain over the sky as the polarization turns by each angle,
-    and a ring of free masses across a wave from straight overhead, stretched by that strain."""
-    turned, _ = core.strains(core.polarized(frames, angles[:, None, None]))  # [frames, latitudes, longitudes] Plane+ <- Point-
-    # Straight overhead, the axes across the wave are the site's east and north.
-    east, north = site >> core.mv.y, site >> core.mv.z                       # [] Plane+, Plane+
-    turns = np.linspace(0, 2 * np.pi, N_MASSES, endpoint=False)
-    ring = ((east ^ north) * (-turns / 2)).exp() >> east.dual()              # [masses] Point-
-    overhead, _ = core.strains(core.polarized(site, angles))                 # [frames] Plane+ <- Point-
-    # Each mass moves perpendicular to the plane its strain hands it: the metric turns that reading
-    # into a direction.
-    moved = ring + STRAIN_SHOWN * overhead[:, None](ring).dual()             # [frames, masses] Point-
-    return core.response(arms, turned), moved
+def horizontal_ring(site: core.Rotor, n_ring_masses: int) -> core.Point:
+    """Equally spaced unit displacements (`[n_ring_masses] Point-`) form a horizontal test-mass ring at `site`."""
+    east, north = site >> core.mv.y, site >> core.mv.z                                  # [] Plane+, Plane+
+    turns = np.linspace(0, 2 * np.pi, n_ring_masses, endpoint=False)
+    ring_rotors = ((east ^ north) * (-turns / 2)).exp()                                 # [n_ring_masses] Rotor+
+    return ring_rotors >> east.dual()                                                   # [n_ring_masses] Point-
 
 
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
     from examples.relativity.ligo import render
+    from examples.util.animation import save_animation, save_figure
 
-    sites, arms = detectors()
-    frames = sky()
-    directions, zeniths = frames >> core.mv.x.dual(), sites >> core.mv.x.dual()   # [latitudes, longitudes], [detectors] Point
-    to_plus, to_cross = patterns(arms, frames)                               # [detectors, latitudes, longitudes] Scalar+, Scalar+
-    sensitivities = core.sensitivity(to_plus, to_cross)
-    network = sensitivities.squared().sum(axis=0).square_root()              # [latitudes, longitudes] Scalar+
-    # The cosine between the two detectors' pairs of responses: minus one where they read the same wave
-    # with opposite signs.
-    alike = (to_plus[0] * to_plus[1] + to_cross[0] * to_cross[1]) / (sensitivities[0] * sensitivities[1])
-    angles = np.linspace(0, np.pi, N_FRAMES, endpoint=False)
-    responses, rings = polarization(sites[0], arms[0], frames, angles)       # [frames, latitudes, longitudes] Scalar+, [frames, masses] Point-
-    save_figure(render.draw_patterns(directions, to_plus, to_cross, sensitivities, zeniths, NAMES), "ligo_patterns")
-    save_figure(render.draw_network(directions, network, alike, zeniths, NAMES), "ligo_network")
-    save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], POLARIZATION_SIZE),
-                   "ligo_polarization", DURATION_MS)
+    sites, arms = site_geometries()                                                     # [2] Rotor+, [2, 2] Point-
+    sky_frames = sky_grid(n_sky_samples)                                                # [n_sky_samples, 2 * n_sky_samples - 1] Rotor+
+    first_axis = core.mv.x.dual()                                                       # Antivector-
+    directions = sky_frames >> first_axis                                               # [n_sky_samples, 2 * n_sky_samples - 1] Point-
+    zeniths = sites >> first_axis                                                       # [2] Point-
+
+    plus_response, cross_response = sky_patterns(arms, sky_frames)                      # [2, n_sky_samples, 2 * n_sky_samples - 1] Scalar+, Scalar+
+    sensitivities = core.directional_sensitivity(plus_response, cross_response)         # [2, n_sky_samples, 2 * n_sky_samples - 1] Scalar+
+    network_sensitivity = sensitivities.squared().sum(axis=0).square_root()             # [n_sky_samples, 2 * n_sky_samples - 1] Scalar+
+    # Cosine alignment between the two detectors' polarization response pairs: -1 where their signs oppose.
+    alignment = (plus_response[0] * plus_response[1] + cross_response[0] * cross_response[1]) / (
+        sensitivities[0] * sensitivities[1]
+    )                                                                                   # [n_sky_samples, 2 * n_sky_samples - 1] Scalar+
+
+    save_figure(
+        render.patterns_figure(directions, plus_response, cross_response, sensitivities, zeniths, detector_names),
+        "ligo_patterns",
+    )
+    save_figure(
+        render.network_figure(directions, network_sensitivity, alignment, zeniths, detector_names),
+        "ligo_network",
+    )
+
+    angles = np.linspace(0, np.pi, n_frames, endpoint=False)
+    rest_ring = horizontal_ring(sites[0], n_masses)                                     # [n_masses] Point-
+    kept_responses: list[core.Scalar] = []
+
+    def recorded_states() -> Iterator[tuple[core.Scalar, core.Point]]:
+        for state in core.polarization_states(sites[0], arms[0], sky_frames, angles, rest_ring, strain_scale):
+            kept_responses.append(state[0])
+            yield state
+
+    save_animation(
+        render.polarization_animation(
+            directions,
+            sites[0],
+            arms[0],
+            detector_names[0],
+            polarization_size,
+            recorded_states(),
+        ),
+        "ligo_polarization",
+        frame_duration_ms,
+    )
+    swept_responses = stack(kept_responses)                                             # [n_frames, n_sky_samples, 2 * n_sky_samples - 1] Scalar+
 
     # checks
-    # Straight overhead each detector the sensitivity is one, the arms lying across the wave, and nowhere
-    # is it more.
-    overhead = core.sensitivity(*(core.response(arms, strain) for strain in core.strains(sites)))
-    assert np.abs(overhead.to_array() - 1).max() < 1e-12
-    assert sensitivities.to_array().max() <= 1 + 1e-12
-    # A wave along the line halfway between the arms, in their plane, is not seen at all; any frame with
-    # its first axis along that line will do.
-    halfway = (arms[:, 0] + arms[:, 1]).normalized()                         # [detectors] Point-
-    blind = core.sensitivity(*(core.response(arms, strain) for strain in core.strains((1 + halfway * ~core.mv.x.dual()).normalized())))
-    assert np.abs(blind.to_array()).max() < 1e-12
-    # Spin two: turning the axes across the wave by an angle mixes plus and cross by twice that angle.
-    mixed = to_plus[0] * np.cos(2 * angles)[:, None, None] + to_cross[0] * np.sin(2 * angles)[:, None, None]
-    assert np.abs((responses - mixed).to_array()).max() < 1e-12
-    # The two detectors are built nearly opposite: over most of the sky they read a wave with opposite
-    # signs.
-    assert np.mean(alike < -0.5) > 0.9
+    # Sensitivity peaks at 1 straight overhead each site and never exceeds 1 anywhere on the sky.
+    overhead_plus, overhead_cross = core.wave_strains(sites)                            # [2] Plane+ <- Point-, Plane+ <- Point-
+    overhead_sensitivity = core.directional_sensitivity(
+        core.arm_response(arms, overhead_plus),
+        core.arm_response(arms, overhead_cross),
+    )                                                                                   # [2] Scalar+
+    assert ((overhead_sensitivity - 1).abs() < 1e-10).all()
+    assert (sensitivities <= 1 + 1e-10).all()
+
+    # Waves arriving along the horizontal arm bisector produce zero response in both polarizations.
+    bisector = arms[:, 0] + arms[:, 1]
+    bisector = bisector / bisector.antinorm()                                           # [2] Point-
+    bisector_frame = (1 + bisector * first_axis).normalized()                           # [2] Rotor+
+    blind_plus, blind_cross = core.wave_strains(bisector_frame)                         # [2] Plane+ <- Point-, Plane+ <- Point-
+    blind_sensitivity = core.directional_sensitivity(
+        core.arm_response(arms, blind_plus),
+        core.arm_response(arms, blind_cross),
+    )                                                                                   # [2] Scalar+
+    assert (blind_sensitivity.abs() < 1e-10).all()
+
+    # Spin-two law: rotating transverse axes by `angles` mixes plus and cross responses by `2 * angles`.
+    mixed = (
+        plus_response[0] * np.cos(2 * angles)[:, None, None]
+        + cross_response[0] * np.sin(2 * angles)[:, None, None]
+    )                                                                                   # [n_frames, n_sky_samples, 2 * n_sky_samples - 1] Scalar+
+    assert ((swept_responses - mixed).abs() < 1e-10).all()
+
+    # Hanford and Livingston are oriented nearly opposite, giving opposite-sign responses across >90% of the sky.
+    assert np.mean(alignment < -0.5) > 0.9
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: Hanford's response as the wave's polarization turns, for the gallery."""
-    from examples.util.animation import pin_animation
+    """Gallery animation for `examples.pinned`: Hanford's response and overhead ring over a half-turn polarization sweep."""
     from examples.relativity.ligo import render
+    from examples.util.animation import pin_animation
 
-    sites, arms = detectors()
-    frames = sky()
-    directions = frames >> core.mv.x.dual()                                  # [latitudes, longitudes] Point-
-    angles = np.linspace(0, np.pi, N_FRAMES, endpoint=False)
-    responses, rings = polarization(sites[0], arms[0], frames, angles)       # [frames, latitudes, longitudes] Scalar+, [frames, masses] Point-
-    pin_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], GALLERY_SIZE),
-                  "ligo", DURATION_MS, colors=N_GALLERY_COLOURS)
+    sites, arms = site_geometries()                                                     # [2] Rotor+, [2, 2] Point-
+    sky_frames = sky_grid(n_sky_samples)                                                # [n_sky_samples, 2 * n_sky_samples - 1] Rotor+
+    directions = sky_frames >> core.mv.x.dual()                                         # [n_sky_samples, 2 * n_sky_samples - 1] Point-
+    angles = np.linspace(0, np.pi, n_frames, endpoint=False)
+    rest_ring = horizontal_ring(sites[0], n_masses)                                     # [n_masses] Point-
+    states = core.polarization_states(sites[0], arms[0], sky_frames, angles, rest_ring, strain_scale)
+    pin_animation(
+        render.polarization_animation(directions, sites[0], arms[0], detector_names[0], gallery_size, states),
+        "ligo",
+        frame_duration_ms,
+        colors=n_gallery_colours,
+    )
 
 
 if __name__ == "__main__":

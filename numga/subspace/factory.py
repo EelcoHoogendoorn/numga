@@ -1,11 +1,32 @@
-"""The minimal default SubSpace construction namespace."""
+"""Each algebra owns a flyweight factory that constructs and strongly interns `SubSpace` instances.
+When an algebra supplies a `default` full-basis layout string (such as
+`"1 x y z w yz zx xy wx wy wz wzy wxz wyx xyz wxyz"` on `PGA3D`), mask-based constructors
+(`from_masks`, `from_grades`, `k_vector`, `even`, `odd`, `full`) restrict that layout so standard
+subspaces inherit the algebra's chosen coordinate ordering and signs; without `default`, masks sort
+by ascending grade and integer bit pattern with `+1` signs.
+
+Explicit spellings via `from_blades` (also callable as `algebra.subspace("yz zx xy")` or accessed
+as `algebra.subspace.yz_zx_xy`) and `from_layout` preserve the caller's exact blade order and signs
+without consulting `default`, pooling each `(masks, signs)` pair once in the factory's flyweight
+table. Keeping `algebra.blade_masks` as a lazy `range` makes constructing the factory `O(1)` in
+high dimensions until `full()` or `even()` is requested.
+
+`constructor_names` and `intrinsic_constructor_names` declare the public constructor protocol
+mirrored onto `GATypeFactory` and `MultivectorFactory`. Antigrade constructors (`antiscalar` down
+through `antipseudoscalar`) list under `intrinsic_constructor_names` because in plane-based
+algebras they represent points and joins of points measured against the volume element, whereas
+`scalar`, `vector`, `bivector`, `pseudoscalar`, and versor subspaces default to extrinsic
+orientation. Subclasses such as `SphericalSubSpaceFactory` extend both tuples alongside custom
+methods so new geometric constructors propagate to types and multivectors.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from functools import lru_cache
 from itertools import combinations
 from operator import index
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from numga.flyweight import FlyweightFactory
 
@@ -16,13 +37,12 @@ if TYPE_CHECKING:
 
 
 class SubSpaceFactory(FlyweightFactory[SubSpace]):
-    """Per-algebra flyweights for default supports and explicitly signed layouts."""
+    """An immutable per-algebra namespace pools named grade supports and custom signed blade
+    layouts."""
 
     __slots__ = ("_algebra", "_blade_masks", "_default")
 
-    # The public constructor protocol mirrored by GATypeFactory. Custom
-    # SubSpace factories can extend this tuple together with their methods;
-    # implementation helpers are deliberately absent.
+    # Public constructor names mirrored onto GATypeFactory and MultivectorFactory.
     constructor_names = (
         "from_masks",
         "from_blades",
@@ -63,8 +83,7 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         "translator",
         "blade",
     )
-    # The constructors that build points and their joins, from the top grade down: GATypeFactory gives
-    # their types intrinsic orientation, every other constructor's extrinsic.
+    # Antigrade constructors default to intrinsic orientation on GATypeFactory.
     intrinsic_constructor_names = ("antiscalar", "antivector", "antibivector", "antitrivector", "antiquadvector",
                                    "antipseudoscalar")
 
@@ -72,8 +91,7 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         dimension = algebra.dimension
         super().__init__()
         blade_masks = getattr(algebra, "blade_masks", range(1 << dimension))
-        # Algebra's native ``range`` remains lazy, so merely asking for a
-        # construction namespace is not exponential in the dimension.
+        # Keeping range objects lazy avoids O(2**dimension) allocation when building the factory.
         frozen_blade_masks = (
             blade_masks if isinstance(blade_masks, range) else tuple(blade_masks)
         )
@@ -89,23 +107,25 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         return self._algebra
 
     def from_masks(self, masks: Iterable[int]) -> SubSpace:
+        """Canonical masks assemble into a `SubSpace` ordered and signed according to the algebra's
+        default layout, or ascending `(grade, mask)` when no default is set."""
         normalized = _normalize_masks(self.algebra, masks)
         if self._default is not None:
             return self._default.restrict(normalized)
         return self.from_layout(normalized, (1,) * len(normalized))
 
     def from_layout(self, masks: Iterable[int], signs: Iterable[int]) -> SubSpace:
-        """Intern exact ordered masks and signs; no default ordering is applied."""
-
+        """Interning explicit masks and `+1`/`-1` signs preserves the caller's exact coordinate
+        order without applying the default layout."""
         masks, signs = tuple(masks), tuple(signs)
         return self.factory_construct(
             (masks, signs),
             lambda: SubSpace(self.algebra, masks, signs),
         )
 
-    def from_blades(self, blades: str | Iterable[str | tuple[str, ...]]) -> SubSpace:
-        """Preserve a whitespace-separated spelling, or a sequence of blade tokens."""
-
+    def from_blades(self, blades: str | Iterable) -> SubSpace:
+        """Whitespace-separated blade strings such as `"yz zx xy"` or sequences of blade tokens
+        construct a `SubSpace` in the given order and orientation signs."""
         blades = blades.split() if isinstance(blades, str) else blades
         masks, signs = [], []
         for blade in blades:
@@ -124,14 +144,15 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         return self.from_masks(())
 
     def from_grades(self, grades: Iterable[int]) -> SubSpace:
-        """Construct the union of the requested grades."""
-
+        """Grades in `grades` combine into a single `SubSpace` in the algebra's default blade
+        layout."""
         return self.from_masks({
             mask for grade in grades for mask in self.k_vector(grade).masks
         })
 
     @lru_cache(maxsize=None)
     def k_vector(self, grade: int) -> SubSpace:
+        """All basis blades of exact `grade` form the `grade`-vector subspace."""
         normalized_grade = index(grade)
         dimension = self.algebra.dimension
         if normalized_grade < 0 or normalized_grade > dimension:
@@ -169,8 +190,8 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         return self.k_vector(self.algebra.dimension - 2)
 
     def antipseudoscalar(self) -> SubSpace:
-        """The complement of the pseudoscalar, grade zero: as a type, intrinsic, the type of a volume, the join of as
-        many points as the space has dimensions."""
+        """Complementing the pseudoscalar gives grade `0`, which as a `GAType` carries intrinsic
+        orientation to represent oriented volume joins."""
         return self.k_vector(0)
 
     @lru_cache(maxsize=None)
@@ -206,18 +227,22 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
 
     @lru_cache(maxsize=None)
     def self_reverse(self) -> SubSpace:
-        """The grades a reverse leaves unchanged: 0, 1, 4, 5, 8, ..."""
+        """Reversion leaves grades `k` with `k // 2` even (`0, 1, 4, 5, ...`) unchanged in sign."""
         return self.from_grades(k for k in range(self.algebra.dimension + 1) if k // 2 % 2 == 0)
 
     @lru_cache(maxsize=None)
     def mod4(self) -> SubSpace:
-        """Grades 0, 4, 8, ...: where a motor times its reverse lands."""
+        """Grades divisible by four (`0, 4, 8, ...`) span the support of an even element multiplied
+        by its reverse."""
         return self.from_grades(range(0, self.algebra.dimension + 1, 4))
 
     @lru_cache(maxsize=None)
-    def k_reflection(self, k: int) -> SubSpace:
-        """Where a product of k vectors lives: grades k, k - 2, ... down to 0 or 1."""
-        return self.from_grades(range(k % 2, min(k, self.algebra.dimension) + 1, 2))
+    def k_reflection(self, n_reflections: int) -> SubSpace:
+        """Multiplying `n_reflections` vectors spans grades of matching parity up to `n_reflections`
+        and bounded by the algebra dimension."""
+        return self.from_grades(
+            range(n_reflections % 2, min(n_reflections, self.algebra.dimension) + 1, 2)
+        )
 
     def reflection(self) -> SubSpace:
         return self.k_reflection(1)
@@ -233,12 +258,12 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
 
     @lru_cache(maxsize=None)
     def degenerate(self) -> SubSpace:
-        """Every blade containing a null generator."""
+        """Blades containing at least one null generator span the degenerate ideal of the algebra."""
         return self.full().degenerate()
 
     @lru_cache(maxsize=None)
     def nondegenerate(self) -> SubSpace:
-        """Every blade free of null generators."""
+        """Blades containing no null generator span the non-degenerate complement of the radical."""
         return self.full().nondegenerate()
 
     def scalar_degenerate(self) -> SubSpace:
@@ -246,19 +271,20 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
 
     @lru_cache(maxsize=None)
     def translator(self) -> SubSpace:
-        """The scalar and the bivectors containing a null generator: where translators live."""
+        """Scalars together with bivectors touching a null generator span the support of projective
+        translators."""
         return self.bireflection().difference(self.bivector().nondegenerate())
 
     def blade(self, mask: int) -> SubSpace:
         return self.from_masks((mask,))
 
-    # Other names for the even and odd subspaces.
     odd_grade = odd
     motor = even
 
     @lru_cache(maxsize=None)
-    def named(self) -> tuple[tuple[str, SubSpace], ...]:
-        """The named subspaces of this algebra, in order of precedence where two coincide."""
+    def named(self) -> tuple:
+        """Standard named subspaces appear in display-precedence order so low-dimensional
+        coincidences resolve deterministically."""
         n = self.algebra.dimension
         grades = (("scalar", 0), ("pseudoscalar", n), ("vector", 1), ("bivector", 2),
                   ("antivector", n - 1), ("antibivector", n - 2), ("trivector", 3))
@@ -268,7 +294,6 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
             + (("even", self.even()), ("odd", self.odd()), ("full", self.full()))
         )
 
-    # Descriptive aliases; they do not introduce a second construction path.
     multivector = full
     even_grade = even
 

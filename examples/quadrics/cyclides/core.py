@@ -1,133 +1,178 @@
-"""Ray tracing Dupin cyclides on the 3-sphere, in the conformal model of S³. Core mathematics.
+"""Ray tracing Dupin cyclides on the 3-sphere in conformal geometric algebra.
 
-A point of S³, a unit direction of R⁴ from its centre `mv.e.dual()`, is carried as their sum, a
-null antivector of the algebra `x+y+z+w+e-`; spheres are vectors. The eye sits at w and looks along
--x. Turning it towards a direction d moves it along a great circle,
-`origin + ray_linear(d) * np.sin(t) + ray_quadratic(d, d) * (1 - np.cos(t))`; in the half angle
-`u = np.tan(t / 2)` that circle is a parabola whose bend is the antipode of the eye. Substituting
-the parabola into a quadric's form gives a polynomial in u of degree four, solved per pixel for
-the nearest hit along the whole circle.
+A point of the 3-sphere is carried as a null antivector adding its unit four-space direction to one
+unit of the ambient centre, while spheres are vectors and quadrics are polarity maps from points to
+their polar spheres. Turning the eye at `w` toward a tangent direction traces a great circle that
+becomes a parabola in the half-angle tangent `u` whose quadratic bend is the antipode of the eye.
+Substituting that parabola into a quadric's bilinear form yields a quartic in `u` whose five
+coefficient maps are assembled once before binding pixel directions.
 
-The surfaces start as a spherical cylinder, a tube around a great circle, and a spherical
-cone. A conformal dilation bends the cylinder's core into a small circle: a torus when the dilation
-keeps the spin about the core, a Dupin cyclide when it does not. A dilation of the cone pulls its
-two vertices together into a spindle cyclide.
+Conformal dilations bend a spherical cylinder around a great circle into symmetric tori or lopsided
+Dupin cyclides, and pull the two vertices of a spherical cone together into spindle cyclides.
 
 This module never imports a plotting library.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, NumpyContext, concatenate
 from numga.algebras import CGA3D
+from examples.quadrics.cyclides.numerical import nearest_hit_angles, pixel_offsets
 
 ga = CGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-Scalar = ga.gatype.scalar()                   # Scalar+
-# Spheres and great spheres are vectors, and points null antivectors. A direction at the eye is an antivector, in the
-# duals of x, y and z; in the flat chart, a displacement from its origin. Motors rotate R⁴ and dilate conformally; a
-# quadric maps a point to its polar sphere.
-Sphere = ga.gatype.vector()                   # Vector+
-Point = ga.gatype.antivector()                # Antivector-
-Direction = Sphere.derive.within(Algebra("x+y+z+")).derive.dual  # Antivector-
-Motor = ga.gatype.rotor()                     # Rotor+
-Quadric = ga.gatype((Sphere, Point))
+Scalar = ga.gatype.scalar()                                                    # Scalar+
+# Spheres and great spheres are vectors, and points of S³ are null antivectors. Tangent directions at
+# the eye lie in the duals of x, y, and z, doubling as displacements in the flat chart about the eye.
+Sphere = ga.gatype.vector()                                                    # Vector+
+Point = ga.gatype.antivector()                                                 # Antivector-
+Upright = Sphere.derive.within(Algebra("x+y+z+"))                              # Vector+
+Direction = Upright.derive.dual                                                # Antivector-
+Motor = ga.gatype.rotor()                                                      # Rotor+
+Bivector = ga.gatype.bivector()                                                # Bivector+
+Quadric = ga.gatype((Sphere, Point))                                           # Sphere+ <- Point-
 
-# The eye, at w on S³: the centre of R⁴ plus the direction w. The point opposite it, at -w.
-origin = mv.w.dual() + mv.e.dual()            # [] Point-
-antipode = mv.e.dual() - mv.w.dual()          # [] Point-
+# The eye sits at w on S³ and its antipode sits opposite at -w.
+origin = mv.w.dual() + mv.e.dual()                                             # [] Point-
+antipode = mv.e.dual() - mv.w.dual()                                           # [] Point-
 
-# A flat chart about the eye, the stereographic projection from its antipode: the spheres of radius zero about the eye
-# and about the antipode are the chart's origin and its infinity. Constructions of the flat conformal model, written
-# with these two, draw the same surfaces on S³.
-chart_origin = (mv.w + mv.e) * 0.5            # [] Sphere+
-chart_infinity = mv.e - mv.w                  # [] Sphere+
+# Point spheres at the eye and its antipode serve as origin and infinity of the stereographic flat chart.
+chart_origin = (mv.w + mv.e) * 0.5                                             # [] Sphere+
+chart_infinity = mv.e - mv.w                                                   # [] Sphere+
 
-# The eye turned by t towards a unit d: origin + ray_linear(d) * np.sin(t) + ray_quadratic(d, d) * (1 - np.cos(t)).
-# The turn is a rotation of R⁴ in the plane of the directions w and d, their join, generated by its dual.
-ray_rotation = 0.5 * (mv.w.dual() & Direction).dual()
-ray_linear = ray_rotation.commutator(origin) * 2
-ray_quadratic = ray_rotation.commutator(ray_linear) * 2
-# Times 1 + u ** 2, with u = np.tan(t / 2): origin + ray_linear(d) * 2 * u + ray_bend(d, d) * u ** 2, the bend the
-# antipode. The origin in it carries the squared length of d, its dot with itself, read through its dual.
-ray_bend = ray_quadratic * 2 + origin * Direction.dot(Direction)
-
-
-# --- plumbing -------------------------------------------------------------------------
-def pixel_grid(shape: tuple[int, int], fov: float) -> tuple[np.ndarray, np.ndarray]:
-    """(n_pixels,) right and up offsets of pinhole pixels on the image plane one unit ahead, row-major."""
-    height, width = shape
-    u = (2 * (np.arange(width) + 0.5) / width - 1)[None, :]
-    v = (1 - 2 * (np.arange(height) + 0.5) / height)[:, None] * height / width
-    right, up = np.broadcast_arrays(u * np.tan(fov / 2), v * np.tan(fov / 2))
-    return right.ravel(), up.ravel()
-
-
-def sensor(shape: tuple[int, int], fov: float) -> Direction:
-    """Unit pixel directions at the eye, looking along -x with z up, row-major."""
-    right, up = pixel_grid(shape, fov)
-    rays = -mv.x.dual() + mv.y.dual() * right + mv.z.dual() * up                # [pixels] Direction-
-    return rays / rays.antinorm()
-
-
-def nearest_angle(coefficients: list[Scalar]) -> np.ndarray:
-    """Smallest positive angle of a great-circle hit, or inf on a miss.
-
-    The coefficients are the ascending ones of a polynomial in `u = np.tan(t / 2)`. The reversed
-    polynomial is solved, for `r = 1 / u`; each real root maps to `t = 2 * np.arctan2(1, r)`
-    between 0 and `2 * np.pi`, so hits past the antipode (`r < 0`) and at it (`r == 0`) are
-    ordered along the whole circle.
-    """
-    c = np.stack(np.broadcast_arrays(*(c.to_array() for c in coefficients)), axis=-1)
-    degree = c.shape[-1] - 1
-    companion = np.zeros(c.shape[:-1] + (degree, degree))
-    companion[..., 1:, :-1] = np.eye(degree - 1)
-    companion[..., :, -1] = -c[..., degree:0:-1] / c[..., :1]
-    roots = np.linalg.eigvals(companion)
-    angles = 2 * np.arctan2(1.0, roots.real)
-    # Near-double roots come back with round-off imaginary parts; they are grazing hits.
-    real = np.abs(roots.imag) <= 1e-6 * (1 + np.abs(roots.real))
-    return np.where(real, angles, np.inf).min(axis=-1)
-
-
-# --- shapes ---------------------------------------------------------------------------
-def cylinder(tube: np.ndarray) -> Quadric:
-    """All points at angle `tube` from the great circle in the xy plane: `z ** 2 + w ** 2 == np.sin(tube) ** 2`."""
-    return mv.z * (mv.z & Point) + mv.w * (mv.w & Point) - np.sin(tube) ** 2 * mv.e * (mv.e & Point)
-
-
-def cone(opening: float) -> Quadric:
-    """The cone with vertex z, its axis towards x and half-opening `opening`; its geodesics from z
-    meet again at -z, its second vertex."""
-    return mv.x * (mv.x & Point) + np.cos(opening) ** 2 * (mv.z * (mv.z & Point) - mv.e * (mv.e & Point))
+# Joining w with a tangent direction d spans the R⁴ rotation plane whose dual generates the great-circle ray.
+ray_rotation = 0.5 * (mv.w.dual() & Direction).dual()                          # [] Bivector+ <- Direction-
+ray_linear = ray_rotation.commutator(origin) * 2                               # [] Point- <- Direction-
+ray_quadratic = ray_rotation.commutator(ray_linear) * 2                        # [] Point- <- (Direction-, Direction-)
+# Clearing 1 + u**2 in u = tan(t / 2) turns the great circle into a parabola whose u**2 bend is the antipode.
+ray_bend = ray_quadratic * 2 + origin * Direction.dot(Direction)               # [] Point- <- (Direction-, Direction-)
 
 
 # --- math -----------------------------------------------------------------------------
-def trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, np.ndarray]:
-    """Headlight facing, and the angle t of the nearest hit, per surface along the leading axis and per unit pixel
-    direction; t is inf on a miss.
+def cylinder_quadrics(tubes: np.ndarray) -> Quadric:
+    """Points at angular radius `tubes` from the `xy` great circle satisfy a spherical-cylinder
+    polarity map (`[...] Sphere+ <- Point-`)."""
+    return mv.z * (mv.z & Point) + mv.w * (mv.w & Point) - np.sin(tubes) ** 2 * mv.e * (mv.e & Point)
 
-    Facing is the cosine between the ray and the surface normal at the nearest hit.
-    """
-    # Zero on the surface:
-    form = Point & surfaces                                                 # [surfaces] Scalar+ <- (Point-, Point-)
 
-    # form(X, X) along X = origin + ray_linear(d) * 2 * u + ray_bend(d, d) * u ** 2, one form per power of u:
-    constant = form(origin, origin)
-    linear = 4 * form(origin, ray_linear)
-    quadratic = 4 * form(ray_linear, ray_linear) + 2 * form(origin, ray_bend)
-    cubic = 4 * form(ray_linear, ray_bend)
-    quartic = form(ray_bend, ray_bend)
-    angle = nearest_angle([constant[:, None], linear[:, None](pixels), quadratic[:, None](pixels, pixels),
-                           cubic[:, None](pixels, pixels, pixels), quartic[:, None](pixels, pixels, pixels, pixels)])
-    t = np.where(np.isfinite(angle), angle, 0.0)
-    hit = origin + ray_linear(pixels) * np.sin(t) + ray_quadratic(pixels, pixels) * (1 - np.cos(t))
-    velocity = ray_linear(pixels) * np.cos(t) + ray_quadratic(pixels, pixels) * np.sin(t)
+def cone_quadric(opening: float) -> Quadric:
+    """Geodesics leaving `z` and `-z` at half-opening `opening` around the `x` axis form a
+    two-vertex spherical cone (`[] Sphere+ <- Point-`)."""
+    return mv.x * (mv.x & Point) + np.cos(opening) ** 2 * (mv.z * (mv.z & Point) - mv.e * (mv.e & Point))
 
-    # At the hit the polar sphere is the tangent sphere; its length is that of the surface gradient.
-    polar = surfaces[:, None](hit)
-    return -(polar & velocity) / (polar | polar).abs().square_root(), angle
+
+def placement_motors(toward: Point, ahead: np.ndarray, tilt: np.ndarray) -> Motor:
+    """Motors (`[...] Motor+`) tilt about the `yw` plane and carry `toward` onto the point `ahead`
+    radians along `-x` in front of the eye."""
+    ahead_turn = (mv.wx * (ahead / 2)).exp()                                   # [...] Motor+
+    target = ahead_turn >> mv.w.dual()                                         # [...] Point-
+    onto_target = (1 + target * toward.inverse()).normalized()                 # [...] Motor+
+    tilting = (mv.yw * (tilt / 2)).exp()                                       # [...] Motor+
+    return onto_target * tilting
+
+
+def coordinate_rotation(angles: list[float]) -> Motor:
+    """Six coordinate-plane angles in `xy`, `xz`, `xw`, `yz`, `yw`, and `zw` compose into a
+    four-dimensional rotation (`[] Motor+`)."""
+    rotor = mv.rotor()                                                         # [] Motor+
+    for plane, angle in zip((mv.xy, mv.xz, mv.xw, mv.yz, mv.yw, mv.zw), angles):
+        step = (plane * angle).exp()                                           # [] Motor+
+        rotor = rotor * step                                                   # [] Motor+
+    return rotor
+
+
+def camera_view_motor(centre: Point, angles: list[float], ahead: float, yaw: float, pitch: float) -> Motor:
+    """Rotating by `angles`, carrying the rotated `centre` to `ahead` radians in front of the eye,
+    and yawing and pitching at `w` gives a view motor (`[] Motor+`)."""
+    body_turn = coordinate_rotation(angles)                                    # [] Motor+
+    ahead_turn = (mv.wx * (ahead / 2)).exp()                                   # [] Motor+
+    target = ahead_turn >> mv.w.dual()                                         # [] Point-
+    rotated_centre = body_turn >> centre                                       # [] Point-
+    carry = (1 + target * rotated_centre.inverse()).normalized()               # [] Motor+
+    yawing = (mv.xy * (yaw / 2)).exp()                                         # [] Motor+
+    pitching = (mv.xz * (pitch / 2)).exp()                                     # [] Motor+
+    return yawing * pitching * carry * body_turn
+
+
+def flat_camera_motor(position: Direction, target: Direction) -> Motor:
+    """Inverting the pose of a pinhole camera at `position` aimed at `target` brings the flat
+    chart's camera onto the eye at `w` looking along `-x` (`[] Motor+`)."""
+    sight = target - position                                                  # [] Direction-
+    forward = sight / sight.antinorm()                                         # [] Direction-
+    upright = mv.z.dual() - (mv.z.dual() | forward) * forward.inverse()        # [] Direction-
+    up = upright / upright.antinorm()                                          # [] Direction-
+    aim = (1 + forward * (-mv.x.dual()).inverse()).normalized()                # [] Motor+
+    aimed_up = aim >> mv.z.dual()                                              # [] Direction-
+    roll = (1 + up * aimed_up.inverse()).normalized()                          # [] Motor+
+    translation = ((antipode & position).dual() * (-1 / 2)).exp()              # [] Motor+
+    return (translation * roll * aim).inverse()
+
+
+def surface_trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, Scalar]:
+    """Tracing `surfaces` along unit `pixels` gives the headlight cosine and nearest hit angle
+    (`[...] Scalar+`, `[...] Scalar+`), with `inf` on a miss."""
+    form = Point & surfaces                                                    # [...] Scalar+ <- (Point-, Point-)
+
+    # Evaluating form(X, X) along the parabolic ray collects five direction maps, one per power of u = tan(t / 2).
+    constant = form(origin, origin)                                            # [...] Scalar+
+    linear = 4 * form(origin, ray_linear)                                      # [...] Scalar+ <- Direction-
+    quadratic = 4 * form(ray_linear, ray_linear) + 2 * form(origin, ray_bend)  # [...] Scalar+ <- (Direction-, Direction-)
+    cubic = 4 * form(ray_linear, ray_bend)                                     # [...] Scalar+ <- (Direction-, Direction-, Direction-)
+    quartic = form(ray_bend, ray_bend)                                         # [...] Scalar+ <- (Direction-, Direction-, Direction-, Direction-)
+
+    angles = nearest_hit_angles([
+        constant[:, None],
+        linear[:, None](pixels),
+        quadratic[:, None](pixels, pixels),
+        cubic[:, None](pixels, pixels, pixels),
+        quartic[:, None](pixels, pixels, pixels, pixels),
+    ])                                                                         # [...] Scalar+
+    clamped = angles.clip(0.0, 2 * np.pi)                                      # [...] Scalar+
+    hits = (origin + ray_linear(pixels) * clamped.sin()
+            + ray_quadratic(pixels, pixels) * (1 - clamped.cos()))             # [...] Point-
+    velocities = (ray_linear(pixels) * clamped.cos()
+                  + ray_quadratic(pixels, pixels) * clamped.sin())             # [...] Point-
+
+    # The polar sphere at a surface point is tangent there, and its reverse norm scales with the surface gradient.
+    polars = surfaces[:, None](hits)                                           # [...] Sphere+
+    facings = -(polars & velocities) / (polars | polars).abs().square_root()   # [...] Scalar+
+    return facings, angles
+
+
+def vortex_states(torus_surface: Quadric, circle: Bivector, pixels: Direction,
+                  n_frames: int) -> Iterator[tuple[Scalar, Scalar]]:
+    """Yields `(facings, angles)` (`[1, ...] Scalar+`) as `torus_surface` flows once around unit
+    bivector `circle` over `n_frames` frames."""
+    phases = np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False)
+    flows = (circle * (phases / 2)).exp()                                      # [n_frames] Motor+
+    for surface in flows >> torus_surface(flows << Point):
+        yield surface_trace(surface.reshape(1), pixels)
+
+
+def linked_vortex_states(cyclide_surface: Quadric, ring_surface: Quadric, circle: Bivector,
+                         camera: Motor, pixels: Direction, n_frames: int) -> Iterator[tuple[Scalar, Scalar]]:
+    """Yields `(facings, angles)` (`[2, ...] Scalar+`) as `cyclide_surface` flows once around unit
+    bivector `circle` linked with static `ring_surface` over `n_frames` frames."""
+    placed_ring = (camera >> ring_surface(camera << Point)).reshape(1)         # [1] Sphere+ <- Point-
+    ring_facing, ring_angle = surface_trace(placed_ring, pixels)               # [1, ...] Scalar+, [1, ...] Scalar+
+    phases = np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False)
+    flows = (circle * (phases / 2)).exp()                                      # [n_frames] Motor+
+    for motion in camera * flows:
+        placed_cyclide = (motion >> cyclide_surface(motion << Point)).reshape(1)  # [1] Sphere+ <- Point-
+        facing, angle = surface_trace(placed_cyclide, pixels)                  # [1, ...] Scalar+, [1, ...] Scalar+
+        yield concatenate([facing, ring_facing]).abs(), concatenate([angle, ring_angle])
+
+
+# --- plumbing -------------------------------------------------------------------------
+def sensor_directions(image_shape: tuple[int, int], fov: float) -> Direction:
+    """Unit pixel directions (`[...] Direction-`) at the eye look along `-x` with `z` up in
+    row-major order."""
+    right, up = pixel_offsets(image_shape, fov)
+    rays = -mv.x.dual() + mv.y.dual() * right + mv.z.dual() * up               # [...] Direction-
+    return rays / rays.antinorm()

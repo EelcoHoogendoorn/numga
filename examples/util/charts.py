@@ -1,11 +1,13 @@
-"""The one style of the examples' charts: curves of a quantity against a parameter, drawn at fixed pixels.
+"""Matplotlib charts across the examples share a single pixel typography and stroke weight calibrated
+to a notebook column `DESIGN_WIDTH` (`800` pixels) wide.
 
-A chart is drawn for a notebook column DESIGN_WIDTH pixels wide, and shown at its own width's share of that column,
-so that its text keeps one size on the page whatever the chart's size. At DPI pixels an inch, the text is a fixed
-number of pixels tall: TEXT_PX for labels, legends, titles and annotations, TICK_PX for tick labels; curves, markers
-and frames have fixed pixel widths too. A chart takes its width from its content, from a third of the column to all
-of it, and never more; its height from its content too. A draw function runs under `style()` and builds its figure
-with `subplots`, and never sets a dpi or a font size of its own.
+At `DPI` (`100` pixels per inch), font heights (`TEXT_PX` for labels, titles, legends, and
+annotations; `TICK_PX` for tick labels) and stroke, marker, and frame widths convert to fixed
+matplotlib point sizes. Each chart chooses its own pixel width and height from its content, between a
+third of the column and the full column, and notebook display scales every saved image to
+`width_px / DESIGN_WIDTH` of the column so text and line weights appear uniform across figures.
+Drawing functions run inside `style()` and allocate figures with `subplots(width_px, height_px)`
+rather than overriding `dpi` or font sizes locally.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from __future__ import annotations
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-# The width in pixels of the notebook column a picture is designed for.
+# Design width in pixels of the notebook column against which figures are scaled.
 DESIGN_WIDTH = 800
 DPI = 100
 TEXT_PX, TICK_PX = 13, 11
@@ -21,11 +23,11 @@ LINE_PX, MARKER_PX, FRAME_PX = 1.5, 5, 1
 
 
 def points(pixels: float) -> float:
-    """A size in pixels as matplotlib's points, at DPI pixels an inch."""
+    """Pixel sizes convert to matplotlib points (`72` per inch) at `DPI` pixels per inch."""
     return pixels * 72 / DPI
 
 
-# Line widths, marker sizes and font sizes are given to matplotlib in points.
+# Matplotlib rc parameters take font sizes, line widths, and marker sizes in points.
 LINE_WIDTH, MARKER_SIZE, FRAME_WIDTH = points(LINE_PX), points(MARKER_PX), points(FRAME_PX)
 RC = {
     "figure.dpi": DPI,
@@ -56,11 +58,12 @@ RC = {
 
 
 def style():
-    """The charts' settings, as a context or a decorator: matplotlib reads them as each artist is made, so a draw
-    function runs under them from start to end."""
+    """Matplotlib reads `RC` as each artist is created, so wrapping a drawing function in this
+    context manager or decorator applies the shared typography and stroke widths throughout."""
     return mpl.rc_context(RC)
 
 
 def subplots(width_px: int, height_px: int, **options) -> tuple[plt.Figure, object]:
-    """A figure `width_px` by `height_px` pixels at DPI, with `plt.subplots`' grid of axes and options."""
+    """Figure dimensions `width_px` and `height_px` divide by `DPI` to size a `plt.subplots` figure
+    and axes grid in exact pixels."""
     return plt.subplots(figsize=(width_px / DPI, height_px / DPI), dpi=DPI, **options)

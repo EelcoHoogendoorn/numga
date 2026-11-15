@@ -1,8 +1,8 @@
-"""Drawing for quadric physics on S² and S³."""
+"""Implicit front-hemisphere painting, tumbling-rate charts, and 3-sphere ray-traced animations for spherical quadric bodies."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -11,87 +11,91 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from numga.algebras import Spherical3D
+from numga.wgsl import Shader, supersampled
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
-from examples.quadrics.s3_raytracer.render import picture as trace
+from examples.quadrics.s3_raytracer.render import picture as trace_s3
 from examples.util import charts
-from examples.util.wgsl import Shader, image_figure, show_pixels, supersampled
+from examples.util.panels import image_figure, show_pixels
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
 
 background_colour, disk_colour, rim_colour = "#0a0f1d", "#111827", "#334155"
-# Where the disk's rim begins: the squared distance from its centre, in its radii, past which a pixel is rim.
+# Squared screen radius beyond which pixels inside the unit disk belong to the sphere's rim.
 rim_start = 0.985
-# The planes x, y and z of S²'s space: a point of S² is the dual of their sum weighted by its unit coordinates.
-axes = stack((S2.mv.x, S2.mv.y, S2.mv.z))                                     # [3] Plane+
-# The direction toward the viewer, who looks along -z.
-toward_viewer = S2.mv.z.dual()                                                # [] Point-
-# The colour of the pixels inside a body painted on the CPU, the pixels across a painting, on the CPU or the GPU, and
-# the samples along each side of a pixel on the CPU.
+axes = stack((S2.mv.x, S2.mv.y, S2.mv.z))                                       # [3] Plane+
+toward_viewer = S2.mv.z.dual()                                                  # [] Point-
 inside_colour = "#38bdf8"
-painted, samples_per_side = 240, 2
+painted_resolution, samples_per_side = 240, 2
 
 
-# --- the front hemisphere of S² -------------------------------------------------------
-def hemisphere(size: int) -> tuple[S2.Point, np.ndarray, np.ndarray]:
-    """The points of S² on the front hemisphere seen along z under the samples of a size by size grid inside the unit
-    disk, each its place across the disk lifted toward the viewer onto the sphere, as the shader builds it; the disk
-    mask, and which of the disk's samples form its rim."""
-    steps = np.linspace(-1.0, 1.0, size)
-    # Across to the right along the columns, up along the rows from the top.
-    across = S2.mv.x.dual() * steps[None, :] + S2.mv.y.dual() * steps[::-1, None]   # [rows, columns] Point-
-    inside = across.scalar_norm_squared() <= 1.0                                  # [rows, columns]
-    disk = across[inside]                                                         # [pixels] Point-
-    squared_distance = disk.scalar_norm_squared()                                 # [pixels] Scalar+
-    return disk + toward_viewer * (1 - squared_distance).square_root(), inside, squared_distance > rim_start
+# --- front hemisphere of the 2-sphere -------------------------------------------------
+def hemisphere(n_grid: int) -> tuple[S2.Point, np.ndarray, np.ndarray]:
+    """Orthographic screen samples on an `n_grid` by `n_grid` square lift inside the unit disk to front-hemisphere points (`[...] Point-`), the disk mask (`[n_grid, n_grid]`), and the rim mask."""
+    steps = np.linspace(-1.0, 1.0, n_grid)
+    across = S2.mv.x.dual() * steps[None, :] + S2.mv.y.dual() * steps[::-1, None]  # [n_grid, n_grid] Point-
+    inside = across.scalar_norm_squared() <= 1.0                                # [n_grid, n_grid]
+    disk = across[inside]                                                       # [...] Point-
+    squared_distance = disk.scalar_norm_squared()                               # [...] Scalar+
+    points = disk + toward_viewer * (1 - squared_distance).square_root()        # [...] Point-
+    return points, inside, squared_distance > rim_start
 
 
 def hemisphere_points() -> S2.Point:
-    """The points of S² on the front hemisphere under the samples of `draw_inside`'s painting, inside its disk."""
-    points, _, _ = hemisphere(painted * samples_per_side)
-    return points                                                                 # [pixels] Point-
+    """Supersampled orthographic points (`[...] Point-`) cover the front hemisphere inside the painted disk."""
+    points, _, _ = hemisphere(painted_resolution * samples_per_side)
+    return points                                                               # [...] Point-
 
 
-def paint(coverage: np.ndarray, colors: np.ndarray, inside: np.ndarray, rim: np.ndarray, supersample: int) -> np.ndarray:
-    """An RGB image of the disk: each pixel takes the colour of the last body covering it.
-    coverage is (bodies, pixels) boolean; the image is box-filtered by the supersampling."""
+def painted_disk(
+    coverage: np.ndarray,
+    colors: np.ndarray,
+    inside: np.ndarray,
+    rim: np.ndarray,
+    supersample: int,
+) -> np.ndarray:
+    """Boolean `coverage` (`[n_bodies, n_samples]`) and RGB `colors` (`[n_bodies, 3]`) box-average by `supersample` into a `[n_pixels, n_pixels, 3]` `uint8` disk image."""
     covered = coverage.any(axis=0)
     last = coverage.shape[0] - 1 - coverage[::-1].argmax(axis=0)
-    disk = np.where(covered[:, None], colors[last], np.where(rim[:, None], to_rgb(rim_colour), to_rgb(disk_colour)))
+    disk = np.where(
+        covered[:, None],
+        colors[last],
+        np.where(rim[:, None], to_rgb(rim_colour), to_rgb(disk_colour)),
+    )
     image = np.empty(inside.shape + (3,))
     image[:] = to_rgb(background_colour)
     image[inside] = disk
-    size = inside.shape[0] // supersample
-    image = image.reshape(size, supersample, size, supersample, 3).mean(axis=(1, 3))
-    return (image * 255.0).round().astype(np.uint8)
+    n_pixels = inside.shape[0] // supersample
+    averaged = image.reshape(n_pixels, supersample, n_pixels, supersample, 3).mean(axis=(1, 3))
+    return (averaged * 255.0).round().astype(np.uint8)
 
 
-def picture(image: np.ndarray) -> plt.Figure:
-    """A painted image of the hemisphere as a figure, at its own size."""
-    height, width = image.shape[:2]
-    figure = plt.figure(figsize=(width / 100, height / 100), dpi=100)
+def hemisphere_figure(image: np.ndarray) -> plt.Figure:
+    """Borderless `100`-dpi figure displaying `image` pixel for pixel without resampling."""
+    n_rows, n_columns = image.shape[:2]
+    figure = plt.figure(figsize=(n_columns / 100, n_rows / 100), dpi=100)
     show_pixels(figure.add_axes((0, 0, 1, 1)), image)
     return figure
 
 
-def draw_inside(inside: np.ndarray) -> plt.Figure:
-    """The front hemisphere painted on the CPU, the samples of `hemisphere_points` inside a body in `inside_colour`."""
-    _, disk, rim = hemisphere(painted * samples_per_side)
-    return picture(paint(inside[None], rgb([inside_colour]), disk, rim, samples_per_side))
+def inside_figure(inside: np.ndarray) -> plt.Figure:
+    """Boolean `inside` samples (`[n_samples]`) on `hemisphere_points()` render on the CPU as a front-hemisphere figure."""
+    _, disk, rim = hemisphere(painted_resolution * samples_per_side)
+    return hemisphere_figure(painted_disk(inside[None], rgb_colors([inside_colour]), disk, rim, samples_per_side))
 
 
-def rgb(colors: list[str]) -> np.ndarray:
-    """RGB rows (bodies, 3) of matplotlib colour names."""
+def rgb_colors(colors: list[str]) -> np.ndarray:
+    """Matplotlib colour strings convert to `[n_bodies, 3]` float RGB rows."""
     return np.array([to_rgb(color) for color in colors])
 
 
-def hues(fractions: np.ndarray) -> np.ndarray:
-    """RGB rows (bodies, 3) around the hue circle."""
+def hue_colors(fractions: np.ndarray) -> np.ndarray:
+    """Unit hue `fractions` (`[n_bodies]`) map around the HSV colour wheel into `[n_bodies, 3]` float RGB rows."""
     return plt.get_cmap("hsv")(fractions)[:, :3]
 
 
-# --- S² -------------------------------------------------------------------------------
+# --- WebGPU painting and tumbling chart on the 2-sphere -------------------------------
 source = """
 var<storage, read> quadrics: array<Quadric>;
 var<storage, read> colours: array<vec3<f32>>;
@@ -108,7 +112,7 @@ fn sample(place: vec2<f32>) -> Sample {
     if (squared > rim_start) {
         return rim;
     }
-    // The point of S² under the sample, on the front hemisphere: the dual of its unit vector.
+    // Lift the screen sample to its unit antivector on the front hemisphere.
     let point = foot + toward * sqrt(1 - squared);
     var colour = disk;
     for (var body = 0u; body < arrayLength(&quadrics); body++) {
@@ -122,61 +126,85 @@ fn sample(place: vec2<f32>) -> Sample {
 
 
 @cache
-def shader() -> Shader:
-    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric),
-                  dict(axes=axes, toward=axes[2].dual(), rim_start=rim_start, disk=to_rgb(disk_colour), rim=to_rgb(rim_colour), background=to_rgb(background_colour)))
+def hemisphere_shader() -> Shader:
+    """Compiles and caches the supersampled WebGPU shader that paints spherical quadrics on the front hemisphere."""
+    return Shader(
+        supersampled() + source,
+        S2.ga,
+        dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric),
+        dict(
+            axes=axes,
+            toward=axes[2].dual(),
+            rim_start=rim_start,
+            disk=to_rgb(disk_colour),
+            rim=to_rgb(rim_colour),
+            background=to_rgb(background_colour),
+        ),
+    )
 
 
-def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> Iterator[np.ndarray]:
-    """One frame per row of world forms, painted on the GPU, `resolution` pixels across: a sample of the front
-    hemisphere is a point of S², and it belongs to the last body whose primal form is negative there, as `paint`
-    paints on the CPU. The spherical quadric is a cone through the origin, so the front hemisphere already shows both
-    halves."""
-    painter = shader()
-    for bodies in surfaces:
-        image = painter((resolution, resolution), quadrics=bodies, colours=colors)["image"]
-        yield np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+def hemisphere_image(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> np.ndarray:
+    """World-frame primal `surfaces` (`[n_bodies] Plane+ <- Point-`) paint on the GPU into a `[resolution, resolution, 3]` `uint8` RGB image."""
+    image = hemisphere_shader()((resolution, resolution), quadrics=surfaces, colours=colors)["image"]
+    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
 
 
-def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray) -> np.ndarray:
-    """The bodies' world forms painted as `hemisphere_frames` paints them, as many pixels across as the CPU's
-    painting."""
-    return next(hemisphere_frames(bodies[None], colors, painted))
+def contact_figure(surfaces: S2.Quadric, colors: np.ndarray) -> plt.Figure:
+    """World-frame primal `surfaces` (`[n_bodies] Plane+ <- Point-`) render at `painted_resolution` inside a borderless hemisphere figure."""
+    return hemisphere_figure(hemisphere_image(surfaces, colors, painted_resolution))
+
+
+def s2_animation(
+    forms: S2.Quadric,
+    colors: np.ndarray,
+    resolution: int,
+    states: Iterable[tuple],
+) -> Iterator[np.ndarray]:
+    """Yields one `[resolution, resolution, 3]` `uint8` RGB frame per `(motors, ...)` state by placing `forms` in the world frame."""
+    for state in states:
+        surfaces = S2.world_quadrics(state[0], forms)                           # [n_bodies] Plane+ <- Point-
+        yield hemisphere_image(surfaces, colors, resolution)
 
 
 @charts.style()
-def draw_tumbling(trajectory: S2.Trajectory, dt: float) -> plt.Figure:
-    """The tumbling oval's rate in each of its body's planes against time: the spin in the intermediate plane flips
-    over and back, periodically, while the others swing through zero."""
-    # The rate's turning in each of the body's planes, read by pairing it with the plane's patch.
-    patches = stack((S2.mv.yz, S2.mv.zx, S2.mv.xy)).dual()                   # [3] Vector-
-    rate = (trajectory.rate[:, 0, None] & patches).to_array()                 # [steps, 3]
-    time = np.arange(rate.shape[0]) * dt
-    # Over half the column: three curves along the run, for the flips to stand apart, under a legend of three.
+def tumbling_figure(rates: S2.Rate, dt: float) -> plt.Figure:
+    """Body-frame `rates` (`[n_frames] Rate+`) paired with the three coordinate turning patches plot the intermediate-axis reversals against time."""
+    n_frames = rates.shape[0]
+    patches = stack((S2.mv.yz, S2.mv.zx, S2.mv.xy)).dual()                      # [3] Point-
+    spin_components = (rates[:, None] & patches).to_array()                     # [n_frames, 3]
+    times = np.arange(n_frames) * dt
     figure, ax = charts.subplots(520, 220, layout="constrained")
-    for spin, colour, name in zip(rate.T, ("#0284c7", "#e11d48", "#d97706"),
-                                  ("in yz, the intermediate plane", "in zx", "in xy")):
-        ax.plot(time, spin, color=colour, label=name)
-    # The rates against their zero, without numbers; the legend above, clear of the curves.
+    for spin, colour, label in zip(
+        spin_components.T,
+        ("#0284c7", "#e11d48", "#d97706"),
+        ("yz (intermediate)", "zx", "xy"),
+    ):
+        ax.plot(times, spin, color=colour)
+        ax.text(times[-1], spin[-1], f" {label}", color=colour, va="center")
     ax.axhline(0, color="0.3", linewidth=charts.FRAME_WIDTH)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.set(xlim=(time[0], time[-1]), xticks=[], yticks=[], xlabel="time", ylabel="body rate")
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False)
+    ax.set(xlim=(times[0], times[-1] * 1.28), xticks=[0, round(float(times[-1]), 1)], yticks=[0], xlabel="time", ylabel="body rate")
     return figure
 
 
-# --- S³ -------------------------------------------------------------------------------
-# A wide pinhole view from the eye.
+# --- ray tracing on the 3-sphere ------------------------------------------------------
 field_of_view = np.radians(120.0)
 
 
-def s3_frames(trajectory: S3.Trajectory, colors: np.ndarray, eye: S3.Motor, light: S3.Point,
-              shape: tuple[int, int]) -> Iterator[np.ndarray]:
-    """Every frame traced from the eye along great circles, each ellipsoid lit by the light."""
-    for surfaces in trajectory.surfaces:
-        yield trace(eye, surfaces, colors, light, field_of_view, shape)
+def s3_animation(
+    forms: S3.Quadric,
+    colors: np.ndarray,
+    eye_frame: S3.Motor,
+    light: S3.Point,
+    shape: tuple[int, int],
+    states: Iterable[tuple],
+) -> Iterator[np.ndarray]:
+    """Yields one `[n_rows, n_columns, 3]` `uint8` RGB frame per `(motors, ...)` state traced along great circles of the 3-sphere."""
+    for state in states:
+        surfaces = S3.world_quadrics(state[0], forms)                           # [n_bodies] Plane+ <- Point-
+        yield trace_s3(eye_frame, surfaces, colors, light, field_of_view, shape)
 
 
-def draw_last_frame(frames: list[np.ndarray]) -> plt.Figure:
-    """The last frame, as it was traced."""
-    return image_figure(frames[-1])
+def frame_figure(image: np.ndarray) -> plt.Figure:
+    """Wraps a ray-traced RGB `image` (`[n_rows, n_columns, 3]`) in a borderless figure."""
+    return image_figure(image)

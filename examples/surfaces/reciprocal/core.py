@@ -1,77 +1,75 @@
-"""A planar mesh lifted by heights at its vertices, the stresses its creases carry, and its reciprocal diagram.
+"""A planar triangulation lifted by vertex heights into a polyhedral terrain, its bar stresses, and its reciprocal diagram.
 
-Heights at the vertices of a planar triangle mesh lift it to a polyhedral terrain, a piecewise linear Airy
-stress function. The vertices are points, antivectors, intrinsic like all geometry. Each face is a plane, a
-vector, and its height at a point is their pairing, `height = plane & (point + up)`, the point lifted to unit
-height; the plane is linear in the heights: the corners' heights times the reciprocal frame of the corners
-lifted to unit height, the meets of the corners in pairs over the meet of all three. Across an interior edge
-the terrain creases, and the crease is a bar of the planar truss: the jump in slope, over the edge's length, is
-its stress, positive in tension where the terrain is convex. The slopes of the faces are the vertices of the
-reciprocal diagram, and the jump across each edge is its reciprocal edge, perpendicular to the bar and as long
-as the bar's force. Every interior vertex is in equilibrium; the boundary carries the loads. Lifted onto the
-paraboloid, the reciprocal diagram is the Voronoi diagram and the stresses are the cotangent weights.
+Vertex heights lift a planar triangulation into a polyhedral terrain that serves as a piecewise-linear Airy stress function. Vertices are intrinsic `Point-` antivectors and each terrain face is an extrinsic `Plane+` vector whose pairing `plane & (point + up)` with a point lifted to unit height reads the height there. Because the three simplex gradients of a triangle's lifted corners pair to one with their own corner and to zero with the opposite two, the face plane is linear in the corner heights. Across each interior edge the terrain creases along a bar of the planar truss, and the slope jump per unit bar length gives the bar stress, positive in tension where the crease bends convex. The face slopes form the vertices of the reciprocal diagram, whose edges cross the bars perpendicularly with lengths equal to the bar forces so every interior vertex stays in equilibrium while the boundary carries the external loads. Lifted onto the paraboloid, the reciprocal diagram becomes the Voronoi diagram and the bar stresses equal the cotangent weights.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
-from examples.util.topology import Topology
+from numga.topology import Topology
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
-# A face of the terrain is a plane, a vector; the vertices are points, antivectors.
+# Each terrain face is an extrinsic plane vector, and each vertex is an intrinsic point antivector.
 Plane = ga.gatype.vector()                          # Vector+
 Point = ga.gatype.antivector()                      # Antivector-
-# The point one unit above the origin: added to a point of the plane, it lifts it to unit height.
+# Unit upward point offset that lifts planar points to unit height.
 up = mv.z.dual()                                    # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def slopes(topology: Topology, points: Point, heights: Scalar) -> Plane:
-    """The plane of each face of the terrain, through its corners at their heights, pairs with a point lifted
-    to unit height, `point + up`, to the height there: it holds the slope across the plane and the height at
-    the origin. It is the corners' heights times the reciprocal frame of the corners lifted to unit height, the
-    three planes pairing to one with their own corner and to nothing with the other two, so it is linear in the
-    heights."""
-    lifted = points + up                                                       # Point-[vertices]
-    corners = topology.incidence[2, 0] * lifted                                # [corners] Point-[faces]
-    tails, heads = topology.incidence[1, 0] * lifted                           # Point-[edges], Point-[edges]
-    # Two corners meet in a vector that pairs to nothing with either; over the meet of all three, it pairs
-    # to one with the third.
-    frame = (topology.boundary[2, 1] * (tails & heads)) / (corners[0] & corners[1] & corners[2])  # [corners] Plane+[faces]
-    # The heights at each face's corners, on the last axis.
-    corner_heights = topology.incidence[2, 0] * heights[..., None]             # [..., corners] Scalar+[faces]
-    return (frame * corner_heights).sum(axis=-1)                               # [...] Plane+[faces]
+def face_planes(topology: Topology, points: Point, heights: Scalar) -> Plane:
+    """The plane of each triangle face (`[...] Plane+[F]`) passes through its corners at `heights` (`[...] Scalar+[V]`) and pairs with `point + up` to the terrain height there."""
+    lifted = points + up                                                       # Point-[V]
+    corners = topology.incidence[2, 0] * lifted                                # [3] Point-[F]
+    facing = topology.off[2, 0] * lifted                                       # [2] Point-[F]
+    # Joining the two opposite corners gives the plane through them and the origin; dividing by its pairing with the third corner normalizes each simplex gradient to one there.
+    sides = facing[0] & facing[1]                                              # [3] Plane+[F]
+    gradients = sides / (sides & corners)                                      # [3] Plane+[F]
+    corner_heights = topology.incidence[2, 0] * heights[..., None]             # [..., 3] Scalar+[F]
+    return (gradients * corner_heights).sum(axis=-1)                           # [...] Plane+[F]
 
 
-def stresses(topology: Topology, points: Point, heights: Scalar) -> Scalar:
-    """The stress of each interior edge is the jump in slope between the faces on either side, measured towards
-    the corner across the edge, over the edge's length; it is positive in tension, where the terrain bends
-    convex. Which face is called left does not matter: swapping them turns both the jump and the side the
-    corner lies on."""
-    inner = topology.reading(topology.interior[1], 1)                          # Scalar+[inner <- edges]
-    # The faces' planes summed back onto their edges, each signed as its face runs along the edge: the plane of
-    # the face on the left less that of the face on the right.
-    jump = (inner * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
-    # Each bar from its tail to its head.
-    tails, heads = (inner * (topology.incidence[1, 0] * points)).batch()       # [inner] Point-, [inner] Point-
-    bars = heads - tails                                                       # [inner] Point-
-    # The corner across each edge in the face on its right, as its offset square to the bar.
-    far = (topology.reading(topology.facet_opposites[:, 1], 0) * points).batch()  # [inner] Point-
-    corner = far - tails                                                       # [inner] Point-
-    across = corner - bars * ((bars | corner) / (bars | bars))                 # [inner] Point-
-    # The jump in slope paired with that offset: how much faster the terrain rises across the bar.
-    return -(jump & across) / (across.norm() * bars.norm())                    # [..., inner] Scalar+
+def bar_stresses(topology: Topology, points: Point, heights: Scalar) -> Scalar:
+    """The axial stress on each interior bar (`[...] Scalar+[E_interior]`) equals the slope jump between its adjacent faces per unit bar length, positive in tension where the crease bends convex."""
+    interior = topology.reading(topology.interior[1], 1)                       # Scalar+[E_interior <- E]
+    # Pulling face planes back onto interior edges subtracts the right-hand face plane from the left-hand face plane along each oriented bar.
+    jumps = interior * (topology.d[1].adjugate() * face_planes(topology, points, heights))  # [...] Plane+[E_interior]
+    bars = interior * (topology.d[0] * points)                                 # Point-[E_interior]
+    tails = (interior * (topology.incidence[1, 0] * points))[0]                # Point-[E_interior]
+    # Project out the component along the bar to isolate the perpendicular offset toward the opposite right-hand corner.
+    far_corners = topology.reading(topology.facet_opposites[:, 1], 0) * points  # Point-[E_interior]
+    offsets = far_corners - tails                                              # Point-[E_interior]
+    transverse = offsets - bars * ((bars | offsets) / (bars | bars))           # Point-[E_interior]
+    return -(jumps & transverse) / (transverse.antinorm() * bars.antinorm())   # [...] Scalar+[E_interior]
 
 
-def folds(topology: Topology, points: Point, heights: Scalar) -> Scalar:
-    """The corner across each interior edge on its right lies above the plane of the face on its left by its
-    fold, positive where the terrain bends convex."""
-    # The plane of the face on the right passes through that corner at its height, so the fold is the jump from
-    # the plane on the left to it, read at the corner lifted to unit height.
-    jump = (topology.reading(topology.interior[1], 1) * (~topology.d[1] * slopes(topology, points, heights))).batch()  # [..., inner] Plane+
-    lifted = (topology.reading(topology.facet_opposites[:, 1], 0) * (points + up)).batch()  # [inner] Point-
-    return -(jump & lifted)                                                    # [..., inner] Scalar+
+def edge_folds(topology: Topology, points: Point, heights: Scalar) -> Scalar:
+    """The vertical fold across each interior edge (`[...] Scalar+[E_interior]`) measures how far the opposite right-hand corner rises above the left-hand face plane."""
+    interior = topology.reading(topology.interior[1], 1)                       # Scalar+[E_interior <- E]
+    # Because the right-hand face plane passes through that opposite corner at its lifted height, pairing the slope jump at unit height reads the vertical clearance directly.
+    jumps = interior * (topology.d[1].adjugate() * face_planes(topology, points, heights))  # [...] Plane+[E_interior]
+    lifted_corners = topology.reading(topology.facet_opposites[:, 1], 0) * (points + up)    # Point-[E_interior]
+    return -(jumps & lifted_corners)                                           # [...] Scalar+[E_interior]
+
+
+def breathing_states(
+    topology: Topology,
+    points: Point,
+    base_heights: Scalar,
+    phases: np.ndarray,
+    amplitude: float,
+    n_frames: int,
+) -> Iterator[tuple[Scalar, Scalar, Plane]]:
+    """Yields `(heights, stresses, dual_vertices)` (`(Scalar+[V], Scalar+[E_interior], Plane+[F])`) across `n_frames` frames of one harmonic oscillation around `base_heights`."""
+    for step in range(n_frames):
+        angle = 2 * np.pi * step / n_frames
+        heights = base_heights + mv.scalar((amplitude * np.sin(angle + phases))[:, None]).field()  # Scalar+[V]
+        stresses = bar_stresses(topology, points, heights)                                         # Scalar+[E_interior]
+        dual_vertices = (face_planes(topology, points, heights) ^ mv.z) * mv.z                     # Plane+[F]
+        yield heights, stresses, dual_vertices

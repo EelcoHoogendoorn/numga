@@ -1,12 +1,11 @@
-"""Spherical conics in Cl(3): a quadratic cone through the origin, cut by the unit sphere.
+"""Spherical conics in 3D spherical geometric algebra as quadratic cones cut by the unit sphere.
 
-A polarity C maps each point of the sphere to its polar plane, and the conic is where a
-point lies on its own polar, P & C(P) == 0. The curve is a spherical ellipse: the sum of
-its geodesic distances to two foci is constant. Read through planes instead of points,
-the same curve is the envelope of its tangent great circles, the planes with
-plane & Q(plane) == 0 for the inverse Q, and the product of the sines of the foci's distances
-to those circles is constant. The level sets of P & C(P) are Poinsot's polhodes: the
-inertia quadric cut by the momentum sphere.
+A polarity maps each point of the sphere to its polar plane, and the conic is the locus where a
+point lies on its own polar, `conic(point) & point == 0`. On the sphere that locus is an ellipse
+with constant sum of geodesic distances to two foci. Read through tangent great circles instead
+of points, the dual polarity maps planes to points with `plane & dual(plane) == 0`, and the
+product of the sines of the foci's distances to the tangent circles is constant. Across the whole
+sphere, the level sets of `conic(point) & point` are Poinsot's polhodes.
 """
 
 from __future__ import annotations
@@ -21,46 +20,50 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()                         # Scalar+
-# Points on yz, zx, xy: the poles of the planes x, y, z.
+# Points lie on yz, zx, xy as the poles of the coordinate planes x, y, z.
 Point = ga.gatype.antivector()                      # Antivector-
 Plane = ga.gatype.plane()                           # Vector+
 Rotor = ga.gatype.rotor()                           # Rotor+
-# The polarity maps a point to its polar plane, the dual polarity a plane to its pole.
+# A polarity maps a point to its polar plane; its dual maps a plane to its pole.
 Polarity = ga.gatype((Plane, Point))
 DualPolarity = ga.gatype((Point, Plane))
 
 
-def polarity(eigenvalues: np.ndarray) -> Polarity:
-    """The polarity with the given eigenvalues on the basis planes x, y and z is the sum of their weighted dyads."""
-    planes = stack([mv.x, mv.y, mv.z])                                         # [3] Plane+
-    return (planes * (planes & Point) * eigenvalues).sum(axis=0)
-
-
-def points(xyz: np.ndarray) -> Point:
-    """Points at `(..., 3)` coordinates lie on the basis points yz, zx and xy."""
-    return mv(Plane, xyz).dual()
-
-
-def sphere(longitudes: int, latitudes: int) -> Point:
-    """A longitude-latitude grid of points covers the unit sphere."""
-    phi, theta = np.meshgrid(np.linspace(0, 2 * np.pi, longitudes, endpoint=False), np.linspace(0, np.pi, latitudes))
-    # The pole xy turned toward x by the polar angle, then about z by the longitude.
-    return (mv.xy * (-phi / 2)).exp() * (mv.zx * (-theta / 2)).exp() >> points(np.array([0, 0, 1]))
-
-
 # --- math -----------------------------------------------------------------------------
-def oval(eigenvalues: np.ndarray, t: np.ndarray) -> tuple[Point, Point, float]:
-    """The spherical conic of a diagonal polarity with eigenvalues l1 > l2 > 0 > l3 has these points, its two foci,
-    and its semi-major arc."""
-    l1, l2, l3 = eigenvalues
-    # The cone meets the sphere above the ellipse x**2 / x0**2 + y**2 / y0**2 == 1 of the xy plane; its semi-axes
-    # as arcs, the semi-minor along x and the semi-major along y, and the focal arc along the major axis y.
-    x0 = np.sqrt(-l3 / (l1 - l3))
-    y0 = np.sqrt(-l3 / (l2 - l3))
-    theta_b = np.arcsin(x0)
-    theta_a = np.arcsin(y0)
-    theta_c = np.arccos(np.cos(theta_a) / np.cos(theta_b))
-    x, y = x0 * np.cos(t), y0 * np.sin(t)
-    curve = points(np.stack([x, y, np.sqrt(1.0 - x**2 - y**2)], axis=-1))      # [curve] Point-
-    foci = points(np.array([[0.0, np.sin(theta_c), np.cos(theta_c)], [0.0, -np.sin(theta_c), np.cos(theta_c)]]))   # [2] Point-
-    return curve, foci, theta_a
+def principal_polarity(eigenvalues: np.ndarray) -> Polarity:
+    """Weighted dyads of the coordinate planes form the diagonal polarity (`[] Plane+ <- Point-`)."""
+    planes = stack([mv.x, mv.y, mv.z])                                          # [3] Plane+
+    return (planes * (planes & Point) * eigenvalues).sum(axis=0)                # [] Plane+ <- Point-
+
+
+def conic_locus(principal: Polarity, azimuths: np.ndarray) -> tuple[Point, Point, Scalar]:
+    """Meridian rays around the negative-eigenvalue pole trace the spherical oval (`[...] Point-`), its two foci (`[2] Point-`), and its semi-major arc (`[] Scalar+`)."""
+    pole = mv.z.dual()                                                          # [] Point-
+    meridian_turns = (mv.xy * (-azimuths / 2)).exp()                            # [...] Rotor+
+    equator = meridian_turns >> mv.x.dual()                                     # [...] Point-
+    # Along `pole + equator * slopes`, cross terms vanish on principal axes so the cone cancels the pole and equator forms.
+    slopes = (-(principal(pole) & pole) / (principal(equator) & equator)).square_root()  # [...] Scalar+
+    oval_points = (pole + equator * slopes).normalized().retyped(Point)         # [...] Point-
+
+    # The minor and major vertices lie toward the x and y poles; their cosine ratio sets the focal arc along the major meridian.
+    equator_axes = stack([mv.x, mv.y]).dual()                                   # [2] Point-
+    axis_slopes = (-(principal(pole) & pole) / (principal(equator_axes) & equator_axes)).square_root()  # [2] Scalar+
+    minor_vertex, major_vertex = (pole + equator_axes * axis_slopes).normalized()  # [] Point-, [] Point-
+    semi_major = (pole.reverse() | major_vertex).arccos()                       # [] Scalar+
+    focal_arc = ((pole.reverse() | major_vertex) / (pole.reverse() | minor_vertex)).arccos()  # [] Scalar+
+    focal_turns = (mv.yz * (stack([focal_arc, -focal_arc]) / 2)).exp()          # [2] Rotor+
+    foci = (focal_turns >> pole).retyped(Point)                                 # [2] Point-
+    return oval_points, foci, semi_major
+
+
+# --- plumbing -------------------------------------------------------------------------
+def sphere_grid(n_longitudes: int, n_latitudes: int) -> Point:
+    """Longitude and latitude turns sweep a `[n_latitudes, n_longitudes] Point-` grid across the unit sphere."""
+    longitudes, latitudes = np.meshgrid(
+        np.linspace(0, 2 * np.pi, n_longitudes, endpoint=False),
+        np.linspace(0, np.pi, n_latitudes),
+    )
+    latitude_turns = (mv.zx * (-latitudes / 2)).exp()                           # [n_latitudes, n_longitudes] Rotor+
+    longitude_turns = (mv.xy * (-longitudes / 2)).exp()                         # [n_latitudes, n_longitudes] Rotor+
+    grid_turns = longitude_turns * latitude_turns                               # [n_latitudes, n_longitudes] Rotor+
+    return (grid_turns >> mv.z.dual()).retyped(Point)                           # [n_latitudes, n_longitudes] Point-

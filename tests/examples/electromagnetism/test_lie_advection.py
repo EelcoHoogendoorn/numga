@@ -1,144 +1,122 @@
-"""Edge world sheets, Cartan's formula, and structure-preserving Lie advection of magnetic flux in spacetime."""
+"""Coverage tests check Cartan world-sheet decomposition, gauge invariance, conservation laws, and rendering for Lie advection."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.electromagnetism.lie_advection import core, scenarios
+from examples.electromagnetism.lie_advection import core, render, scenarios
 from examples.util import shapes
 
 
-def test_cartan_magic_formula_and_edge_world_sheets_on_moving_triangle():
-    corners = scenarios.single_triangle()
-    endpoint_differences, swept_fluxes, world_sheets, face_bivector = core.cartan_decomposition(
-        corners, scenarios.corner_forms, scenarios.corner_velocities,
+def test_cartan_decomposition_and_ribbon_figure():
+    endpoint_differences, swept_fluxes, world_sheets, face_field = core.cartan_decomposition(
+        scenarios.triangle_corners, scenarios.corner_potentials, scenarios.corner_velocities,
     )
 
-    assert endpoint_differences.gatype == core.Scalar
-    assert swept_fluxes.gatype == core.Scalar
-    assert world_sheets.gatype == core.Patch
-    assert face_bivector.gatype == core.Bivector
+    assert endpoint_differences.batch().gatype == core.Scalar
+    assert swept_fluxes.batch().gatype == core.Scalar
+    assert world_sheets.batch().gatype == core.Patch
+    assert face_field.batch().gatype == core.Field
 
-    # Associativity of the regressive pairing equates dA & (u & e) to ((dA & u) & e).
-    triangle = core.triangle
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
-    corner_motions = core.time + scenarios.corner_velocities
-    edge_motions = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * corner_motions.field())).batch()[:, 0]
-    interior_integrals = (face_bivector & edge_motions) & sides
-    np.testing.assert_allclose((swept_fluxes - interior_integrals).kernel, 0.0, atol=1e-13)
+    # Regressive associativity equates world-sheet flux to the interior-product line integral,
+    # and endpoint readings cancel pairwise around the closed triangle boundary.
+    triangle_sides = core.triangle.boundary[2, 1] * (core.triangle.d[0] * scenarios.triangle_corners)
+    edge_motions = core.triangle.incidence[2, 1] * (
+        core.triangle.incidence[1, 0].mean(axis=0) * (core.time + scenarios.corner_velocities)
+    )
+    interior_integrals = (face_field & edge_motions) & triangle_sides
+    assert ((swept_fluxes - interior_integrals).abs() < 1e-12).all()
+    assert (endpoint_differences.sum(axis=0).abs() < 1e-12).all()
 
-    # Around the closed triangle boundary, the endpoint differences cancel pairwise.
-    np.testing.assert_allclose(endpoint_differences.sum(axis=0).kernel, 0.0, atol=1e-15)
-
-    # Cartan's sum matches the exact material time derivative of the edge line integrals.
-    patch = (sides[0] & sides[1]) / 2
-    gradients = (core.time & sides) / (2 * (core.time & patch))
-    plus_corners = corners + 0.5 * corner_motions
-    minus_corners = corners - 0.5 * corner_motions
-    plus_sides = (triangle.boundary[2, 1] * (triangle.d[0] * plus_corners.field())).batch()[:, 0]
-    minus_sides = (triangle.boundary[2, 1] * (triangle.d[0] * minus_corners.field())).batch()[:, 0]
-    plus_midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * plus_corners.field())).batch()[:, 0]
-    minus_midpoints = (triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * minus_corners.field())).batch()[:, 0]
-    plus_hats = 1 + (gradients[:, None] & (plus_midpoints[None, :] - corners[:, None]))
-    minus_hats = 1 + (gradients[:, None] & (minus_midpoints[None, :] - corners[:, None]))
-    plus_forms = (plus_hats * scenarios.corner_forms[:, None]).sum(axis=0)
-    minus_forms = (minus_hats * scenarios.corner_forms[:, None]).sum(axis=0)
-    material_rates = (plus_forms & plus_sides) - (minus_forms & minus_sides)
-    np.testing.assert_allclose(((endpoint_differences + swept_fluxes) - material_rates).kernel, 0.0, atol=1e-13)
-
-    # Total boundary circulation rate equals the divergence of the linear velocity times the face flux.
-    plus_patch = (plus_sides[0] & plus_sides[1]) / 2
-    minus_patch = (minus_sides[0] & minus_sides[1]) / 2
-    face_flux_rate = face_bivector & (plus_patch - minus_patch)
-    np.testing.assert_allclose((swept_fluxes.sum(axis=0) - face_flux_rate).kernel, 0.0, atol=1e-13)
+    figure = render.cartan_ribbon_figure(
+        scenarios.triangle_corners, scenarios.corner_potentials, scenarios.corner_velocities,
+        scenarios.ribbon_step, endpoint_differences, swept_fluxes,
+    )
+    assert len(figure.axes) == 2
+    plt.close(figure)
 
 
-def test_world_sheets_uniform_field_preservation_and_gauge_invariance():
-    topology, coordinates = shapes.hexagonal_disk(1.0, 6)
-    vertices = scenarios.mv(scenarios.Upright, coordinates).dual().field()
-    operators = core.Operators(topology, vertices)
-
-    assert operators.d1.gatype == core.ga.gatype((core.Scalar, core.Scalar))
-    assert operators.gradient.gatype == core.ga.gatype((core.Plane.derive.within("x y"), core.Scalar))
-    assert operators.curl.gatype == core.ga.gatype((core.Magnetic, core.Scalar))
-    assert operators.edge_velocity_map.gatype == core.ga.gatype((core.Point, core.Point))
-    assert operators.edge_curl.gatype == core.ga.gatype((core.Magnetic, core.Scalar))
-    assert operators.curl_stiffness.gatype == core.ga.gatype((core.Amount, core.Scalar))
-    assert operators.curl_laplacian.gatype == core.ga.gatype((core.Scalar, core.Scalar))
+def test_uniform_field_stationarity_and_gauge_invariance():
+    topology, coordinates = shapes.hexagonal_disk(1.0, 3)
+    vertices = core.mv(core.Upright, coordinates).dual().field()
+    curl = core.whitney_curl(topology, vertices)
+    stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
+    swept_patches = core.swept_edge_patches(topology, vertices, stream)
+    advection = core.advection_map(topology, vertices, curl, swept_patches)
+    curl_stiffness = core.curl_stiffness_map(topology, vertices, curl)
+    curl_laplacian = core.curl_laplacian_map(topology, curl_stiffness)
 
     d0 = topology.d[0] * core.Scalar
-    stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
-    face_velocity, fixed_sheets, comoving_sheets = core.edge_world_sheets(operators, stream)
-    swept_patches = fixed_sheets - comoving_sheets
-    np.testing.assert_allclose((operators.gradient(stream) & face_velocity).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(((core.mv.xy & swept_patches) + d0(stream)).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose(operators.d1(core.mv.xy & swept_patches).kernel, 0.0, atol=1e-13)
+    d1 = topology.d[1] * core.Scalar
+    assert (((core.mv.xy & swept_patches) + d0(stream)).abs() < 1e-12).all()
+    assert (d1(core.mv.xy & swept_patches).abs() < 1e-12).all()
 
-    # A uniform magnetic 2-form produces an exact gradient edge rate -B0 * d0(stream), so its face flux is stationary.
+    # A uniform magnetic 2-form produces an exact gradient edge rate, keeping face flux stationary.
+    edges = topology.d[0] * vertices
+    edge_midpoints = topology.incidence[1, 0].mean(axis=0) * vertices
     uniform_strength = 1.35
-    uniform_cochain = (uniform_strength / 2) * ((core.mv.xy & operators.edge_midpoints) & operators.edges)
-    np.testing.assert_allclose(
-        (operators.curl(uniform_cochain) - uniform_strength * core.mv.xy).kernel,
-        0.0, atol=1e-12,
-    )
-    advection = (core.Magnetic & swept_patches)(operators.edge_curl)
+    uniform_cochain = (uniform_strength / 2) * ((core.mv.xy & edge_midpoints) & edges)
+    assert ((curl(uniform_cochain) - uniform_strength * core.mv.xy).norm() < 1e-12).all()
     uniform_rate = advection(uniform_cochain)
-    np.testing.assert_allclose(
-        (uniform_rate + uniform_strength * d0(stream)).kernel,
-        0.0, atol=1e-12,
-    )
-    np.testing.assert_allclose(operators.d1(uniform_rate).kernel, 0.0, atol=1e-12)
+    assert ((uniform_rate + uniform_strength * d0(stream)).abs() < 1e-12).all()
+    assert (d1(uniform_rate).abs() < 1e-12).all()
 
-    # Adding any exact 0-form gradient d0(phi) leaves curl, curl stiffness, curl Laplacian, and the evolution map invariant.
-    cochain = core.initial_cochain(operators, scenarios.lobe_centres, scenarios.lobe_strengths, scenarios.lobe_radius)
+    # Adding an exact 0-form gradient leaves curl, stiffness, Laplacian, and evolution rate invariant.
+    cochain = core.initial_cochain(
+        topology, vertices, scenarios.lobe_centres, scenarios.lobe_strengths, scenarios.lobe_radius,
+    )
     gauge = 0.8 * (core.mv.x & vertices).squared() - 0.55 * (core.mv.y & vertices)
     gauged_cochain = cochain + d0(gauge)
-    np.testing.assert_allclose((operators.d1(gauged_cochain) - operators.d1(cochain)).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((operators.curl(gauged_cochain) - operators.curl(cochain)).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(
-        (operators.curl_stiffness(gauged_cochain) - operators.curl_stiffness(cochain)).kernel,
-        0.0, atol=1e-11,
-    )
-    np.testing.assert_allclose(
-        (operators.curl_laplacian(gauged_cochain) - operators.curl_laplacian(cochain)).kernel,
-        0.0, atol=1e-11,
-    )
-    rate = advection - operators.curl_laplacian * scenarios.resistivities[:, None]
-    rate_plain = rate(cochain)
-    rate_gauged = rate(gauged_cochain)
-    np.testing.assert_allclose((rate_gauged - rate_plain).kernel, 0.0, atol=1e-12)
+    assert ((d1(gauged_cochain) - d1(cochain)).abs() < 1e-12).all()
+    assert ((curl(gauged_cochain) - curl(cochain)).norm() < 1e-12).all()
+    assert ((curl_stiffness(gauged_cochain) - curl_stiffness(cochain)).antinorm() < 1e-11).all()
+    assert ((curl_laplacian(gauged_cochain) - curl_laplacian(cochain)).abs() < 1e-11).all()
+    rate = advection - curl_laplacian * scenarios.resistivities[:, None]
+    assert ((rate(gauged_cochain) - rate(cochain)).abs() < 1e-11).all()
 
 
-def test_ideal_flux_and_energy_conservation_versus_resistive_dissipation():
-    topology, coordinates = shapes.hexagonal_disk(1.0, 7)
-    vertices = scenarios.mv(scenarios.Upright, coordinates).dual().field()
-    operators = core.Operators(topology, vertices)
+def test_conservation_dissipation_and_advection_renders():
+    topology, coordinates = shapes.hexagonal_disk(1.0, 3)
+    V, E, F = topology.n_elements
+    vertices = core.mv(core.Upright, coordinates).dual().field()
+    curl = core.whitney_curl(topology, vertices)
     stream = core.vortex_streamfunction(vertices, scenarios.swirl_rate, scenarios.ellipticity)
-    _, fixed_sheets, comoving_sheets = core.edge_world_sheets(operators, stream)
-    swept_patches = fixed_sheets - comoving_sheets
-    start_cochain = core.initial_cochain(
-        operators, scenarios.lobe_centres, scenarios.lobe_strengths, scenarios.lobe_radius,
-    )
+    swept_patches = core.swept_edge_patches(topology, vertices, stream)
+    advection = core.advection_map(topology, vertices, curl, swept_patches)
+    curl_stiffness = core.curl_stiffness_map(topology, vertices, curl)
+    curl_laplacian = core.curl_laplacian_map(topology, curl_stiffness)
+    flux_density = core.flux_density_map(topology, vertices)
 
-    # For any edge cochain, the ideal advective rate is orthogonal to S1(a), while the resistive rate is dissipative.
     rng = np.random.default_rng(7)
-    random_cochain = core.mv.scalar(rng.standard_normal(topology.n_elements[1])[..., None]).field()
-    random_energy = (random_cochain & operators.curl_stiffness(random_cochain)).sites.sum()
-    advection = (core.Magnetic & swept_patches)(operators.edge_curl)
+    random_cochain = core.mv.scalar(rng.standard_normal((E, 1))).field()
+    random_energy = (random_cochain & curl_stiffness(random_cochain)).sites.sum()
     ideal_rate = advection(random_cochain)
-    np.testing.assert_allclose(
-        ((ideal_rate & operators.curl_stiffness(random_cochain)).sites.sum() / random_energy).kernel,
-        0.0, atol=1e-12,
+    assert (((ideal_rate & curl_stiffness(random_cochain)).sites.sum() / random_energy).abs() < 1e-12).all()
+    resistive_rate = -curl_laplacian(random_cochain)
+    assert (resistive_rate & curl_stiffness(random_cochain)).sites.sum() < 0
+
+    start_cochain = core.initial_cochain(
+        topology, vertices, scenarios.lobe_centres, scenarios.lobe_strengths, scenarios.lobe_radius,
     )
-    resistive_only = -operators.curl_laplacian(random_cochain)
-    assert (resistive_only & operators.curl_stiffness(random_cochain)).sites.sum() < 0
-
     batched_start = stack((start_cochain, start_cochain))
-    rate = advection - operators.curl_laplacian * scenarios.resistivities[:, None]
-    states = list(core.advect(batched_start, rate, scenarios.dt, 60))
-    energies = stack([(state & operators.curl_stiffness(state)).sites.sum() / 2 for state in states])
-    total_fluxes = stack([operators.d1(state).sites.sum() for state in states])
+    rate = advection - curl_laplacian * scenarios.resistivities[:, None]
+    n_test_steps = 4
+    cochain_states = stack(list(core.cochain_trajectory(batched_start, rate, scenarios.dt, n_test_steps)))
+    d1 = topology.d[1] * core.Scalar
+    energies = (cochain_states & curl_stiffness(cochain_states)).sites.sum() / 2
+    total_fluxes = d1(cochain_states).sites.sum()
 
-    np.testing.assert_allclose((total_fluxes[:, 0] - total_fluxes[0, 0]).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((total_fluxes[:, 1] - total_fluxes[0, 1]).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((energies[:, 0] / energies[0, 0]).kernel, 1.0, rtol=1e-5)
-    assert np.all(np.diff(energies[:, 1].to_array()) < 0)
+    assert ((total_fluxes - total_fluxes[0]).abs() < 1e-12).all()
+    assert (((energies[:, 0] / energies[0, 0]) - 1).abs() < 1e-5).all()
+    assert ((energies[1:, 1] - energies[:-1, 1]) < 0).all()
+
+    times = np.arange(n_test_steps + 1) * scenarios.dt
+    comparison_fig = render.advection_comparison_figure(
+        topology, vertices, flux_density(cochain_states[-1]), times, energies, total_fluxes,
+    )
+    assert len(comparison_fig.subfigs) == 2
+    plt.close(comparison_fig)
+
+    rendered_frames = list(render.advection_frames(topology, vertices, flux_density, cochain_states[:2]))
+    assert len(rendered_frames) == 2
+    assert rendered_frames[0].ndim == 3

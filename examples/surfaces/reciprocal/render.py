@@ -1,4 +1,4 @@
-"""The lifted terrain with its creases, and the planar truss with its reciprocal diagram."""
+"""Rendering for the lifted polyhedral terrain, its stressed creases, and the planar truss with its reciprocal diagram."""
 
 from __future__ import annotations
 
@@ -10,127 +10,143 @@ from matplotlib.colors import TwoSlopeNorm, to_rgb
 import numpy as np
 
 from numga import stack
-from examples.util.animation import capture
+from numga.render import drawing, meshes, simplices, solids
+from numga.topology import Topology
 from examples.surfaces.reciprocal import core
-from examples.util.wgsl import fitted, meshes, show, simplices, solids
-from examples.util.wgsl.camera import offset_panel
+from examples.util.animation import capture
+from examples.util.panels import fitted, offset_panel, overlay, show
 
-TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
-BOUNDARY_COLOUR = np.full(3, 0.65)
-RECIPROCAL_COLOUR, RIM_COLOUR = np.full(3, 0.2), np.full(3, 0.5)
-# Tension blue, compression red, white at zero, on one scale for every frame: compression is far weaker than
-# tension, so each side saturates at its own end. In pixels, the widths of the bars and of the other lines, and the
-# radius of the reciprocal diagram's vertices.
-STRESS_MAP = "coolwarm_r"
-COMPRESSION, TENSION = -0.3, 1.5
-BAR_WIDTH, LINE_WIDTH, CORNER_RADIUS = 2.2, 1.4, 1.5
-REACH = 1.25
-# The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
-# share of its larger side, and the pixels across its picture, until the view is fitted to its axes; how much each
-# surface of the terrain hides, so the creases behind it show through, and the widths of the creases and of the
-# boundary as rods, in pixels.
-ELEVATION, AZIMUTH = np.radians([28.0, 30.0])
-MARGIN = 0.08
-N_PIXELS = 1000
-TERRAIN_OPACITY = 0.16
-CREASE_WIDTH, BOUNDARY_WIDTH = 2.2, 1.5
-# The room an animation's view leaves above and below the terrain of its first frame, for the heights to move in.
-SWING = 0.02
-BACKGROUND = np.ones(3)
+terrain_colour = np.array(to_rgb("#9fb7c4"))
+boundary_colour = np.full(3, 0.65)
+reciprocal_colour, rim_colour = np.full(3, 0.2), np.full(3, 0.5)
+# Tension renders blue, compression red, and zero stress white on one shared scale across frames.
+stress_map = "coolwarm_r"
+compression_limit, tension_limit = -0.3, 1.5
+bar_width, line_width, corner_radius = 2.2, 1.4, 1.5
+reach = 1.25
+elevation, azimuth = np.radians([28.0, 30.0])
+margin = 0.08
+n_pixels = 1000
+terrain_opacity = 0.16
+crease_width, boundary_width = 2.2, 1.5
+# Extra vertical headroom around the initial terrain so breathing heights stay inside the camera frustum.
+height_swing = 0.02
+background = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def colours(stresses: np.ndarray) -> np.ndarray:
-    return plt.get_cmap(STRESS_MAP)(TwoSlopeNorm(0.0, COMPRESSION, TENSION)(np.clip(stresses, COMPRESSION, TENSION)))
+def stress_colours(stresses: np.ndarray) -> np.ndarray:
+    """Maps clipped axial stresses to RGBA shades (`[..., 4]`) on a diverging two-slope scale centred at zero."""
+    scale = TwoSlopeNorm(0.0, compression_limit, tension_limit)
+    return plt.get_cmap(stress_map)(scale(np.clip(stresses, compression_limit, tension_limit)))
 
 
-def view(points: core.Point, heights: core.Scalar) -> solids.View:
-    """A view framing the terrain over the points at all the heights `[...] Scalar+[vertices]`."""
-    lifted = solids.origin + solids.context.include_from_algebra((points + core.up * heights).batch())   # [...] Point-[vertices]
-    return solids.view([lifted], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+def terrain_view(points: core.Point, heights: core.Scalar) -> solids.View:
+    """Frames a 3D view enclosing `points` (`Point-[V]`) lifted across `heights` (`[...] Scalar+[V]`)."""
+    lifted = solids.origin + solids.context.include_from_algebra((points + core.up * heights).batch())  # [..., V] Point-
+    return solids.view([lifted], 0.0, elevation, azimuth, margin, n_pixels)
 
 
-def terrain(topology: core.Topology, points: core.Point, heights: core.Scalar, shades: np.ndarray,
-            framing: solids.View) -> np.ndarray:
-    """The terrain the heights lift the mesh at its points to, translucent and flat over its faces, its creases
-    rods coloured by their shades `[inner, 3]`, and its boundary grey."""
-    # Each point of the plane lifted by its height along the direction up.
-    lifted = points + core.up * heights                                         # Point-[vertices]
-    places = solids.origin + solids.context.include_from_algebra(lifted.batch())          # [vertices] Point-
+def terrain_image(
+    topology: Topology,
+    points: core.Point,
+    heights: core.Scalar,
+    shades: np.ndarray,
+    framing: solids.View,
+) -> np.ndarray:
+    """Renders the translucent polyhedral terrain over `points` (`Point-[V]`) with interior crease rods shaded by `shades` (`[E_interior, 3]`) and grey boundary rods."""
+    lifted = points + core.up * heights                                         # Point-[V]
+    places = solids.origin + solids.context.include_from_algebra(lifted.batch())  # [V] Point-
     pixel = framing.pixel
-    # The faces as a mesh, which the tracer composites sample by sample, where thin plates would each be searched
-    # through every translucent layer; a plate is crossed twice, a face once, so a face hides what both would.
-    triangles = topology.elements[2]
-    surface = meshes.samples(places, triangles, TERRAIN_COLOUR, meshes.flat(places, triangles), framing,
-                             face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
-    ends = topology.incidence[1, 0] * lifted                                    # [ends] Point-[edges]
-    crease_tails, crease_heads = topology.reading(topology.interior[1], 1) * ends  # Point-[inner], Point-[inner]
-    rim_tails, rim_heads = topology.reading(topology.exterior[1], 1) * ends     # Point-[rim], Point-[rim]
-    creases = solids.rods(solids.origin + solids.context.include_from_algebra(crease_tails.batch()),
-                          solids.origin + solids.context.include_from_algebra(crease_heads.batch()), CREASE_WIDTH / 2 * pixel)
-    boundary = solids.rods(solids.origin + solids.context.include_from_algebra(rim_tails.batch()),
-                           solids.origin + solids.context.include_from_algebra(rim_heads.batch()), BOUNDARY_WIDTH / 2 * pixel)
-    return solids.draw([(creases, shades), (boundary, BOUNDARY_COLOUR)], framing, BACKGROUND,
-                       inks=[], translucent=[], meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
+    # Ray-trace triangles as single-crossing translucent faces so occluded creases remain visible behind them.
+    triangles = topology.elements[2]                                            # [F, 3]
+    surface = meshes.samples(
+        places, triangles, terrain_colour, meshes.flat(places, triangles), framing,
+        face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss,
+    )
+    ends = topology.incidence[1, 0] * lifted                                    # [2] Point-[E]
+    crease_tails, crease_heads = topology.reading(topology.interior[1], 1) * ends  # Point-[E_interior], Point-[E_interior]
+    rim_tails, rim_heads = topology.reading(topology.exterior[1], 1) * ends     # Point-[E_exterior], Point-[E_exterior]
+    creases = solids.rods(
+        solids.origin + solids.context.include_from_algebra(crease_tails.batch()),
+        solids.origin + solids.context.include_from_algebra(crease_heads.batch()),
+        crease_width / 2 * pixel,
+    )
+    boundary = solids.rods(
+        solids.origin + solids.context.include_from_algebra(rim_tails.batch()),
+        solids.origin + solids.context.include_from_algebra(rim_heads.batch()),
+        boundary_width / 2 * pixel,
+    )
+    return solids.draw(
+        [(creases, shades), (boundary, boundary_colour)], framing, background,
+        inks=[], translucent=[], meshes=[(surface, 1 - (1 - terrain_opacity) ** 2)],
+    )
 
 
-def panels(topology: core.Topology, points: core.Point, framing: solids.View
-           ) -> tuple[plt.Figure, Callable[[core.Scalar, core.Scalar, core.Plane], None]]:
-    """The figure, laid out once, and what draws heights `Scalar+[vertices]`, stresses `Scalar[inner]` and
-    reciprocal vertices `Plane+[faces]` on it: left, the terrain the heights lift the mesh to, its creases coloured by stress,
-    seen by the framing camera, fitted to its axes; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
-    it, an edge across every bar."""
-    places = points.batch()                                                               # [vertices] Point-
-    # The truss's bars and its boundary, the mesh's inner and boundary edges.
+def dual_panels(
+    topology: Topology,
+    points: core.Point,
+    framing: solids.View,
+) -> tuple[plt.Figure, Callable[[core.Scalar, core.Scalar, core.Plane], None]]:
+    """Builds the side-by-side terrain and planar diagram figure alongside an updater for `(heights, stresses, dual_vertices)`."""
+    places = points.batch()                                                     # [V] Point-
     bars = topology.subset(topology.interior[1], 1)
     rim = topology.border
-    # The reciprocal diagram: a reciprocal vertex for each face, joined across every bar to the one on its other side
-    # along the bar's dual edge, each join drawn as a chain of its two ends.
-    across_bars = topology.dual.reading(topology.interior[1], 1) * topology.dual.incidence[1, 0]   # [ends] Scalar+[inner <- faces]
-    joins = simplices.Topology.chains([2] * len(topology.interior[1]))
+    n_interior = len(topology.interior[1])
+    # Each interior bar's dual edge connects the reciprocal vertices of the two triangles sharing that bar.
+    dual_ends = topology.dual.reading(topology.interior[1], 1) * topology.dual.incidence[1, 0]  # [2] Scalar+[E_interior <- F]
+    joins = Topology.chains([2] * n_interior)
     figure = plt.figure(figsize=(6.0, 3.0))
     terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
     framing = fitted(framing, terrain_axes)
     picture = show(terrain_axes, np.zeros(framing.shape + (3,), dtype=np.uint8), framing)
-    plane = figure.add_axes((0.5, 0.05, 0.5, 0.9))
-    plane.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), aspect="equal")
-    plane.set_axis_off()
-    camera = offset_panel(plane, core.mv.x, core.mv.y)
-    # The reciprocal vertices, the faces' slopes, read as they are by the directions along x and y: how fast each face
-    # rises along each, its place in the diagram.
-    slope_camera = offset_panel(plane, core.mv.x.dual(), core.mv.y.dual())
-    boundary = simplices.strokes(places, rim, RIM_COLOUR, LINE_WIDTH, camera)
-    truss = simplices.overlay(plane, [boundary])
+    plane_axes = figure.add_axes((0.5, 0.05, 0.5, 0.9))
+    plane_axes.set(xlim=(-reach, reach), ylim=(-reach, reach), aspect="equal")
+    plane_axes.set_axis_off()
+    camera = offset_panel(plane_axes, core.mv.x, core.mv.y)
+    # Pairing reciprocal plane vectors directly with the x and y directions reads out each face's horizontal slope components.
+    slope_camera = offset_panel(plane_axes, core.mv.x.dual(), core.mv.y.dual())
+    boundary = simplices.strokes(places, rim, rim_colour, line_width, camera)
+    truss = overlay(plane_axes, [boundary])
 
-    def drawn(heights: core.Scalar, stresses: core.Scalar, duals: core.Plane) -> None:
-        shades = colours(stresses.batch().to_array())                          # [inner, 4]
-        picture.set_data(terrain(topology, points, heights, shades[:, :3], framing))
-        corners = duals.batch()                                                # [faces] Plane+
-        tails, heads = (across_bars * duals).batch()                           # [inner] Plane+, [inner] Plane+
-        truss.set_data(simplices.composited([
-            simplices.strokes(places, bars, shades[:, :3], BAR_WIDTH, camera), boundary,
-            simplices.strokes(stack((tails, heads), axis=-1).reshape(-1), joins, RECIPROCAL_COLOUR, LINE_WIDTH, slope_camera),
-            simplices.markers(corners, RECIPROCAL_COLOUR, CORNER_RADIUS, slope_camera)]))
+    def update(heights: core.Scalar, stresses: core.Scalar, dual_vertices: core.Plane) -> None:
+        shades = stress_colours(stresses.batch().to_array())                    # [E_interior, 4]
+        picture.set_data(terrain_image(topology, points, heights, shades[:, :3], framing))
+        vertices = dual_vertices.batch()                                        # [F] Plane+
+        tails, heads = (dual_ends * dual_vertices).batch()                      # [E_interior] Plane+, [E_interior] Plane+
+        truss.set_data(drawing.composited([
+            simplices.strokes(places, bars, shades[:, :3], bar_width, camera),
+            boundary,
+            simplices.strokes(stack((tails, heads), axis=-1).reshape(-1), joins, reciprocal_colour, line_width, slope_camera),
+            simplices.markers(vertices, reciprocal_colour, corner_radius, slope_camera),
+        ]))
 
-    return figure, drawn
+    return figure, update
 
 
-def draw(topology: core.Topology, points: core.Point, heights: core.Scalar, stresses: core.Scalar,
-         duals: core.Plane) -> plt.Figure:
-    """The terrain beside the planar truss and its reciprocal diagram, the terrain framed on itself."""
-    figure, drawn = panels(topology, points, view(points, heights))
-    drawn(heights, stresses, duals)
+def reciprocal_figure(
+    topology: Topology,
+    points: core.Point,
+    heights: core.Scalar,
+    stresses: core.Scalar,
+    dual_vertices: core.Plane,
+) -> plt.Figure:
+    """Draws the lifted polyhedral terrain beside the stressed planar truss and its reciprocal diagram."""
+    figure, update = dual_panels(topology, points, terrain_view(points, heights))
+    update(heights, stresses, dual_vertices)
     return figure
 
 
-def animate(topology: core.Topology, points: core.Point, frames: Iterable[tuple[core.Scalar, core.Scalar, core.Plane]]) -> Iterator[np.ndarray]:
-    """The figure at every frame: its heights `Scalar+[vertices]`, stresses `Scalar[inner]` and reciprocal
-    vertices `Plane+[faces]`, the terrain seen by one camera framing the first frame's with room for the heights to
-    move."""
-    frames = iter(frames)
-    first = next(frames)
-    figure, drawn = panels(topology, points, view(points, stack([first[0] - SWING, first[0] + SWING])))
-    for heights, stresses, duals in chain([first], frames):
-        drawn(heights, stresses, duals)
+def breath_animation(
+    topology: Topology,
+    points: core.Point,
+    states: Iterable[tuple[core.Scalar, core.Scalar, core.Plane]],
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames (`[n_rows, n_columns, 3]`) across `states` (`(Scalar+[V], Scalar+[E_interior], Plane+[F])`) from a fixed camera with vertical headroom."""
+    iterator = iter(states)
+    first = next(iterator)
+    figure, update = dual_panels(topology, points, terrain_view(points, stack([first[0] - height_swing, first[0] + height_swing])))
+    for heights, stresses, dual_vertices in chain([first], iterator):
+        update(heights, stresses, dual_vertices)
         yield capture(figure)
     plt.close(figure)

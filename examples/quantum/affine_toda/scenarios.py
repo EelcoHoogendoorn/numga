@@ -1,4 +1,4 @@
-"""The E8 Toda masses follow from the vacuum's curvature, and its cubic couplings from root triangles."""
+"""The E8 Toda mass spectrum follows from the vacuum curvature, and its cubic couplings follow from root triangles."""
 
 from __future__ import annotations
 
@@ -6,86 +6,71 @@ from itertools import combinations_with_replacement
 
 import numpy as np
 
-from numga import concatenate
-
 from examples.math.e8 import core as e8
 from examples.math.e8.scenarios import root_system
 from examples.quantum.affine_toda import core
 from examples.quantum.affine_toda.core import CubicForm, Field, MassForm, Root, Scalar
 
-# The highest root's coefficients on the simple roots, followed by the weight of its negative.
+# The highest root's coefficients on the simple roots, followed by the unit weight of its negative.
 marks = np.array([2, 3, 4, 6, 5, 4, 3, 2, 1])
+# IN12 peak positions in meV from Gaussian fits to neutron-scattering data in BaCo2V2O8.
+measured_energies = np.array([1.26, 2.05, 2.49])
+# Three illustrative species triples: 1-1-2 and 1-2-3 close and couple, whereas 2-3-5 does neither.
+example_species = np.array([[0, 0, 1], [0, 1, 2], [1, 2, 4]])
 
 
-# --- math -----------------------------------------------------------------------------
-def spectrum() -> tuple[Root, np.ndarray, MassForm, CubicForm, Scalar, Field, Root, Root, Root]:
-    """The interaction roots give the vacuum's curvature and cubic form; the curvature's eigenmodes are the
-    particles, and the Coxeter orbits are ordered by the masses they match."""
-    roots, plane_x, plane_y, planes, *_ = root_system()                       # [steps, orbits] Root+, [planes] Root+, [planes] Root+, [planes] Bivector+
-    simple_roots = e8.simple_roots()                                          # [simple_roots] Root+
-
-    # The negative highest root closes the weighted root sum, making zero field an equilibrium.
-    affine_root = -(marks[:-1] * simple_roots).sum(axis=0)                      # [] Root+
-    interaction_roots = concatenate((simple_roots, affine_root[None]))         # [interactions] Root+
-
-    # Each exponential contributes the product of its root's readings to the vacuum's derivatives.
-    reading = interaction_roots & Field                                       # [interactions] Scalar+ <- Field-
-    curvature = (marks * reading * reading).sum(axis=0)                        # [] Scalar+ <- (Field-, Field-)
-    cubic = (marks * reading * reading * reading).sum(axis=0)                  # [] Scalar+ <- (Field-, Field-, Field-)
-    # With a canonical kinetic term, the curvature's eigenvalues against the field's metric are squared masses.
-    eigenvalues, modes = curvature.eigh()                                     # [species] Scalar+, Field-
-    masses = eigenvalues.square_root()                                        # [species] Scalar+
-
-    # The smallest-turning plane gives eight radii in the same ratios as the eight masses.
-    radius_squared = (roots[0] | planes[0]).scalar_norm_squared()               # [orbits] Scalar+
-    roots = roots[:, radius_squared.argsort()]                                # [steps, species] Root+
-    return interaction_roots, marks, curvature, cubic, masses, modes, roots, plane_x[0], plane_y[0]
+def spectrum() -> tuple[Root, np.ndarray, MassForm, CubicForm, Scalar, Field, Root, Scalar, Root, Root]:
+    """The nine interaction roots determine the vacuum forms, particle masses, eigenmodes, and radius-ordered Coxeter orbits."""
+    root_orbits, plane_x, plane_y, planes, *_ = root_system()                   # [30, 8] Root+, [4] Root+, [4] Root+, [4] Bivector+
+    roots = core.interaction_roots(e8.simple_roots(), marks)                    # [9] Root+
+    curvature, cubic = core.vacuum_forms(roots, marks)                          # [] Scalar+ <- (Field-, Field-), [] Scalar+ <- (Field-, Field-, Field-)
+    masses, modes, root_orbits, radii = core.mass_spectrum(curvature, root_orbits, planes[0])  # [8] Scalar+, [8] Field-, [30, 8] Root+, [8] Scalar+
+    return roots, marks, curvature, cubic, masses, modes, root_orbits, radii, plane_x[0], plane_y[0]
 
 
 def interactions() -> tuple[np.ndarray, Root, Scalar, Scalar, Scalar]:
-    """Every unordered triple of species has a closest root triangle, a cubic coupling, and the area of that
-    triangle projected into the Coxeter plane."""
-    _, _, _, cubic, masses, modes, roots, plane_x, plane_y = spectrum()
+    """Every unordered triple of the eight species has a closest root triangle, cubic coupling, and area-predicted magnitude."""
+    _, _, _, cubic, masses, modes, roots, radii, plane_x, plane_y = spectrum()
     n_species = len(masses)
     species = np.array(list(combinations_with_replacement(range(n_species), 3)))
-    triangles, closure = core.root_triangles(roots, species)                   # [triples, sides] Root+, [triples] Scalar+
+    n_triples = len(species)
+    triangles, closure = core.root_triangles(roots, species)                    # [n_triples, 3] Root+, [n_triples] Scalar+
     couplings = cubic(modes[species[:, 0]], modes[species[:, 1]],
-                      modes[species[:, 2]])                                   # [triples] Scalar+
-
-    # Triangle areas in the Coxeter plane are measured by its unit oriented bivector.
-    coxeter_plane = plane_x ^ plane_y                                         # [] Bivector+
-    areas = (triangles[:, 0] ^ triangles[:, 1]).scalar_product(coxeter_plane).abs() / 2   # [triples] Scalar+
-    return species, triangles, closure, couplings, areas
+                      modes[species[:, 2]])                                     # [n_triples] Scalar+
+    coxeter_plane = plane_x ^ plane_y                                           # [] Bivector+
+    predicted = core.area_couplings(triangles, masses[0] / radii[0], coxeter_plane)  # [n_triples] Scalar+
+    return species, triangles, closure, couplings, predicted
 
 
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_figure
     from examples.quantum.affine_toda import render
+    from examples.util.animation import save_figure
 
-    species = np.array([[0, 0, 1], [0, 1, 2], [1, 2, 4]])
-    _, _, _, cubic, masses, modes, roots, horizontal, vertical = spectrum()
-    coxeter_plane = horizontal ^ vertical                                     # [] Bivector+
-    radii = (roots[0] | coxeter_plane).scalar_norm_squared().square_root()      # [species] Scalar+
-    triangles, closure = core.root_triangles(roots, species)                   # [cases, sides] Root+, [cases] Scalar+
-    couplings = cubic(modes[species[:, 0]], modes[species[:, 1]],
-                      modes[species[:, 2]])                                   # [cases] Scalar+
-    paths = concatenate((0 * triangles[:, :1], triangles.cumsum(axis=1)), axis=1) # [cases, corners] Root+
+    n_cases = len(example_species)
+    _, _, _, cubic, masses, modes, roots, radii, horizontal, vertical = spectrum()
+    coxeter_plane = horizontal ^ vertical                                       # [] Bivector+
+    triangles, closure = core.root_triangles(roots, example_species)            # [n_cases, 3] Root+, [n_cases] Scalar+
+    couplings = cubic(modes[example_species[:, 0]], modes[example_species[:, 1]],
+                      modes[example_species[:, 2]])                             # [n_cases] Scalar+
+    closed = closure < 1e-6
+    predicted = core.area_couplings(triangles[closed], masses[0] / radii[0], coxeter_plane)  # [...] Scalar+
+
     print("masses over the lightest:", (masses / masses[0]).to_array())
     print("radii over the smallest:", (radii / radii[0]).to_array())
-
     save_figure(render.draw_roots(roots, horizontal, vertical), "affine_toda_masses")
-    print("species:", species + 1)
+
+    print("species:", example_species + 1)
     print("|coupling|:", couplings.abs().to_array())
     print("root closure:", closure.square_root().to_array())
-    save_figure(render.draw_triangles(paths, roots, species, horizontal, vertical), "affine_toda_triangles")
+    save_figure(render.triangles_figure(triangles, roots, example_species, horizontal, vertical), "affine_toda_triangles")
 
     # checks
-    # The masses stand in the ratios of the Coxeter rings' radii, and the first two triples close their
-    # root triangles and couple while the third does neither.
-    np.testing.assert_allclose((radii / radii[0] - masses / masses[0]).to_array(), 0, atol=1e-10)
-    np.testing.assert_array_equal(closure < 1e-10, [True, True, False])
-    np.testing.assert_array_equal(couplings.abs() > 1e-10, [True, True, False])
+    # Mass ratios match the Coxeter ring radii, the first two triples close and couple while the third does neither,
+    # and the cubic couplings of closed triangles match their scaled Coxeter-plane areas.
+    assert ((radii / radii[0] - masses / masses[0]).abs() < 1e-8).all()
+    np.testing.assert_array_equal(closed, [True, True, False])
+    np.testing.assert_array_equal(couplings.abs() > 1e-6, [True, True, False])
+    assert ((couplings[closed].abs() - predicted).abs() < 1e-8).all()
 
 
 if __name__ == "__main__":

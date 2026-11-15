@@ -6,19 +6,14 @@ from itertools import islice
 
 import numpy as np
 
-from examples.fluids.saltfingers import core
+from examples.fluids.saltfingers import core, plumbing
 
 mv = core.mv
 
-# The water: its density, its viscosity relative to its conduction of heat, the Prandtl number, about water's, the mass
-# a unit volume loses per degree, small, as the Boussinesq approximation takes it, and salt's diffusivity relative to
-# heat's, ten times seawater's, so that the mesh resolves the fingers' salt.
+# Reference density, Prandtl number, thermal expansion coefficient, and salt-to-heat diffusivity ratio.
 density, prandtl, expansion = 1.0, 7.0, 1e-3
 salt_diffusivity = 0.1
-# The fingers: the heat's Rayleigh number, the density ratio, the tank's length, its vertices along and up, and the
-# interface's thickness; the time step, the steps, the steps between frames, and the frames while the interface is
-# still flat, not drawn; the disturbance's size and its seed; the frames' duration in milliseconds, and the colours of
-# their palette.
+# Thermal Rayleigh number, density ratio, tank period and grid resolution, interface thickness, stepping schedule, and seed noise.
 rayleigh, ratio = 5e5, 2.0
 period, n_along, n_across = 2.0, 136, 69
 thickness = 0.05
@@ -28,38 +23,66 @@ frame_duration_ms = 40
 n_animation_colours = 32
 
 
-def layered(heights: core.Scalar, size: float) -> tuple[core.Scalar, core.Scalar]:
-    """The temperature and the salinity at vertices of these heights `Scalar+[vertices]`, each a half above the middle's
-    at the top and below at the bottom, changing across an interface of this thickness, with a disturbance of the
-    salinity of this size inside the interface."""
+def layer_profiles(heights: core.Scalar, noise_scale: float) -> tuple[core.Scalar, core.Scalar]:
+    """Two-layer hyperbolic-tangent temperature and noisy salinity profiles across the mid-depth interface."""
     rng = np.random.default_rng(seed)
-    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()   # Scalar+[vertices]
-    profile = ((heights - 0.5) / thickness).tanh()                            # Scalar+[vertices]
-    return profile / 2, profile / 2 + size * (1 - profile.squared()) * noise
+    noise = mv.scalar(rng.standard_normal((len(heights.batch()), 1))).field()  # Scalar+[V]
+    profile = ((heights - 0.5) / thickness).tanh()                            # Scalar+[V]
+    return profile / 2, profile / 2 + noise_scale * (1 - profile.squared()) * noise
 
 
 def fingers(n_along: int = n_along, n_across: int = n_across, n_flat: int = n_flat):
-    """The tank, `n_along` vertices along and `n_across` up, closed and opened at its seam, with the map reading the
-    closed tank's fields on the open one, the open one's vertices `Point-[vertices]`, the temperature and salinity at
-    the start `Scalar+[vertices]`, the two layers at rest, and the tank's stream function, temperature and salinity
-    over time `Scalar+[vertices]` each, after the first `n_flat` frames, from just before the fingers show."""
-    closed, opened, closing, opening, places = core.tank(n_along, n_across, period)
-    vertices = (core.volume + mv(core.Upright, places).dual()).field()          # Point-[opened vertices]
-    water = core.forms(closed, opened, vertices, density, prandtl, salt_diffusivity)
-    temperature, salinity = layered(closing * (mv.y & vertices), disturbance)  # Scalar+[vertices], Scalar+[vertices]
-    frames = core.fingering(water, closed.reading(closed.interior[0], 0), density, expansion, np.array(expansion / ratio),
-                            rayleigh * prandtl / expansion, temperature, salinity, dt, n_steps, n_stride)
+    """Tank topologies, seam reading, opened vertices, initial layer profiles, and streaming states past the flat transient."""
+    closed, opened, closing, opening, places = plumbing.tank(n_along, n_across, period)
+    vertices = (mv(core.Upright, places) + mv.w).dual().field()               # Point-[V_opened]
+    operators = core.tank_operators(closed, opened, vertices, density, prandtl, salt_diffusivity)
+    temperature, salinity = layer_profiles(closing * (mv.y & vertices), disturbance)  # Scalar+[V], Scalar+[V]
+    frames = core.fingering(
+        operators,
+        closed.reading(closed.interior[0], 0),
+        density,
+        expansion,
+        expansion / ratio,
+        rayleigh * prandtl / expansion,
+        temperature,
+        salinity,
+        dt,
+        n_steps,
+        n_stride,
+    )
     return closed, opened, opening, vertices, temperature, salinity, islice(frames, n_flat, None)
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
     from examples.fluids.saltfingers import render
+    from examples.util.animation import save_animation, save_figure
 
     closed, opened, opening, vertices, temperature, salinity, frames = fingers()
     save_figure(render.draw_tank(opened, vertices, opening, period, temperature, salinity), "saltfingers_tank")
-    save_animation(render.animate(opened, vertices, opening, period, frames), "saltfingers", frame_duration_ms,
-                   colors=n_animation_colours)
+    kept = []
+
+    def passing():
+        for state in frames:
+            kept.append(state)
+            yield state
+
+    save_animation(
+        render.animate(opened, vertices, opening, period, passing()),
+        "saltfingers",
+        frame_duration_ms,
+        colors=n_animation_colours,
+    )
+
+    # checks
+    pull = -core.mv.ym                                                        # [] Drive+
+    for part, expected in ((core.mass, -1.0), (core.volume, 0.0), (core.entropy, 0.0), (core.salt, 0.0)):
+        assert (((core.mv.y & pull.commutator(part)) - expected).abs() < 1e-12).all()
+    middle = ((mv.y & vertices.batch()) - 0.5).abs() < 1e-12
+    _, last_temperature, last_salinity = kept[-1]
+    salinities = (opening * last_salinity).batch()[middle]
+    temperatures = (opening * last_temperature).batch()[middle]
+    assert bool(salinities[salinities.argmax()] - salinities[salinities.argmin()] > 0.9)
+    assert bool((temperatures - temperatures.mean()).squared().mean() < (salinities - salinities.mean()).squared().mean() / 4)
 
 
 if __name__ == "__main__":

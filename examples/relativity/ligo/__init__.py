@@ -1,3 +1,1 @@
-"""Gravitational-wave antenna patterns: how strongly an L-shaped interferometer such as LIGO responds to
-a wave from each direction on the sky.
-"""
+"""An L-shaped gravitational-wave interferometer such as LIGO reads the tidal metric perturbation of a passing wave across every direction on the sky."""

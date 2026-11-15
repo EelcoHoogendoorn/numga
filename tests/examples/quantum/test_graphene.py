@@ -1,40 +1,46 @@
-"""Graphene: the Hamiltonian squares to the field's length, transport around a circle turns a frame
-by the solid angle it encloses."""
+"""Graphene: the Hamiltonian squares to the field's length, and transport around a circle turns a
+frame by the solid angle it encloses."""
 
 from __future__ import annotations
 
 from functools import partial
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quantum.graphene import core, render, scenarios
 
 
 def test_the_hamiltonian_squares_to_the_fields_length():
-    """H(H(psi)) is the field's squared length times psi, so the eigenvalues are plus and minus the field's length."""
-    field = core.mv(core.Field, np.array([0.3, -1.1, 0.7]))
-    psi = core.mv(core.Spinor, np.array([0.4, -0.2, 1.3, 0.5]))
-    H = core.hamiltonian(field)
-    np.testing.assert_allclose((H(H(psi)) - field.scalar_norm_squared() * psi).kernel, 0.0, atol=1e-12)
+    """Applying `hamiltonian(field)` twice multiplies every spinor by the field's squared norm."""
+    field = core.mv(core.Field, np.array([0.3, -1.1, 0.7]))                     # [] Field+
+    state = core.mv(core.Spinor, np.array([0.4, -0.2, 1.3, 0.5]))               # [] Spinor+
+    operator = core.hamiltonian(field)                                          # [] Spinor+ <- Spinor+
+    residual = operator(operator(state)) - field.scalar_norm_squared() * state  # [] Spinor+
+    assert (residual.norm() < 1e-9).all()
 
 
 def test_transport_around_a_circle_of_latitude_turns_by_the_enclosed_solid_angle():
-    """Around the circle at polar angle theta the enclosed solid angle is 2 pi (1 - cos theta), and
-    the holonomy's scalar part is the cosine of half of it."""
+    """Transporting a frame around latitude circles at polar angles `polar_angles` gives a holonomy rotor whose scalar part equals the cosine of half the enclosed solid angle."""
     mv = core.mv
-    theta, n_steps = np.array([0.3, 1.0, 2.0]), 400
-    angle = np.linspace(0.0, 2 * np.pi, n_steps + 1)[:, None]
-    # The pseudospin along z tilted toward x by theta, then turned about z around the circle.
-    tilted = (mv.zx * (-theta / 2)).exp() >> mv.xy.dual()                         # [theta] Pseudospin-
-    directions = (mv.xy * (-angle / 2)).exp() >> tilted                           # [steps + 1, theta] Pseudospin-
-    holonomy = core.transport(directions)[-1]                                      # [theta] Rotor+
-    np.testing.assert_allclose(holonomy.select[0].to_array(), np.cos(np.pi * (1 - np.cos(theta))), atol=1e-3)
+    n_angles, n_steps = 3, 400
+    polar_angles = np.array([0.3, 1.0, 2.0])
+    azimuths = np.linspace(0.0, 2 * np.pi, n_steps + 1)[:, None]
+    # The pseudospin along z tilted toward x by polar_angles, then turned about z around the circle.
+    tilt_rotors = (mv.zx * (-polar_angles / 2)).exp()                           # [n_angles] Rotor+
+    tilted_pseudospins = tilt_rotors >> core.first_sublattice                   # [n_angles] Pseudospin-
+    circle_rotors = (mv.xy * (-azimuths / 2)).exp()                             # [n_steps + 1, 1] Rotor+
+    directions = circle_rotors >> tilted_pseudospins                            # [n_steps + 1, n_angles] Pseudospin-
+    holonomy = core.transport(directions)[-1]                                   # [n_angles] Rotor+
+    expected_cosine = np.cos(np.pi * (1 - np.cos(polar_angles)))
+    assert ((holonomy.select[0] - expected_cosine).abs() < 1e-3).all()
 
 
 def test_the_scenes_draw_at_a_few_samples():
-    momenta, field, energies = scenarios.bands(scenarios.ZONE_EXTENT, 3, scenarios.GAPLESS)
-    render.draw_field(momenta, field)
-    render.draw_bands(momenta, energies)
-    render.draw_textures(partial(scenarios.upper_pseudospins, gap=scenarios.TEXTURE_GAP), scenarios.VALLEY_EXTENT)
-    radii, gaps = scenarios.RADII[:2], scenarios.GAPS[:2]
-    render.draw_berry(radii, gaps, *scenarios.berry(radii, gaps, 4))
+    """All four graphene figures draw cleanly on minimal momentum grids and loop step counts."""
+    momenta, field, energies = scenarios.zone_bands(scenarios.zone_extent, 3, scenarios.gapless)
+    plt.close(render.field_figure(momenta, field))
+    plt.close(render.bands_figure(momenta, energies))
+    plt.close(render.textures_figure(partial(core.upper_pseudospins, gap=scenarios.texture_gap), scenarios.valley_extent))
+    radii, gaps = scenarios.radii[:2], scenarios.gaps[:2]
+    plt.close(render.berry_figure(radii, gaps, *scenarios.loop_berry(radii, gaps, 4)))

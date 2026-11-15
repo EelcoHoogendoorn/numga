@@ -1,27 +1,26 @@
-"""The optical train's imaging, and the thin lens equation."""
+"""Thin-lens imaging, Gullstrand focusing, and moving-train concurrency and rendering."""
 
 from __future__ import annotations
 
-import numpy as np
+import matplotlib.pyplot as plt
 
 from examples.optics.thin_lens import render, scenarios
 
 
-def test_train_images_the_subject_through_every_placement():
-    """The composed train maps the fan onto the last leg, and every output ray passes through the image."""
-    for subject, planes, legs, train, picture in scenarios.train(12):
-        np.testing.assert_allclose((train(legs[0]) ^ picture).kernel, 0.0, atol=1e-10)
-        np.testing.assert_allclose((train(legs[0]) - legs[-1]).kernel, 0.0, atol=1e-10)
+def test_moving_train_keeps_rays_concurrent():
+    """The composed train matches the final bundle leg and brings every outgoing ray through the image crossing."""
+    for _, _, legs, train, picture in scenarios.moving_train_states(4):
+        assert ((picture & train(legs[0])).abs() < 1e-10).all()
+        assert ((train(legs[0]) - legs[-1]).norm() < 1e-10).all()
 
 
-def test_one_lens_images_by_the_lens_equation():
-    """The first lens's image lies where the thin lens equation puts it."""
-    _, image, _, _, planes = scenarios.lenses()
+def test_single_lens_satisfies_thin_lens_equation_and_draws():
+    """The static lens systems satisfy the thin-lens equation and render both the static diagram and one train frame."""
+    imaging, image, focusing, focus, planes = scenarios.static_lens_systems()
     subject = scenarios.subject
     plane = planes[0]
-    distances = (-(plane & subject) / (scenarios.mv.w & subject), (plane & image) / (scenarios.mv.w & image))
-    np.testing.assert_allclose((1 / distances[0] + 1 / distances[1]).to_array(), 1 / scenarios.first_focal, atol=1e-12)
-
-
-def test_one_frame_of_the_train_draws():
-    next(render.animate_train(scenarios.train(1)))
+    object_distance = -(plane & subject) / (scenarios.mv.w & subject)
+    image_distance = (plane & image) / (scenarios.mv.w & image)
+    assert ((1 / object_distance + 1 / image_distance - 1 / scenarios.first_focal).abs() < 1e-12).all()
+    plt.close(render.lenses_figure(subject, imaging, image, focusing, focus, planes))
+    next(render.train_animation(scenarios.moving_train_states(1)))

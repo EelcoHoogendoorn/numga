@@ -150,8 +150,8 @@ async function start() {
   const format = navigator.gpu.getPreferredCanvasFormat();
   await stage("configuring the canvas", () => context.configure({ device, format, alphaMode: "opaque" }));
 
-  // The three shaders, each with its bindings as the runner lays them out and its uniforms, where it has any, as one
-  // block: the tetrahedra's ramps made once, the camera and the gauges advanced each frame, and the tracer.
+  // The four shaders, each with its bindings as the runner lays them out and its uniforms, where it has any, as one
+  // block: the tetrahedra's simplex gradients made once, the camera and the gauges advanced each frame, and the tracer.
   step("Compiling the shaders…");
   const programs = {};
   for (const [name, program] of Object.entries(C.shaders)) {
@@ -180,7 +180,7 @@ async function start() {
 
   // The storage arrays, each made once and shared by name between the shaders: the tables the file holds, the state
   // the advance pass carries, the arrays the GPU alone writes, and the image, which the tracer writes.
-  step("Loading the mesh…");
+  step("Loading the triangulation…");
   const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
   const buffers = {};
   await stage("the storage arrays", async () => {
@@ -210,8 +210,8 @@ async function start() {
     }
   };
 
-  // The struts' and beads' styles and the tetrahedra's ramps, made once on the GPU from the mesh.
-  await stage("making the mesh's styles and ramps", async () => {
+  // The struts' and beads' styles and the tetrahedra's simplex gradients, made once on the GPU from the triangulation.
+  await stage("making the triangulation's styles and simplex gradients", async () => {
     const encoder = device.createCommandEncoder({ label: "setup" });
     dispatch(encoder, "setup", C.start.setup_invocations, 1);
     device.queue.submit([encoder.finish()]);

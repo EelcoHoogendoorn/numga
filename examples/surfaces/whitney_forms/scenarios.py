@@ -1,4 +1,4 @@
-"""Reference triangles, vertex stars, edge diamonds, disk meshes and a reference tetrahedron for Whitney forms."""
+"""Reference triangles, vertex stars, two-triangle diamonds, triangulated disks, and scalene tetrahedra provide test domains for Whitney forms."""
 
 from __future__ import annotations
 
@@ -9,246 +9,264 @@ import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import VGA2D as ga
-from numga.sparse import spdiag
-from examples.util import shapes
-from examples.util.topology import Topology
+from numga.topology import Topology, simplex_parity
 from examples.surfaces.whitney_forms.core import SpacePoint, space_mv
+from examples.util import shapes
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                  # Scalar+
-Plane = ga.gatype.vector()                                                  # Vector+
+Plane = ga.gatype.vector()                                                   # Vector+
 Point = ga.gatype.antivector()                                               # Antivector-
 
 n_triangle_subdivisions = 8
 n_star_divisions = 2
 n_tet_subdivisions = 6
-# The level surfaces of each edge form drawn, and the cuts of each side of a face whose parts' middles its face form's
-# field lines run through.
 n_pages = 5
 n_face_cuts = 4
 n_disk_divisions = 9
 disk_radius = 1.0
 electrode_threshold = 0.8
 fibre_angle = np.pi / 6
-principal_conductivities = np.array([[1, 1], [10, 1]])                       # [cases, axes]
+principal_conductivities = np.array([[1, 1], [10, 1]])                       # [2, 2]
 
 
 # --- plumbing -------------------------------------------------------------------------
+def face_part_middles(n_cuts: int) -> np.ndarray:
+    """Subdividing each triangle edge into `n_cuts` equal segments partitions the face into equal-area subtriangles with centre weights (`[n_cuts * n_cuts, 3]`)."""
+    steps = np.arange(n_cuts)
+    first, second = np.meshgrid(steps, steps, indexing="ij")
+    upright = first + second < n_cuts
+    inverted = first + second < n_cuts - 1
+    upright_corners = np.stack((first[upright], second[upright], n_cuts - 1 - first[upright] - second[upright]), axis=-1)
+    inverted_corners = np.stack((first[inverted], second[inverted], n_cuts - 2 - first[inverted] - second[inverted]),
+                                axis=-1)
+    return np.concatenate((upright_corners + 1 / 3, inverted_corners + 2 / 3)) / n_cuts
+
+
 def triangle_samples(corners: Point, n_subdivisions: int) -> Point:
-    """Interior barycentric lattice points inside a triangle."""
+    """Uniform lattice weights inside a reference triangle place interior sample points (`[...] Point-[F]`) across each face of `corners` (`[3] Point-[F]`)."""
     steps = np.arange(1, n_subdivisions)
     first, second = np.meshgrid(steps, steps, indexing="ij")
     inside = first + second < n_subdivisions
     weights = np.stack((n_subdivisions - first[inside] - second[inside],
-                        first[inside], second[inside]), axis=-1) / n_subdivisions  # [samples, corners]
-    return (corners * weights).sum(axis=-1)                                  # [samples] Point-
+                        first[inside], second[inside]), axis=-1) / n_subdivisions  # [..., 3]
+    return (corners * weights).sum(axis=-1)                                  # [...] Point-[F]
 
 
-def single_triangle(n_subdivisions: int) -> tuple[Point, Point]:
-    """A scalene triangle and its interior sample points."""
+def single_triangle(n_subdivisions: int) -> tuple[Topology, Point, Point]:
+    """Three non-collinear planar points define a single scalene triangle topology, its vertices (`Point-[V]`), and interior sample points (`[...] Point-[F]`)."""
     horizontal, vertical = mv.x.dual(), mv.y.dual()                          # [] Point-, [] Point-
-    corners = stack((horizontal * 0.0 + vertical * 0.0,
-                     horizontal * 1.2 + vertical * 0.12,
-                     horizontal * 0.38 + vertical * 0.96))                   # [corners] Point-
-    return corners, triangle_samples(corners, n_subdivisions)
+    vertices = stack((horizontal * 0.0 + vertical * 0.0,
+                      horizontal * 1.2 + vertical * 0.12,
+                      horizontal * 0.38 + vertical * 0.96)).field()          # Point-[V]
+    topology = Topology(3, [[0, 1, 2]])
+    return topology, vertices, triangle_samples(topology.incidence[2, 0] * vertices, n_subdivisions)
 
 
-def edge_diamond(n_subdivisions: int) -> tuple[Topology, Point, Point]:
-    """Two triangles sharing a vertical interior edge, and the interior sample points of each."""
+def edge_diamond() -> tuple[Topology, Point]:
+    """Four planar vertices define two triangles sharing a vertical interior edge (`Point-[V]`)."""
     horizontal, vertical = mv.x.dual(), mv.y.dual()                          # [] Point-, [] Point-
     bottom, top = -vertical * 0.72, vertical * 0.72                          # [] Point-, [] Point-
     left_apex = -horizontal * 0.95 + vertical * 0.14                         # [] Point-
     right_apex = horizontal * 0.92 - vertical * 0.12                         # [] Point-
-    vertices = stack((bottom, top, left_apex, right_apex)).field()           # Point-[vertices]
+    vertices = stack((bottom, top, left_apex, right_apex)).field()           # Point-[V]
     topology = Topology(4, np.array([[0, 1, 2], [1, 0, 3]]))
-    return topology, vertices, triangle_samples(topology.incidence[2, 0] * vertices, n_subdivisions)  # ..., [samples] Point-[faces]
+    return topology, vertices
 
 
 def tetrahedron_samples(corners: SpacePoint, n_subdivisions: int) -> SpacePoint:
-    """Interior barycentric lattice points inside each tetrahedron of corners `[corners] Point-[tets]`,
-    `[samples] Point-[tets]`."""
+    """Uniform lattice weights inside a reference tetrahedron place interior sample points (`[...] Point-[T]`) across each element of `corners` (`[4] Point-[T]`)."""
     steps = np.arange(1, n_subdivisions)
     first, second, third = np.meshgrid(steps, steps, steps, indexing="ij")
     inside = first + second + third < n_subdivisions
     weights = np.stack((n_subdivisions - first[inside] - second[inside] - third[inside],
-                        first[inside], second[inside], third[inside]), axis=-1) / n_subdivisions  # [samples, corners]
-    return (corners * weights).sum(axis=-1)                                  # [samples] Point-[tets]
+                        first[inside], second[inside], third[inside]), axis=-1) / n_subdivisions  # [..., 4]
+    return (corners * weights).sum(axis=-1)                                  # [...] Point-[T]
 
 
 def single_tetrahedron(n_subdivisions: int) -> tuple[Topology, SpacePoint, SpacePoint]:
-    """A mesh of one positively oriented scalene tetrahedron in space, its vertices, and its interior sample points."""
+    """Four non-coplanar projective points define a positively oriented scalene tetrahedron, its vertices (`Point-[V]`), and interior sample points (`[...] Point-[T]`)."""
     vertices = space_mv.point([[-0.56, -0.38, -0.34],
                                [0.62, -0.28, -0.34],
                                [-0.05, 0.68, -0.34],
-                               [0.03, 0.02, 0.66]]).field()                  # Point-[vertices]
+                               [0.03, 0.02, 0.66]]).field()                  # Point-[V]
     topology = Topology(4, [[0, 1, 2, 3]])
     return topology, vertices, tetrahedron_samples(topology.incidence[3, 0] * vertices, n_subdivisions)
 
 
 def deformed_tetrahedron() -> SpacePoint:
-    """The vertices of a strongly sheared, stretched and shifted tetrahedron of the same sense, `Point-[vertices]`."""
+    """Sheared, stretched, and translated projective points define a deformed tetrahedron (`Point-[V]`) of positive orientation."""
     return space_mv.point([[0.40, -1.10, 0.25],
                            [2.30, -0.35, -0.15],
                            [0.85, 1.65, 0.55],
-                           [1.15, 0.20, 2.45]]).field()                      # Point-[vertices]
+                           [1.15, 0.20, 2.45]]).field()                      # Point-[V]
 
 
 def obtuse_diamond() -> tuple[Topology, Point]:
-    """Two obtuse triangles sharing a long horizontal edge where circumcentric DEC's Hodge weight is negative."""
+    """Two obtuse triangles sharing a long horizontal edge form a diamond (`Point-[V]`) whose circumcentric Hodge weight is negative."""
     horizontal, vertical = mv.x.dual(), mv.y.dual()                          # [] Point-, [] Point-
     vertices = stack((horizontal * 0.0 + vertical * 0.0,
                       horizontal * 2.0 + vertical * 0.0,
                       horizontal * 1.0 + vertical * 0.4,
-                      horizontal * 1.0 - vertical * 0.4)).field()            # Point-[vertices]
+                      horizontal * 1.0 - vertical * 0.4)).field()            # Point-[V]
     faces = np.array([[0, 1, 2], [1, 0, 3]])
     return Topology(4, faces), vertices
 
 
 def main() -> None:
-    from examples.surfaces.whitney_forms.core import (
-        Operators, barycentric_hats, complements, conduction, edge_conductance, edge_whitney_forms, simplex_parity,
-        tetrahedral_edge_pages, tetrahedral_face_lines, tetrahedral_forms, tetrahedral_helicity, triangle,
-    )
     from examples.surfaces.whitney_forms import render
+    from examples.surfaces.whitney_forms.core import (
+        cochain_maps,
+        edge_conductance,
+        edge_whitney_forms,
+        edge_whitney_map,
+        simplex_gradient_map,
+        simplex_gradients,
+        steady_conduction,
+        tetrahedral_edge_pages,
+        tetrahedral_face_lines,
+        tetrahedral_forms,
+        tetrahedral_helicity,
+        vertex_whitney_forms,
+    )
     from examples.util.animation import save_figure
 
-    # 1. Barycentric hat functions and piecewise-constant face gradients.
-    corners, points = single_triangle(n_triangle_subdivisions)
-    hats, gradients = barycentric_hats(corners, points)
+    # 1. Simplex gradients and piecewise-linear vertex 0-forms.
+    triangle, triangle_vertices, sample_points = single_triangle(n_triangle_subdivisions)
+    patches, gradients = simplex_gradients(triangle, triangle_vertices)      # Patch-[F], [3] Plane+[F]
+    vertex_forms = vertex_whitney_forms(triangle, triangle_vertices, sample_points)  # [3, ...] Scalar+[F]
     star_topology, star_coordinates = shapes.hexagonal_disk(disk_radius, n_star_divisions)
-    star_vertices = mv.vector(star_coordinates).dual().field()               # Point-[vertices]
-    vertex_hat = mv.scalar((np.arange(star_topology.n_vertices) == 0)[..., None]).field()  # Scalar+[vertices]
+    V_star, E_star, F_star = star_topology.n_elements
+    star_vertices = mv.vector(star_coordinates).dual().field()               # Point-[V_star]
+    vertex_form = mv.scalar((np.arange(V_star) == 0)[..., None]).field()     # Scalar+[V_star]
     save_figure(
-        render.draw_hat_0forms(corners, gradients, star_topology, star_vertices, vertex_hat),
-        "whitney_hat_0form",
+        render.vertex_forms_figure(triangle, triangle_vertices, gradients, star_topology, star_vertices, vertex_form),
+        "whitney_vertex_0form",
     )
 
-    # 2. Edge Whitney 1-forms and tangential continuity across a shared edge.
-    edge_forms = edge_whitney_forms(corners, points)                         # [corners, samples] Plane+
-    diamond_topology, diamond_vertices, _ = edge_diamond(n_triangle_subdivisions)
-    diamond = Operators(diamond_topology, diamond_vertices)
-    # Unit circulation on the one interior edge, read on both faces through their edge forms,
-    # each signed by the sense in which its face runs along the edge.
-    shared_circulation = mv.scalar(np.isin(np.arange(diamond_topology.n_elements[1]), diamond_topology.interior[1])[..., None]).field()  # Scalar+[edges]
-    corner_forms = edge_whitney_forms(corners, corners)                      # [edges, corners] Plane+
-    corner_offsets = (diamond.corners[:, None] - diamond.corners[None, :]) / (2 * diamond.patches)
-    corner_whitney1 = (spdiag(corner_offsets) * diamond_topology.boundary[2, 1]).sum(axis=1) * Scalar
-    shared_corner_forms = corner_whitney1(shared_circulation)                 # [corners] Plane+[faces]
+    # 2. Edge Whitney 1-forms and tangential continuity across a shared interior edge.
+    triangle_corners = triangle.incidence[2, 0] * triangle_vertices          # [3] Point-[F]
+    edge_forms = edge_whitney_forms(triangle, triangle_vertices, sample_points)  # [3, ...] Plane+[F]
+    corner_forms = edge_whitney_forms(triangle, triangle_vertices, triangle_corners)  # [3, 3] Plane+[F]
+    diamond_topology, diamond_vertices = edge_diamond()
+    V_diamond, E_diamond, F_diamond = diamond_topology.n_elements
+    diamond_corners = diamond_topology.incidence[2, 0] * diamond_vertices    # [3] Point-[F_diamond]
+    shared_circulation = mv.scalar(np.isin(np.arange(E_diamond), diamond_topology.interior[1])[..., None]).field()  # Scalar+[E_diamond]
+    shared_corner_forms = edge_whitney_map(diamond_topology, diamond_vertices, diamond_corners)(shared_circulation)  # [3] Plane+[F_diamond]
     save_figure(
-        render.draw_edge_1forms(corners, corner_forms, diamond_topology, diamond_vertices, shared_corner_forms),
+        render.edge_forms_figure(triangle, triangle_vertices, corner_forms, diamond_topology, diamond_vertices, shared_corner_forms),
         "whitney_edge_1form",
     )
 
-    # 3. Whitney 0-, 1- and 2-forms on a tetrahedron, and the volume pairing that links opposite edges.
+    # 3. Whitney 0-, 1-, and 2-forms on a tetrahedron, and opposite-edge helicity linkage.
     tetrahedron, tet_vertices, tet_points = single_tetrahedron(n_tet_subdivisions)
-    # The forms of each degree, one quotient each: the corners' ramps, the edges' forms and the faces' forms.
-    ramps, tet_edge_forms, tet_face_forms = (tetrahedral_forms(tetrahedron, tet_vertices, m) for m in range(3))  # [corners] Plane+[tets], [tet_edges] Bivector+[tets], [corners] Trivector+[tets]
-    tet_pages = tetrahedral_edge_pages(tetrahedron, tet_vertices, n_pages)     # [tet_edges, pages, 3] Point-[tets]
-    tet_lines = tetrahedral_face_lines(tetrahedron, tet_vertices, n_face_cuts)  # [corners, lines, 2] Point-[tets]
+    tet_vertex_forms, tet_edge_forms, tet_face_forms = (
+        tetrahedral_forms(tetrahedron, tet_vertices, degree) for degree in range(3)
+    )
+    tet_helicity = tetrahedral_helicity(tetrahedron, tet_vertices)           # [6, 6] Scalar+[T]
+    tet_pages = tetrahedral_edge_pages(tetrahedron, tet_vertices, n_pages)   # [6, n_pages, 3] Point-[T]
+    tet_lines = tetrahedral_face_lines(tetrahedron, tet_vertices, face_part_middles(n_face_cuts))  # [4, ..., 2] Point-[T]
     save_figure(
-        render.draw_tet_whitney(tetrahedron, tet_vertices, tet_pages, tet_lines),
+        render.tetrahedron_forms_figure(tetrahedron, tet_vertices, tet_pages, tet_lines),
         "whitney_tet_forms",
     )
 
-    # 4. Exact midpoint quadrature and anisotropic conduction across a disk.
+    # 4. Commuting cochain maps, exact midpoint quadrature, and anisotropic conduction across a disk.
     topology, coordinates = shapes.hexagonal_disk(disk_radius, n_disk_divisions)
-    vertices = mv.vector(coordinates).dual().field()                         # Point-[vertices]
-    operators = Operators(topology, vertices)
-    fibre = (mv.xy * (-fibre_angle / 2)).exp() >> mv.x.dual()                # [] Point-
+    V, E, F = topology.n_elements
+    vertices = mv.vector(coordinates).dual().field()                         # Point-[V]
+    fibre_turn = (mv.xy * (-fibre_angle / 2)).exp()                          # [] Rotor+
+    fibre = fibre_turn >> mv.x.dual()                                        # [] Point-
     quarter_turn = (mv.xy * (-np.pi / 4)).exp()                              # [] Rotor+
-    directions = stack((fibre, quarter_turn >> fibre))                       # [axes] Point-
-    conductivity = (directions * (Plane & directions) * principal_conductivities).sum(axis=-1)  # [cases] Point- <- Plane+
+    directions = stack((fibre, quarter_turn >> fibre))                       # [2] Point-
+    conductivity = (directions * (Plane & directions) * principal_conductivities).sum(axis=-1)  # [2] Point- <- Plane+
 
     boundary = topology.exterior[0]
-    abscissa = (mv.x & vertices).batch()                                     # [vertices] Scalar+
-    electrodes = boundary[abscissa[boundary].norm() > electrode_threshold]
-    pinned = topology.reading(electrodes, 0)
-    prescribed = ~pinned * (pinned * (mv.x & vertices))                      # Scalar+[vertices]
-    potential, current, streamfunction = conduction(
-        operators, conductivity, electrodes, prescribed,
-    )
+    exterior = topology.reading(boundary, 0)                                 # Scalar+[V_exterior <- V]
+    electrodes = boundary[(exterior * (mv.x & vertices)).abs() > electrode_threshold]
+    pinned = topology.reading(electrodes, 0)                                 # Scalar+[V_pinned <- V]
+    prescribed = pinned.adjugate() * (pinned * (mv.x & vertices))            # Scalar+[V]
+    potential, current = steady_conduction(topology, vertices, conductivity, electrodes, prescribed)  # [2] Scalar+[V], [2] Point-[F]
     save_figure(
-        render.draw_anisotropic_flow(topology, vertices, potential, current, fibre),
+        render.conduction_figure(topology, vertices, potential, current, fibre),
         "whitney_anisotropic_flow",
     )
 
     # checks
-    corner_hats, _ = barycentric_hats(corners, corners)
-    np.testing.assert_allclose(corner_hats.kernel, np.eye(3)[..., None], atol=1e-14)
-    np.testing.assert_allclose(hats.sum(axis=0).kernel, 1.0, atol=1e-14)
-    np.testing.assert_allclose(gradients.sum(axis=0).kernel, 0.0, atol=1e-14)
+    corner_values = vertex_whitney_forms(triangle, triangle_vertices, triangle_corners)
+    assert ((corner_values - np.eye(3)).abs() < 1e-10).all()
+    assert ((vertex_forms.sum(axis=0) - 1).abs() < 1e-10).all()
+    assert (gradients.sum(axis=0).norm() < 1e-10).all()
 
-    first, second = complements(triangle, 0).T
-    alternating_forms = hats[first] * gradients[second, None] - hats[second] * gradients[first, None]
-    np.testing.assert_allclose((edge_forms - alternating_forms).kernel, 0.0, atol=1e-14)
-    sides = (triangle.boundary[2, 1] * (triangle.d[0] * corners.field())).batch()[:, 0]
-    midpoints = (corners[first] + corners[second]) / 2
-    midpoint_readings = edge_whitney_forms(corners, midpoints) & sides[None, :]
-    np.testing.assert_allclose(midpoint_readings.kernel, np.eye(3)[..., None], atol=1e-14)
+    tails, heads = triangle.corners[2, 1]
+    alternating_forms = triangle.orientation[1][0, :, None] * (
+        vertex_forms[tails] * gradients[heads, None] - vertex_forms[heads] * gradients[tails, None]
+    )
+    assert ((edge_forms - alternating_forms).norm() < 1e-10).all()
+    sides = triangle.boundary[2, 1] * (triangle.d[0] * triangle_vertices)
+    triangle_midpoints = triangle.incidence[2, 1] * (triangle.incidence[1, 0].mean(axis=0) * triangle_vertices)
+    midpoint_readings = edge_whitney_forms(triangle, triangle_vertices, triangle_midpoints) & sides[None, :]
+    assert ((midpoint_readings - np.eye(3)).abs() < 1e-10).all()
 
-    tails, heads = diamond_topology.incidence[1, 0] * diamond_vertices
-    shared = diamond_topology.reading(diamond_topology.interior[1], 1)            # Scalar+[shared <- edges]
-    shared_edge, = (shared * (diamond_topology.d[0] * diamond_vertices)).batch()
-    seam_point, = (shared * (tails * 0.35 + heads * 0.65)).batch()
-    seam_forms = (seam_point - diamond.corners) / (2 * diamond.patches)
-    seam_whitney1 = (spdiag(seam_forms) * diamond_topology.boundary[2, 1]).sum(axis=0) * Scalar
-    np.testing.assert_allclose((seam_whitney1(shared_circulation) & shared_edge).kernel, 1.0, atol=1e-14)
+    diamond_edges = diamond_topology.d[0] * diamond_vertices
+    edge_samples = ((diamond_topology.incidence[1, 0] * np.array([[0.15], [0.85]])).sum(axis=0)) * diamond_vertices
+    shared_reading = diamond_topology.reading(diamond_topology.interior[1], 1)
+    face_from_shared = (diamond_topology.incidence[2, 1] * shared_reading.adjugate()).sum(axis=0)
+    seam_points = face_from_shared * (shared_reading * edge_samples)
+    seam_edges = face_from_shared * (shared_reading * diamond_edges)
+    seam_readings = edge_whitney_map(diamond_topology, diamond_vertices, seam_points[None])[0](shared_circulation)
+    assert (((seam_readings & seam_edges) - 1).abs() < 1e-10).all()
 
-    # Each degree's forms read one on their own simplex's join, in the sense it is stored, and nothing on the others.
-    for m, forms in enumerate((ramps, tet_edge_forms, tet_face_forms)):
-        spans = reduce(and_, tetrahedron.on[3, m] * tet_vertices)
-        np.testing.assert_allclose((forms[:, None] & spans[None, :]).kernel, np.eye(spans.shape[0])[..., None, None], atol=1e-13)
-    tet_hats = ramps[:, None] & tet_points[None, :]
-    np.testing.assert_allclose(tet_hats.sum(axis=0).kernel, 1.0, atol=1e-13)
+    for degree, forms in enumerate((tet_vertex_forms, tet_edge_forms, tet_face_forms)):
+        spans = reduce(and_, tetrahedron.on[3, degree] * tet_vertices)
+        assert (((forms[:, None] & spans[None, :]) - np.eye(spans.shape[0])).abs() < 1e-10).all()
+    tet_weights = tet_vertex_forms[:, None] & tet_points[None, :]
+    assert ((tet_weights.sum(axis=0) - 1).abs() < 1e-10).all()
 
-    # Whitney's formulas from the ramps: the edge forms, and the face forms, which read one on the join of a face's
-    # corners, twice the face; without a point, each form is the wedge of the ramps at its simplex's corners.
-    tails, heads = tetrahedron.corners[3, 1]
-    alternating_edge_forms = tet_hats[tails] * ramps[heads, None] - tet_hats[heads] * ramps[tails, None]
-    np.testing.assert_allclose(((tet_edge_forms[:, None] & tet_points[None, :]) - alternating_edge_forms).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((tet_edge_forms - (ramps[tails] ^ ramps[heads])).kernel, 0.0, atol=1e-13)
-    first, second, third = tetrahedron.corners[3, 2]
-    alternating_face_forms = 2 * (tet_hats[first] * (ramps[second, None] ^ ramps[third, None])
-                                  + tet_hats[second] * (ramps[third, None] ^ ramps[first, None])
-                                  + tet_hats[third] * (ramps[first, None] ^ ramps[second, None]))
-    np.testing.assert_allclose((2 * (tet_face_forms[:, None] & tet_points[None, :]) - alternating_face_forms).kernel, 0.0, atol=1e-13)
-    np.testing.assert_allclose((tet_face_forms - (ramps[first] ^ ramps[second] ^ ramps[third])).kernel, 0.0, atol=1e-13)
+    tet_corners = tetrahedron.incidence[3, 0] * tet_vertices
+    tet_tails, tet_heads = tetrahedron.corners[3, 1]
+    alternating_tet_edges = tet_weights[tet_tails] * tet_vertex_forms[tet_heads, None] - tet_weights[tet_heads] * tet_vertex_forms[tet_tails, None]
+    edge_spans = reduce(and_, tetrahedron.on[3, 1] * tet_vertices)
+    assert ((((tet_edge_forms[:, None] & tet_points[None, :]) - alternating_tet_edges)[:, :, None] & tet_corners[None, None, :]).abs() < 1e-10).all()
+    assert (((tet_edge_forms - (tet_vertex_forms[tet_tails] ^ tet_vertex_forms[tet_heads]))[:, None] & edge_spans[None, :]).abs() < 1e-10).all()
+    face_first, face_second, face_third = tetrahedron.corners[3, 2]
+    face_spans = reduce(and_, tetrahedron.on[3, 2] * tet_vertices)
+    assert (((tet_face_forms - (tet_vertex_forms[face_first] ^ tet_vertex_forms[face_second] ^ tet_vertex_forms[face_third]))[:, None] & face_spans[None, :]).abs() < 1e-10).all()
 
-    tet_helicity = tetrahedral_helicity(tetrahedron, tet_vertices)
     deformed_helicity = tetrahedral_helicity(tetrahedron, deformed_tetrahedron())
-    np.testing.assert_allclose((tet_helicity - deformed_helicity).kernel, 0.0, atol=1e-13)
-    # Two edges link where they share no corner, with the sense of the tetrahedron's corners in the order they list
-    # them, over six.
+    assert ((tet_helicity - deformed_helicity).abs() < 1e-10).all()
     edge_corners = tetrahedron.corners[3, 1].T
     edge_pairs = np.concatenate(np.broadcast_arrays(edge_corners[:, None], edge_corners[None, :]), axis=-1)
     disjoint = (edge_corners[:, None, :, None] != edge_corners[None, :, None, :]).all(axis=(-1, -2))
     linking = np.where(disjoint, simplex_parity(edge_pairs), 0) / 6
-    np.testing.assert_allclose(tet_helicity.kernel[..., 0, 0], linking, atol=1e-13)
+    assert ((tet_helicity - linking).abs() < 1e-10).all()
 
+    d0 = topology.d[0] * Scalar
+    d1 = topology.d[1] * Scalar
+    gradient = simplex_gradient_map(topology, vertices)
+    whitney1, curl, whitney2 = cochain_maps(topology, vertices)
     linear_potential = (mv.x & vertices) * 0.7 - (mv.y & vertices) * 1.1
-    np.testing.assert_allclose(operators.d1(operators.d0(linear_potential)).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((operators.whitney1(operators.d0(linear_potential)) - operators.gradient(linear_potential)).kernel, 0.0, atol=1e-14)
-    test_cochain = operators.d0(linear_potential) + mv.scalar(np.sin(np.arange(topology.n_elements[1]))[..., None]).field()
-    np.testing.assert_allclose((operators.curl(test_cochain) - operators.whitney2(operators.d1(test_cochain))).kernel, 0.0, atol=1e-12)
+    assert (d1(d0(linear_potential)).abs() < 1e-10).all()
+    assert ((whitney1(d0(linear_potential)) - gradient(linear_potential)).norm() < 1e-10).all()
+    trial_cochain = d0(linear_potential) + mv.scalar(np.sin(np.arange(E))[..., None]).field()
+    assert ((curl(trial_cochain) - whitney2(d1(trial_cochain))).norm() < 1e-10).all()
 
-    edge_conductances = edge_conductance(operators, conductivity)
-    conductance = operators.gradient.adjugate()((operators.areas * conductivity)(operators.gradient))
+    disk_patches, disk_gradients = simplex_gradients(topology, vertices)
+    conductance = gradient.adjugate()((disk_patches.antinorm() * conductivity)(gradient))
+    edge_conductances = edge_conductance(topology, vertices, conductivity)
     quadratic_potential = (mv.x & vertices).squared() - 0.5 * (mv.y & vertices)
-    np.testing.assert_allclose(
-        (operators.d0.adjugate()(edge_conductances(operators.d0(quadratic_potential))) - conductance(quadratic_potential)).kernel,
-        0.0, atol=1e-13,
-    )
-    np.testing.assert_allclose((conductance - conductance.adjugate()).cells.kernel, 0.0, atol=1e-13)
+    assert ((d0.adjugate()(edge_conductances(d0(quadratic_potential))) - conductance(quadratic_potential)).antinorm() < 1e-10).all()
+    assert (((linear_potential & conductance(quadratic_potential)) - (quadratic_potential & conductance(linear_potential))).sites.sum().abs() < 1e-10).all()
 
     obtuse_topology, obtuse_vertices = obtuse_diamond()
-    obtuse_ops = Operators(obtuse_topology, obtuse_vertices)
-    obtuse_edge_conductance = edge_conductance(obtuse_ops, Plane.dual())
-    shared_cochain = mv.scalar(np.isin(np.arange(obtuse_topology.n_elements[1]), obtuse_topology.interior[1])[..., None]).field()
-    assert (obtuse_edge_conductance(shared_cochain) & shared_cochain).sites.sum() > 0
+    V_obtuse, E_obtuse, F_obtuse = obtuse_topology.n_elements
+    obtuse_conductance = edge_conductance(obtuse_topology, obtuse_vertices, Plane.dual())
+    shared_cochain = mv.scalar(np.isin(np.arange(E_obtuse), obtuse_topology.interior[1])[..., None]).field()
+    assert ((shared_cochain & obtuse_conductance(shared_cochain)).sites.sum() > 0).all()
 
-    free_vertices = np.setdiff1d(np.arange(topology.n_vertices), electrodes)
-    free = ~topology.reading(free_vertices, 0) * Scalar
-    np.testing.assert_allclose(free.adjugate()(conductance(potential)).kernel, 0.0, atol=1e-11)
+    free_vertices = np.setdiff1d(np.arange(V), electrodes)
+    free = topology.reading(free_vertices, 0).adjugate() * Scalar
+    assert (free.adjugate()(conductance(potential)).antinorm() < 1e-9).all()
 
 
 if __name__ == "__main__":

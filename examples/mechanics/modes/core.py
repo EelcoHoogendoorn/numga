@@ -1,21 +1,13 @@
-"""Vibration modes of a suspended plate in PGA2D: stiffness and inertia as maps from twists to forques.
+"""Rigid-body stiffness and inertia map twists to forques and determine the vibration modes of a suspended plate.
 
-A spring is the line from its anchor to its attachment; paired with a twist, `Twist & line`, it reads
-how far the motion stretches the spring, and the spring's stiffness is the dyad
-`line * (Twist & line) * k`, a map from twists to forques. The plate's stiffness is the sum over its
-springs, and its inertia the sum over its mass points, each joined with its own motion under a twist,
-`points.regressive(points.commutator(Twist))`. Paired back with a twist, both maps are energies,
-symmetric forms on twists, and the natural modes are the twists where the two energies are
-proportional: one eigenproblem of one form against the other.
+Joining each spring's anchor to its attachment gives its line of action, pairing that line with `Twist` reads the spring extension, and multiplying the line back by that linear form scaled by the spring constant builds a Hookean dyad from twists to forques. Summing those dyads over the springs gives the suspension stiffness, while summing `(masses * mass_points).regressive(mass_points.commutator(Twist))` over the lumped mass points gives the rigid-body inertia without choosing a reference point or shifting axes.
 
-Two vertical springs let the plate slide sideways freely, bounce and rock; an angled spring removes the
-free slide and mixes the three. The model is linear about an unstressed equilibrium, so the slide is
-free to first order only.
+Pairing both maps with a second `Twist` turns stiffness and inertia into symmetric energy forms on twists whose generalized eigenproblem `potential_form.eigh(kinetic_form)` yields the natural frequencies and mass-normalized mode twists.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -23,95 +15,55 @@ from numga import NumpyContext
 from numga.algebras import PGA2D
 
 
-ctx = NumpyContext(PGA2D)
-mv = ctx.multivector
+ga = PGA2D
+mv = NumpyContext(ga).multivector
 
-Scalar = PGA2D.gatype.scalar()                      # Scalar+
-Point = PGA2D.gatype.antivector()                   # Antivector-
-Twist = PGA2D.gatype.bivector()                     # Bivector+
-Forque = PGA2D.gatype.antibivector()                # Antibivector-
-SpringExtension = PGA2D.gatype((Scalar, Twist))
-Stiffness = PGA2D.gatype((Forque, Twist))
-Inertia = PGA2D.gatype((Forque, Twist))
-
-
-@dataclass(frozen=True)
-class Suspension:
-    """Geometry and masses prepared for one suspension."""
-
-    body: Point                     # [corners] Point-
-    attachments: Point              # [springs] Point-
-    anchors: Point                  # [springs] Point-
-    spring_constants: np.ndarray    # [springs] N/m
-    mass_points: Point              # [mass_points] Point-
-    masses: np.ndarray              # [mass_points] kg
+Scalar = ga.gatype.scalar()                          # Scalar+
+Point = ga.gatype.antivector()                       # Antivector-
+Twist = ga.gatype.bivector()                         # Bivector+
+Forque = ga.gatype.antibivector()                    # Antibivector-
+Stiffness = ga.gatype((Forque, Twist))               # Forque- <- Twist+
+Inertia = ga.gatype((Forque, Twist))                 # Forque- <- Twist+
 
 
-@dataclass(frozen=True)
-class ModeCase:
-    """The mode shapes of one suspension: displacements of body and springs per mode."""
-
-    body: Point                     # [corners] Point-
-    attachments: Point              # [springs] Point-
-    anchors: Point                  # [springs] Point-
-    frequencies: Scalar             # [modes] Scalar+, in Hz
-    body_offsets: Point             # [modes, corners] Point-
-    attachment_offsets: Point       # [modes, springs] Point-
-    extensions: Scalar              # [modes, springs] Scalar+
+def quadrature_points(corners: Point) -> Point:
+    """Two-point Gauss quadrature places four equal-weight mass nodes (`[4] Point-`) inside a rectangular plate with `corners` (`[4] Point-`)."""
+    # Two-point Gauss quadrature integrates quadratic mass moments on the rectangle with four equal weights.
+    centre = corners.sum(axis=0) / 4                                             # [] Point-
+    offsets = corners - centre                                                   # [4] Point-
+    return centre + offsets / np.sqrt(3)
 
 
-def suspension(n_springs: int) -> Suspension:
-    """A uniform 2-by-1 plate of mass 1, on the first `n_springs` springs of stiffness 6.
-
-    The first two springs hang vertically; the third is angled and off-centre.
-    """
-    # The plate's corners, centred at (1, 1).
-    body_xy = np.array([[0.0, 0.5], [2.0, 0.5], [2.0, 1.5], [0.0, 1.5]])          # [corners, 2] m
-    attachments_xy = np.array([[0.2, 1.5], [1.8, 1.5], [2.0, 1.0]])              # [springs, 2] m
-    anchors_xy = np.array([[0.2, 2.55], [1.8, 2.55], [2.9, 1.85]])               # [springs, 2] m
-    body = mv.point(body_xy)                                                      # [corners] Point-
-    attachments = mv.point(attachments_xy[:n_springs])                              # [springs] Point--
-    anchors = mv.point(anchors_xy[:n_springs])                                      # [springs] Point--
-    spring_constants = np.full(n_springs, 6.0)                                      # [springs] N/m
-
-    # Tensor-product 2-point Gauss quadrature on the uniform plate:
-    center = body.sum(axis=0) * 0.25
-    mass_points = center + (body - center) / np.sqrt(3)                           # [mass_points] Point-
-    masses = np.full(4, 0.25)                                                     # [mass_points] kg
-    return Suspension(body, attachments, anchors, spring_constants, mass_points, masses)
+def body_inertia(mass_points: Point, masses: np.ndarray) -> Inertia:
+    """Momentum lines across `mass_points` (`[...] Point-`) weighted by `masses` sum into the rigid-body inertia (`[] Forque- <- Twist+`)."""
+    # Joining each mass-weighted point with its commutator velocity builds its momentum map without a reference point.
+    velocities = mass_points.commutator(Twist)                                   # [...] Point- <- Twist+
+    point_momenta = (masses * mass_points).regressive(velocities)                # [...] Forque- <- Twist+
+    return point_momenta.sum(axis=0)
 
 
-def normal_modes(system: Suspension) -> ModeCase:
-    """Stiffness and inertia of one suspension, and its three modes."""
-    # Each spring's line, from its anchor to its attachment.
-    lines = (system.anchors & system.attachments).normalized()                   # [springs] Forque-
+def spring_stiffness(anchors: Point, attachments: Point, spring_constants: np.ndarray) -> Stiffness:
+    """Hookean dyads of springs joining `anchors` to `attachments` (`[...] Point-`) with `spring_constants` sum into the stiffness map (`[] Forque- <- Twist+`)."""
+    # Pairing a twist with each unit spring line reads its first-order extension, and multiplying back pulls along the same line.
+    lines = (anchors & attachments).normalized()                                 # [...] Forque-
+    extensions = Twist & lines                                                   # [...] Scalar+ <- Twist+
+    dyads = spring_constants * lines * extensions                                # [...] Forque- <- Twist+
+    return dyads.sum(axis=0)
 
-    # How far a twist stretches each spring: the twist paired with the spring's line.
-    extension = Twist & lines                                                    # [springs] Scalar+ <- Twist+
 
-    # Each spring pulls back along its line by its stretch times its constant, Hooke's law.
-    spring_stiffness = lines * extension * system.spring_constants               # [springs] Forque- <- Twist+
-    stiffness = spring_stiffness.sum(axis=0)                                     # [] Forque- <- Twist+
+def normal_modes(stiffness: Stiffness, inertia: Inertia) -> tuple[Scalar, Twist]:
+    """Generalized eigenanalysis of the potential and kinetic energy forms yields the natural frequencies (`[3] Scalar+`, in hertz) and mass-normalized mode twists (`[3] Twist+`)."""
+    # Pairing stiffness and inertia with a second twist turns both maps into symmetric bilinear energy forms.
+    potential_form = Twist & stiffness                                           # [] Scalar+ <- (Twist+, Twist+)
+    kinetic_form = Twist & inertia                                               # [] Scalar+ <- (Twist+, Twist+)
+    eigenvalues, mode_twists = potential_form.eigh(kinetic_form)                 # [3] Scalar+, Twist+
+    frequencies = eigenvalues.clip(0, np.inf).square_root() / (2 * np.pi)        # [3] Scalar+
+    return frequencies, mode_twists
 
-    # Each mass point's velocity as a map of the twist, and its momentum, the line through it along that
-    # velocity; the inertia is their sum.
-    velocities = system.mass_points.commutator(Twist)                            # [mass_points] Point- <- Twist+
-    point_momenta = (system.mass_points & velocities) * system.masses            # [mass_points] Forque- <- Twist+
-    inertia = point_momenta.sum(axis=0)                                          # [] Forque- <- Twist+
 
-    # Each map paired with a second twist is an energy, a form on two twists.
-    potential_form = Twist & stiffness                                                  # [] Scalar+ <- (Twist+, Twist+)
-    kinetic_form = Twist & inertia                                                    # [] Scalar+ <- (Twist+, Twist+)
-
-    # The natural modes: the twists where the two energies are proportional.
-    values, modes = potential_form.eigh(kinetic_form)                                        # [modes] Scalar+, Twist+
-
-    # How each mode moves the corners and the attachments, and stretches the springs.
-    body_offsets = system.body[None, :].commutator(modes[:, None])               # [modes, corners] Point-
-    attachment_offsets = system.attachments[None, :].commutator(modes[:, None])         # [modes, springs] Point-
-    extensions = extension(modes[:, None])                                       # [modes, springs] Scalar+
-
-    # The frequencies in hertz: the square root of each eigenvalue, over a full turn.
-    frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)              # [modes] Scalar+
-    return ModeCase(system.body, system.attachments, system.anchors, frequencies, body_offsets, attachment_offsets,
-                    extensions)
+def mode_oscillation(frequencies: Scalar, mode_twists: Twist, n_frames: int) -> Iterator[Twist]:
+    """Yields `n_frames` harmonic twist states (`[3] Twist+`) over two periods of the lowest nonzero frequency."""
+    duration = 2 / frequencies[frequencies > 0].min()                            # [] Scalar+
+    for fraction in np.linspace(0.0, 1.0, n_frames):
+        phases = (2 * np.pi * frequencies * (fraction * duration)).cos()         # [3] Scalar+
+        yield phases * mode_twists

@@ -7,13 +7,13 @@ import pytest
 
 from numga import NumpyContext, stack
 
-from numga.algebras import VGA3D
+from numga.algebras import VGA2D, VGA3D
 from examples.util import shapes
-from examples.util.topology import Topology, turned
+from numga.topology import Topology, reverse_orientation
 
 mv = NumpyContext(VGA3D).multivector
 # The planes that read a shape's coordinates: of x and of y for a disk, all three for a surface in space.
-Upright = VGA3D.gatype.from_blades("x y")
+Upright = VGA3D.gatype.vector().derive.within(VGA2D)
 Vector = VGA3D.gatype.vector()
 
 
@@ -47,7 +47,7 @@ def test_boundary_integral_matches_oriented_face_area(built):
     np.testing.assert_allclose((topology.d[1] * topology.d[0]).cells, 0.0, atol=0.0)
     # Interior edges cancel in the sum of face boundaries. The surviving edge pairs
     # enclose exactly the same oriented area as the sum of triangular faces.
-    boundary = ~topology.d[1] * as_scalar(np.ones(topology.n_elements[2])).field()
+    boundary = topology.d[1].adjugate() * as_scalar(np.ones(topology.n_elements[2])).field()
     tail, head = (topology.incidence[1, 0] * vertices).batch()                      # [E] Point-
     boundary_area = (boundary.batch() * (tail & head)).sum() / 2
     edges = topology.boundary[2, 1] * (topology.d[0] * vertices)
@@ -62,7 +62,7 @@ def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(div
     topology, vertices = placed(shapes.triangular_disk(radius, divisions), Upright)
     boundary, interior = topology.reading(topology.exterior[0], 0), topology.reading(topology.interior[0], 0)
     # Each vertex's degree: every edge at it, summed back onto its ends.
-    degrees = ~topology.incidence[1, 0].sum(axis=0) * as_scalar(np.ones(topology.n_elements[1])).field()   # Scalar+[vertices]
+    degrees = topology.incidence[1, 0].sum(axis=0).adjugate() * as_scalar(np.ones(topology.n_elements[1])).field()  # Scalar+[vertices]
     lengths = (topology.d[0] * vertices).norm().kernel[:, 0]
     edges = topology.boundary[2, 1] * (topology.d[0] * vertices)
     planes = (edges[1].commutator(edges[0])).normalized()                     # Bivector+[F]
@@ -101,7 +101,7 @@ def test_concentric_disk_follows_material_interfaces_without_thin_cells(division
         assert np.count_nonzero(on_ring) >= 6
         # An edge lies on the ring where both its ends do; along those, every vertex on the ring has two neighbours.
         tails, heads = topology.incidence[1, 0] * as_scalar(on_ring * 1.0).field()     # Scalar+[edges], Scalar+[edges]
-        degrees = (~topology.incidence[1, 0].sum(axis=0) * (tails * heads)).kernel[:, 0]   # [vertices]
+        degrees = (topology.incidence[1, 0].sum(axis=0).adjugate() * (tails * heads)).kernel[:, 0]  # [vertices]
         assert np.all(degrees[on_ring] == 2)
         assert not np.any((edge_radii.min(axis=0) < radius - tolerance)
                           & (edge_radii.max(axis=0) > radius + tolerance))
@@ -192,7 +192,7 @@ def test_a_disk_is_bordered_by_a_closed_loop():
 def test_a_solids_border_is_its_closed_surface_facing_out():
     # Each tetrahedron wound to positive volume, its edges from its first corner a right-handed frame.
     edges = cube_corners[cube_tets[:, 1:]] - cube_corners[cube_tets[:, :1]]     # [tets, 3, 3]
-    solid = Topology(8, np.where((np.linalg.det(edges) > 0)[:, None], cube_tets, turned(cube_tets)))
+    solid = Topology(8, np.where((np.linalg.det(edges) > 0)[:, None], cube_tets, reverse_orientation(cube_tets)))
     surface = solid.border
     assert solid.euler_characteristic == 1 and not solid.is_closed and solid.is_manifold
     assert surface.n_dim == 2 and surface.n_elements[2] == 12

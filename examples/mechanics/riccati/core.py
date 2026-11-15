@@ -1,19 +1,20 @@
-"""Docking by Riccati feedback: finite-horizon feedback for a local docking error, with costs as quadratic forms.
+"""Finite-horizon Riccati feedback for planar docking with quadratic twist and forque costs.
 
-A twist describes the remaining displacement and turn, with pose `exp(-error / 2)`. A forque is the
-total force and torque from the thrusters. Strong drag makes their relation a mobility rather than an
-acceleration: one step adds the mobility of the push to the pose error.
+Pose error is modelled as a twist with rigid-body motor `(-error / 2).exp()`, while net thruster action is modelled as a
+forque. Under strong drag, velocity is proportional to the applied forque, so one step adds the resulting displacement
+twist directly to the pose error.
 
-Every cost is a quadratic form, a form on pairs of twists or of pushes: the cost of an error is
-`value(error, error)`. Applying a form to maps pulls it back through them, so
-`value(dynamics, actuation)` is the future cost seen from the present error and push, with no
-transposes. The Riccati recursion pulls the future cost back through one step and minimizes over the
-push; its solve returns a feedback map from a twist to a forque.
+Costs on pose errors and thruster pushes are quadratic forms evaluated as `value(error, error)` and
+`effort_cost(push, push)`. Evaluating a quadratic form on linear maps pulls it back without transposes, so
+`value(dynamics, actuation)` couples the present error and push through the next step, and minimizing over the push
+yields a linear feedback map from twists to forques.
 """
 
 from collections.abc import Iterator
 
-from numga import NumpyContext
+import numpy as np
+
+from numga import NumpyContext, concatenate
 from numga.algebras import PGA2D
 
 ga = PGA2D
@@ -25,31 +26,45 @@ Twist = ga.gatype.bivector()                        # Bivector+
 Forque = ga.gatype.antibivector()                   # Antibivector-
 StateCost = ga.gatype((Scalar, Twist, Twist))       # Scalar+ <- (Twist+, Twist+)
 EffortCost = ga.gatype((Scalar, Forque, Forque))    # Scalar+ <- (Forque-, Forque-)
-Dynamics = ga.gatype((Twist, Twist))               # Twist+ <- Twist+
+Dynamics = ga.gatype((Twist, Twist))                # Twist+ <- Twist+
 Actuation = ga.gatype((Twist, Forque))              # Twist+ <- Forque-
-Feedback = ga.gatype((Forque, Twist))              # Forque- <- Twist+
+Feedback = ga.gatype((Forque, Twist))               # Forque- <- Twist+
 
 
 # --- math -----------------------------------------------------------------------------
+def tracking_cost(tracking_points: Point, axes: Point, tracking_weights: np.ndarray, dt: float) -> StateCost:
+    """Sums weighted squared displacement readouts (`[] Scalar+ <- (Twist+, Twist+)`) over hull sites and axes."""
+    tracking_lines = tracking_points[:, None] & axes[None, :]                 # [..., ...] Forque-
+    readouts = Twist & tracking_lines                                         # [..., ...] Scalar+ <- Twist+
+    return (readouts * readouts * tracking_weights).sum(axis=(0, 1)) * dt
+
+
+def drag_mobility(centre: Point, axes: Point, drag_weights: np.ndarray) -> Actuation:
+    """Inverts the translational and rotational drag dyad sum (`[] Twist+ <- Forque-`) into a planar mobility."""
+    drag_lines = concatenate([centre & axes, (axes[0] & axes[1])[None]])      # [3] Forque-
+    drag = (drag_lines * (Twist & drag_lines) * drag_weights).sum(axis=0)     # [] Forque- <- Twist+
+    return drag.inverse()
+
+
 def riccati(value: StateCost, dynamics: Dynamics, actuation: Actuation, state_cost: StateCost,
             effort_cost: EffortCost, n_steps: int) -> Iterator[tuple[StateCost, Feedback]]:
-    """The cost still to pay and the feedback, one more step back from the given cost each time."""
+    """Yields the remaining cost form and optimal feedback map (`[...]`) across `n_steps` backward steps."""
     for _ in range(n_steps):
-        # A push costs effort now and moves the error whose cost is paid next.
-        control_cost = effort_cost + value(actuation, actuation)             # [cases] Scalar+ <- (Forque-, Forque-)
-        # The push that cancels the cost's derivative, for every error at once.
-        feedback = -control_cost.solve(value(dynamics, actuation))           # [cases] Forque- <- Twist+
-        # The error's cost now, and its future cost through the step that feedback takes.
-        value = state_cost + value(dynamics, dynamics + actuation(feedback))  # [cases] Scalar+ <- (Twist+, Twist+)
+        # A push pays effort now and shifts the next error inside the future cost form.
+        control_cost = effort_cost + value(actuation, actuation)              # [...] Scalar+ <- (Forque-, Forque-)
+        # Solving against the mixed pullback cancels the cost gradient for every error at once.
+        feedback = -control_cost.solve(value(dynamics, actuation))            # [...] Forque- <- Twist+
+        # Pulling the future cost through the closed-loop step updates the remaining cost form.
+        value = state_cost + value(dynamics, dynamics + actuation(feedback))  # [...] Scalar+ <- (Twist+, Twist+)
         yield value, feedback
 
 
-def rollout(initial: Twist, dynamics: Dynamics, actuation: Actuation,
+def rollout(initial_error: Twist, dynamics: Dynamics, actuation: Actuation,
             feedbacks: Feedback) -> Iterator[Twist]:
-    """The initial error and its evolution under the finite-horizon feedback policy."""
-    error = initial                                                # [cases] Twist+
+    """Yields the initial pose error (`[...] Twist+`) and its forward trajectory under `feedbacks` (`[n_steps, ...]`)."""
+    error = initial_error                                                     # [...] Twist+
     yield error
     for feedback in feedbacks:
-        push = feedback(error)                                     # [cases] Forque-
-        error = dynamics(error) + actuation(push)                  # [cases] Twist+
+        push = feedback(error)                                                # [...] Forque-
+        error = dynamics(error) + actuation(push)                             # [...] Twist+
         yield error

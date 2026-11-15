@@ -1,10 +1,6 @@
-"""A half-wave plate between crossed polarizers: a nonzero optical map that squares to zero.
+"""A half-wave plate between crossed polarizers forms a nonzero optical map whose square vanishes.
 
-The electric field of the light is a bivector of spacetime, extrinsic, and the axes of the polarizers
-and plates are directions, antivectors. Each axis sweeps a plane through the observer's time, an
-antibivector, and a field's component along the axis is its pairing with that plane,
-`field & (axis & time)`. The field along a direction is the dual of that plane,
-`field_along = (Direction & time).dual()`. Every component maps fields to fields.
+Spacetime geometric algebra models the electric field of light as an extrinsic bivector and the axes of polarizers and wave plates as intrinsic antivectors. Joining an axis with the rest-frame time direction sweeps out an intrinsic spacetime plane, and pairing the field with `axis & time` reads its transmitted amplitude along that axis. Mapping that amplitude back into the dual field `field_along` defines a linear `Field+ <- Field+` extensor for every polarizer and wave plate, so two identical stacks compose by direct extensor evaluation.
 """
 
 from __future__ import annotations
@@ -13,28 +9,30 @@ from itertools import accumulate
 
 from numga import Algebra, NumpyContext, stack
 
-# Spacetime, space positive and time negative.
+# Spacetime `x+y+z+t-`, space positive and time negative.
 ga = Algebra("x+y+z+t-")
 mv = NumpyContext(ga).multivector
-# The electric field is a bivector, extrinsic; the components' axes are directions, antivectors.
-Field = ga.gatype.bivector()                                           # Bivector+
-Direction = ga.gatype.antivector()                                     # Antivector-
-OpticalMap = ga.gatype((Field, Field))                                 # Field+ <- Field+
+Scalar = ga.gatype.scalar()                                                    # Scalar+
+# Electric fields are extrinsic bivectors; component axes are intrinsic antivectors.
+Field = ga.gatype.bivector()                                                   # Bivector+
+Direction = ga.gatype.antivector()                                             # Antivector-
+OpticalMap = ga.gatype((Field, Field))                                         # Field+ <- Field+
 
-# The direction in time of an observer at rest with the apparatus, which pairs to one with `mv.t`; the
-# dual carries the minus of t's square.
-time = -mv.t.dual()                                                    # [] Direction-
-# The field along a direction, the dual of the plane the direction sweeps in time: the vacuum's
-# identification of a direction with the field along it, pairing to one with that plane for a unit direction.
-field_along = (Direction & time).dual()                                # [] Field+ <- Direction-
-# The field along one direction, weighted by the field's pairing with the plane another sweeps in time;
-# bound to a unit axis twice, the polarizer that transmits the field's component along the axis.
-polarizer = field_along * ((Direction & time) & Field)                 # [] Field+ <- (Direction-, Direction-, Field+)
+# Unit timelike direction of the apparatus rest frame, pairing to +1 with the time 1-form; `-` compensates `t^2 = -1`.
+time = -mv.t.dual()                                                            # [] Direction-
+# Unit electric field polarized along a spatial direction, dual to the spacetime plane swept out in time.
+field_along = (Direction & time).dual()                                        # [] Field+ <- Direction-
+# Rank-one optical projection onto one axis weighted by the field's pairing with a second axis's worldsheet.
+polarizer = field_along * ((Direction & time) & Field)                         # [] Field+ <- (Direction-, Direction-, Field+)
 
 
-# --- math
-def through_pair(entrance: OpticalMap, plate: OpticalMap, exit: OpticalMap, incident: Field) -> Field:
-    """The field before and after each component of two identical stacks."""
-    components = (entrance, plate, exit) * 2
-    fields = accumulate(components, lambda field, component: component(field), initial=incident)
-    return stack(tuple(fields), axis=-1)                               # [..., stages] Field+
+# --- math -----------------------------------------------------------------------------
+def stack_stage_fields(entrance: OpticalMap, plate: OpticalMap, exit_polarizer: OpticalMap,
+                       incident_field: Field) -> Field:
+    """Propagating `incident_field` (`[...] Field+`) sequentially through two identical
+    `(entrance, plate, exit_polarizer)` stacks collects the electric field before and after every
+    component (`[..., 7] Field+`)."""
+    components = (entrance, plate, exit_polarizer) * 2
+    stage_fields = tuple(accumulate(components, lambda field, component: component(field), initial=incident_field))
+    batch_shape = stage_fields[-1].shape
+    return stack([field.broadcast_to(batch_shape) for field in stage_fields], axis=-1)  # [..., 7] Field+

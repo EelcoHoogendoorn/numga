@@ -1,9 +1,5 @@
-"""The atoms and the brightness of the scattered light in a section of momentum transfers.
-
-The atoms, read by the planes x and y of their algebra, and the rings around the reciprocal lattice's wavevectors,
-read by the points one along x and along y, are drawn on the GPU as they are; the brightness is read out for
-matplotlib by pairing. The same lines serve the crystal in spacetime and in the algebra of space.
-"""
+"""GPU overlays draw crystal atoms and cyan reciprocal-lattice rings alongside logarithmic
+momentum-transfer brightness maps in both spacetime and spatial algebras."""
 
 from __future__ import annotations
 
@@ -15,43 +11,56 @@ from matplotlib.axes import Axes
 from matplotlib.colors import LogNorm, to_rgb
 from matplotlib.image import AxesImage
 
-from numga import Extensor, stack
 from examples.util import charts
 from examples.util.animation import capture
-from examples.util.wgsl import pinned, simplices
-from examples.util.wgsl.camera import Camera, offset_panel, read
+from examples.util.panels import offset_panel, overlay, pinned
+from numga import Extensor, stack
+from numga.render import Camera, drawing, read, simplices
+from numga.topology import Topology
 
 position_limit = 7.8
 brightness_floor = 1e-4
-# The room between panels and around them, in pixels.
+# Margin around and between square panels in pixels.
 gap = 6
-# The atoms' radius in pixels and their colour; the rings' radius in pixels, their width, thin so as not to hide the
-# peaks they ring, their colour and the strokes around each; the faint cross's colour; the animation's panels, about
-# twice as many pixels across, draw them half as large again.
+# Marker radius, ring radius and stroke width in pixels, ring vertex count, and animation stroke scale.
 atom_radius = 1.6
 atom_colour = to_rgb("#0d9488")
 ring_radius, ring_width = 4.9, 1.4
 ring_colour = to_rgb("#67e8f9")
-n_around = 24
+n_ring_vertices = 24
 cross_colour = to_rgb("#cbd5e1")
 movie_scale = 1.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def panels(rows: int, columns: int, pixels: int) -> tuple[plt.Figure, list[list[Axes]]]:
-    """A figure of square panels, each `pixels` across, on whole pixels and a gap apart."""
-    span = pixels + gap
-    width, height = columns * span + gap, rows * span + gap
+def panel_grid(
+    n_rows: int, n_columns: int, n_pixels: int
+) -> tuple[plt.Figure, list[list[Axes]]]:
+    """Square axes of `n_pixels` pixels separated by `gap`-pixel margins tile a figure in `n_rows`
+    rows by `n_columns` columns."""
+    span = n_pixels + gap
+    width, height = n_columns * span + gap, n_rows * span + gap
     figure = plt.figure(figsize=(width / charts.DPI, height / charts.DPI), dpi=charts.DPI)
-    axes = [[figure.add_axes(((gap + column * span) / width, (gap + (rows - 1 - row) * span) / height,
-                              pixels / width, pixels / height))
-             for column in range(columns)] for row in range(rows)]
+    axes = [
+        [
+            figure.add_axes(
+                (
+                    (gap + column * span) / width,
+                    (gap + (n_rows - 1 - row) * span) / height,
+                    n_pixels / width,
+                    n_pixels / height,
+                )
+            )
+            for column in range(n_columns)
+        ]
+        for row in range(n_rows)
+    ]
     return figure, axes
 
 
-def framing(ax: Axes, positions: Extensor) -> Camera:
-    """The atoms' panel, the lines of its cross through the origin named x and y at their ends; its camera, reading the
-    atoms by the planes x and y of their algebra."""
+def atom_camera(ax: Axes, positions: Extensor) -> Camera:
+    """Labels the x and y axes on `ax` and configures an offset camera reading atom positions
+    against the x and y planes."""
     ax.text(position_limit, 0, "$x$", ha="right", va="bottom", color="#94a3b8")
     ax.text(0, position_limit, " $y$", ha="left", va="top", color="#94a3b8")
     ax.set(xlim=(-position_limit, position_limit), ylim=(-position_limit, position_limit))
@@ -60,78 +69,108 @@ def framing(ax: Axes, positions: Extensor) -> Camera:
     return offset_panel(ax, mv.x, mv.y)
 
 
-def atoms(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
-    """The atoms `[atoms]` as dots `radius` pixels across, over a faint cross through the origin across the panel,
-    along the directions the camera reads as one across and one up, the duals of its planes over their own readings:
-    their picture."""
-    along, rise = (plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up))
-    ends = position_limit * stack((-along, along, -rise, rise))         # [4] Antivector-
-    return simplices.composited([
-        simplices.strokes(ends, simplices.Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
-                          cap=simplices.Cap.BUTT),
-        simplices.markers(positions, atom_colour, radius, camera)])
+def atom_layer(positions: Extensor, radius: float, camera: Camera) -> np.ndarray:
+    """Filled markers of `radius` pixels mark `positions` (`[n_atoms]`) over faint origin crosshairs
+    on `camera`."""
+    horizontal_axis, vertical_axis = (
+        plane.dual() / (plane & plane.dual()) for plane in (camera.across, camera.up)
+    )
+    ends = position_limit * stack(
+        (-horizontal_axis, horizontal_axis, -vertical_axis, vertical_axis)
+    )                                                                        # [4] Antivector-
+    return drawing.composited(
+        [
+            simplices.strokes(
+                ends,
+                Topology.chains([2, 2]),
+                cross_colour,
+                charts.FRAME_PX,
+                camera,
+                cap=simplices.Cap.BUTT,
+            ),
+            simplices.markers(positions, atom_colour, radius, camera),
+        ]
+    )
 
 
-def rings(reciprocal: Extensor, scale: float, camera: Camera) -> np.ndarray:
-    """Rings around the reciprocal lattice's wavevectors `[reflections]`, read as they are by a camera of the points one
-    along x and along y, `scale` times their size, each a closed chain of strokes: their picture."""
-    # The steps the camera reads as one across and one up, the duals of its planes over their own readings; a ring's
-    # radius from each wavevector, the first step turned about their plane all the way round.
-    along, rise = (plane.dual() / read(plane, plane.dual()) for plane in (camera.across, camera.up))
-    turns = ((along ^ rise) * (-np.linspace(0, 2 * np.pi, n_around, endpoint=False) / 2)).exp()   # [around] Rotor+
-    circle = (turns >> along) * (scale * ring_radius * camera.pixel)                              # [around] Vector+
-    ends = (reciprocal[:, None] + circle).reshape(-1)                                             # [reflections * around] Vector+
-    return simplices.strokes(ends, simplices.Topology.loops([n_around] * len(reciprocal)), ring_colour,
-                             scale * ring_width, camera)
+def reciprocal_rings(reciprocal: Extensor, scale: float, camera: Camera) -> np.ndarray:
+    """Polygonal rings scaled by `scale` outline each wavevector in `reciprocal`
+    (`[n_reflections]`) on `camera`."""
+    n_reflections = len(reciprocal)
+    horizontal_step, vertical_step = (
+        plane.dual() / read(plane, plane.dual()) for plane in (camera.across, camera.up)
+    )
+    angles = np.linspace(0, 2 * np.pi, n_ring_vertices, endpoint=False)
+    rotors = ((horizontal_step ^ vertical_step) * (-angles / 2)).exp()       # [n_ring_vertices] Rotor+
+    circle = (rotors >> horizontal_step) * (scale * ring_radius * camera.pixel)  # [n_ring_vertices] Vector+
+    ring_points = (reciprocal[:, None] + circle).reshape(-1)                 # [n_reflections * n_ring_vertices] Vector+
+    return simplices.strokes(
+        ring_points,
+        Topology.loops([n_ring_vertices] * n_reflections),
+        ring_colour,
+        scale * ring_width,
+        camera,
+    )
 
 
-def diffraction(ax: Axes, reciprocal: Extensor, transfers: Extensor, brightness: Extensor,
-                scale: float) -> tuple[AxesImage, AxesImage, Camera]:
-    """The brightness over the section of momentum transfers, with the reciprocal lattice ringed `scale` times the
-    rings' size: the brightness's image and the rings', for an animation to set their data, and the panel's camera."""
-    # The sampled momentum transfers `[rows, columns]` read by the points one along x and along y; pixel centres
-    # coincide with them, so the picture reaches half a step between samples past the outermost.
+def diffraction_panel(
+    ax: Axes,
+    reciprocal: Extensor,
+    transfers: Extensor,
+    brightness: Extensor,
+    scale: float,
+) -> tuple[AxesImage, AxesImage, Camera]:
+    """Logarithmic `brightness` over `transfers` (`[n_pixels, n_pixels]`) underlays cyan
+    `reciprocal` rings on `ax`, yielding the brightness image, ring overlay, and panel camera."""
     mv = transfers.context.multivector
-    readings = transfers.reshape(-1) & stack((mv.x.dual(), mv.y.dual()))[:, None]   # [2, samples] Scalar+
-    low, high = readings.min(axis=-1), readings.max(axis=-1)                   # [2] Scalar+, [2] Scalar+
-    half_step = (high - low) / (2 * (np.array(transfers.shape[::-1]) - 1))     # [2] Scalar+
+    n_samples = transfers.shape[0] * transfers.shape[1]
+    readings = transfers.reshape(-1) & stack((mv.x.dual(), mv.y.dual()))[:, None]  # [2, n_samples] Scalar+
+    low, high = readings.min(axis=-1), readings.max(axis=-1)                 # [2] Scalar+, [2] Scalar+
+    half_step = (high - low) / (2 * (np.array(transfers.shape[::-1]) - 1))   # [2] Scalar+
     extent = tuple(stack((low - half_step, high + half_step), axis=-1).reshape(-1).to_array())
-    # Rows run up in y; the image's first row is its top.
+    # Rows increase upward in y whereas image rows start from the top.
     image = pinned(ax, brightness.to_array()[::-1], extent)
     image.set(cmap="magma", norm=LogNorm(vmin=brightness_floor, vmax=1))
     ax.set(xlim=extent[:2], ylim=extent[2:])
-    # The wavevectors read by the points one along x and along y, as the brightness's samples are.
     camera = offset_panel(ax, mv.x.dual(), mv.y.dual())
-    return image, simplices.overlay(ax, [rings(reciprocal, scale, camera)]), camera
+    return image, overlay(ax, [reciprocal_rings(reciprocal, scale, camera)]), camera
 
 
 @charts.style()
-def comparison(positions: Extensor, reciprocal: Extensor, transfers: Extensor, brightness: Extensor) -> plt.Figure:
-    """For each case `[cases]`, its atoms above and the brightness of its diffraction pattern below, with the carried
-    reciprocal lattice ringed."""
+def comparison_figure(
+    positions: Extensor,
+    reciprocal: Extensor,
+    transfers: Extensor,
+    brightness: Extensor,
+) -> plt.Figure:
+    """Two rows of `n_cases` panels place each deformed atom layer above its logarithmic diffraction
+    pattern and carried reciprocal rings."""
     n_cases = positions.shape[0]
-    figure, (top, bottom) = panels(2, n_cases, transfers.shape[-1])
-    for i in range(n_cases):
-        simplices.overlay(top[i], [atoms(positions[i], atom_radius, framing(top[i], positions[i]))])
-        diffraction(bottom[i], reciprocal[i], transfers, brightness[i], 1.0)
+    figure, (top, bottom) = panel_grid(2, n_cases, transfers.shape[-1])
+    for case in range(n_cases):
+        overlay(top[case], [atom_layer(positions[case], atom_radius, atom_camera(top[case], positions[case]))])
+        diffraction_panel(bottom[case], reciprocal[case], transfers, brightness[case], 1.0)
     return figure
 
 
-def animate(frames: Iterable[tuple[Extensor, Extensor, Extensor]], transfers: Extensor) -> Iterator[np.ndarray]:
-    """Per frame, the atoms beside the brightness of their diffraction pattern: the first frame drawn, and each one
-    after it moving the atoms, the pattern and the rings."""
+def diffraction_animation(
+    frames: Iterable[tuple[Extensor, Extensor, Extensor]], transfers: Extensor
+) -> Iterator[np.ndarray]:
+    """Yields RGB frames showing the deforming atom layer beside its live diffraction pattern and
+    reciprocal-lattice rings."""
     frames = iter(frames)
-    # The charts' style held while the frames are drawn, for the artists that drawing makes.
     with charts.style():
-        figure, ((left, right),) = panels(1, 2, transfers.shape[-1])
+        figure, ((left, right),) = panel_grid(1, 2, transfers.shape[-1])
         positions, reciprocal, brightness = next(frames)
-        atom_camera = framing(left, positions)
-        atoms_seen = simplices.overlay(left, [atoms(positions, movie_scale * atom_radius, atom_camera)])
-        image, rings_seen, ring_camera = diffraction(right, reciprocal, transfers, brightness, movie_scale)
+        camera = atom_camera(left, positions)
+        atoms_seen = overlay(left, [atom_layer(positions, movie_scale * atom_radius, camera)])
+        image, rings_seen, ring_camera = diffraction_panel(
+            right, reciprocal, transfers, brightness, movie_scale
+        )
         yield capture(figure)
         for positions, reciprocal, brightness in frames:
-            atoms_seen.set_data(atoms(positions, movie_scale * atom_radius, atom_camera))
+            atoms_seen.set_data(atom_layer(positions, movie_scale * atom_radius, camera))
             image.set_data(brightness.to_array()[::-1])
-            rings_seen.set_data(simplices.composited([rings(reciprocal, movie_scale, ring_camera)]))
+            rings_seen.set_data(drawing.composited([reciprocal_rings(reciprocal, movie_scale, ring_camera)]))
             yield capture(figure)
         plt.close(figure)

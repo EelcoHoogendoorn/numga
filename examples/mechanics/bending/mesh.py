@@ -1,45 +1,66 @@
-"""The thin-walled sections of the bending scenes: each section's walls as a one-dimensional mesh, its edges the
-walls and its vertices the nodes of the section's midline, the nodes' places, and the walls' thickness."""
+"""Thin-walled cross-section topologies for the bending scenes represent each section's midline as a
+one-dimensional edge complex with node positions (`Point-[V]`) and wall thicknesses (`Scalar+[E]`)."""
+
+from __future__ import annotations
 
 import numpy as np
 
-from examples.mechanics.bending.core import Topology, Point, Scalar, mv, point
+from numga import Algebra, NumpyContext
+from numga.algebras import PGA3D as ga
+from numga.topology import Topology
 
-NAMES = ["I-section", "turned I-section", "Z-section", "slotted tube"]
-# The turn of each I- and Z-section in its plane, in degrees.
-TURNS = np.array([0.0, 30.0, 0.0])
-# The height between the flanges' midlines, the flanges' width, and the walls' thickness.
-HEIGHT, FLANGE, THICKNESS = 0.92, 0.6, 0.08
-# The tube's midline radius, its wall's thickness, the opening of its slot, and the walls along it.
-TUBE_RADIUS, TUBE_WALL = 0.46, 0.1
-SLOT_ANGLE = np.deg2rad(60.0)
-ARC_SEGMENTS = 48
+mv = NumpyContext(ga).multivector
+Scalar = ga.gatype.scalar()
+Plane = ga.gatype.vector()
+Point = ga.gatype.antivector()
+SectionPlane = Plane.derive.within(Algebra("x+y+"))
+
+section_names = ["I-section", "turned I-section", "Z-section", "slotted tube"]
+# In-plane rotation angles of the I-sections and Z-section, in degrees.
+section_turns = np.array([0.0, 30.0, 0.0])
+# Web height between flange midlines, flange width, and wall thickness.
+web_height, flange_width, wall_thickness = 0.92, 0.6, 0.08
+# Slotted-tube midline radius, wall thickness, slot opening angle, and polygonal segment count.
+tube_radius, tube_wall = 0.46, 0.1
+slot_angle = np.deg2rad(60.0)
+n_arc_segments = 48
 
 
-def slotted_tube(radius: float, opening: float, segments: int) -> tuple[Point, np.ndarray]:
-    """The nodes of an arc of a circle, and its walls between neighbours; the slot faces right."""
-    angles = np.linspace(opening / 2, 2 * np.pi - opening / 2, segments + 1)
-    nodes = (mv.xy * (-angles / 2)).exp() >> point([radius, 0.0])           # [segments + 1] Point-
-    return nodes, np.stack([np.arange(segments), np.arange(1, segments + 1)], axis=-1)
+def clamp_point(coordinates: np.ndarray) -> Point:
+    """Two-dimensional `(x, y)` `coordinates` (`[..., 2]`) embed into unit-weight points (`[...] Point-`)
+    in the clamp plane `z = 0`."""
+    return (mv(SectionPlane, coordinates) + mv.w).dual()                    # [...] Point-
 
 
-def section(nodes: Point, ends: np.ndarray, thickness: float) -> tuple[Topology, Point, Scalar]:
-    """The walls between the nodes `[nodes]` that each pair of `ends` names, as a one-dimensional mesh, the nodes
-    as its vertices, `Point-[nodes]`, and every wall's thickness, `Scalar+[walls]`."""
-    return Topology(nodes.shape[0], ends), nodes.field(), mv.scalar(np.full((len(ends), 1), thickness)).field()
+def slotted_tube(radius: float, opening: float, n_segments: int) -> tuple[Point, np.ndarray]:
+    """Polygonal nodes (`[n_segments + 1] Point-`) and consecutive wall pairs (`[n_segments, 2]`) trace a
+    circular arc whose slot faces `+x`."""
+    angles = np.linspace(opening / 2, 2 * np.pi - opening / 2, n_segments + 1)  # [n_segments + 1]
+    rotors = (mv.xy * (-angles / 2)).exp()                                  # [n_segments + 1] Rotor+
+    nodes = rotors >> clamp_point([radius, 0.0])                            # [n_segments + 1] Point-
+    return nodes, np.stack([np.arange(n_segments), np.arange(1, n_segments + 1)], axis=-1)
+
+
+def section_complex(nodes: Point, wall_ends: np.ndarray, thickness: float) -> tuple[Topology, Point, Scalar]:
+    """Node points (`[V] Point-`) and `wall_ends` (`[E, 2]`) assemble into a one-dimensional `Topology`
+    together with vertex positions (`Point-[V]`) and wall thicknesses (`Scalar+[E]`)."""
+    return (Topology(nodes.shape[0], wall_ends), nodes.field(),
+            mv.scalar(np.full((len(wall_ends), 1), thickness)).field())
 
 
 def section_walls() -> list[tuple[Topology, Point, Scalar]]:
-    """The walls, the nodes and the thickness of each wall, for every section."""
-    rise, half = HEIGHT / 2, FLANGE / 2
-    # An I-section: the web between the flanges' middles, and each flange out to both sides.
-    i_nodes = [[-half, -rise], [0.0, -rise], [half, -rise], [-half, rise], [0.0, rise], [half, rise]]
+    """Four thin-walled cross-sections (I-section, turned I-section, Z-section, and slotted tube)
+    provide their `Topology`, node field (`Point-[V]`), and wall-thickness field (`Scalar+[E]`)."""
+    rise, half_flange = web_height / 2, flange_width / 2
+    # An I-section connects the web between flange midpoints and extends each flange to both sides.
+    i_nodes = [[-half_flange, -rise], [0.0, -rise], [half_flange, -rise],
+               [-half_flange, rise], [0.0, rise], [half_flange, rise]]
     i_ends = np.array([[1, 4], [1, 0], [1, 2], [4, 3], [4, 5]])
-    # A Z-section: the bottom flange out to the left, the web, and the top flange out to the right.
-    z_nodes = [[-FLANGE, -rise], [0.0, -rise], [0.0, rise], [FLANGE, rise]]
+    # A Z-section extends the bottom flange left, runs up the web, and extends the top flange right.
+    z_nodes = [[-flange_width, -rise], [0.0, -rise], [0.0, rise], [flange_width, rise]]
     z_ends = np.array([[0, 1], [1, 2], [2, 3]])
-    turns = (mv.xy * (-np.deg2rad(TURNS) / 2)).exp()
+    turns = (mv.xy * (-np.deg2rad(section_turns) / 2)).exp()                # [3] Rotor+
     shapes = [(i_nodes, i_ends), (i_nodes, i_ends), (z_nodes, z_ends)]
-    nodes, ends = slotted_tube(TUBE_RADIUS, SLOT_ANGLE, ARC_SEGMENTS)
-    return [section(turn >> point(np.array(coordinates)), joined, THICKNESS)
-            for (coordinates, joined), turn in zip(shapes, turns)] + [section(nodes, ends, TUBE_WALL)]
+    tube_nodes, tube_ends = slotted_tube(tube_radius, slot_angle, n_arc_segments)
+    return [section_complex(turn >> clamp_point(np.array(coordinates)), ends, wall_thickness)
+            for (coordinates, ends), turn in zip(shapes, turns)] + [section_complex(tube_nodes, tube_ends, tube_wall)]

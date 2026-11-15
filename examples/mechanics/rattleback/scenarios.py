@@ -1,176 +1,167 @@
-"""Scenes for the rattleback: released tipped from rest it rocks into spin; spun the unfavourable way, it
-rocks, stops and spins the other way.
+"""Launch scenarios for a wooden rattleback hull with inset steel balls rolling on a flat table.
 
-The body is a wooden boat with an ellipsoidal underside, a flat deck and two cuts across opposite corners of
-the top, and a steel ball pressed into each side, the second of every cut and ball half a turn about the
-vertical from the first. Every part is an intersection of quadrics, and the same quadrics give its mass: a grid
-of points, each weighted by the density of the part it lies inside, carries the centre of mass and the inertia
-the dynamics use, and the drawing traces the same quadrics.
+Releasing the tilted hull from rest converts gravitational potential energy into pitching, rolling, and steady spin.
+Spinning the hull in the unfavourable clockwise sense destabilizes into rocking, halts, and reverses into the
+preferred counterclockwise sense. Both scenarios share one quadric model for the sampled inertia and the ray-traced
+geometry.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from itertools import islice
 
 import numpy as np
 
-from numga import stack
-from numga.algebras import PGA3D
-from examples import instantiate
+from numga import concatenate, stack
+from examples.mechanics.rattleback import core
 
-core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv
-mirrors = stack((mv.x, mv.y, mv.z))                                          # [3] Plane+
-# The shell's semi-axes, the body's mass and gravity.
-SEMI_AXES = np.array([5, 17 / 16, 1])
-MASS = 4
-GRAVITY = 9.8
-# The deck's height above the shell's centre; the chamfers' tip about the long axis and along it, and a point
-# they pass through.
-DECK_HEIGHT = 0.5
-CHAMFER_ROLL = np.deg2rad(35)
-CHAMFER_PITCH = np.deg2rad(30)
-CHAMFER_THROUGH = [3.2, 0, 0.2]
-# The steel balls' radius, their place along the shell, and the share of their diameter pressed into the wood.
-BALL_RADIUS = 0.4
-BALL_ALONG = 3
-BALL_SINK = 0.6
-WOOD_DENSITY = 0.7
-STEEL_DENSITY = 7.85
-# The spacing of the grid the mass is read from.
-SAMPLE_SPACING = 0.15
-# The two launches: tipped from rest, and spinning the unfavourable way with a little pitching.
-TILTS = np.deg2rad([15, 0])
-SPINS = np.array([0, -1.5])
-PITCH_RATES = np.array([0, 0.1])
-# The time step and the steps, each step a frame drawn, and the time the rocking animation runs.
-TIME_STEP = 0.04
-N_STEPS = 250
-ROCKING_DURATION = 8
-# The gallery's reversal: its pixels across; the step each frame takes, in seconds, and how long a frame is shown, in
-# milliseconds, so that it plays at one and a half times its pace, nearer a real, smaller rattleback's; and the times in
-# seconds it runs between, from the rocking's start to the spin clearly reversed.
-GALLERY_PIXELS = 420
-GALLERY_TIME_STEP = 0.06
-GALLERY_DURATION_MS = 40
-GALLERY_SPAN = (0.4, 7.2)
+
+semi_axes = np.array([5, 17 / 16, 1])
+mass = 4
+gravity_strength = 9.8
+
+deck_height = 0.5
+chamfer_roll = np.deg2rad(35)
+chamfer_pitch = np.deg2rad(30)
+chamfer_point = [3.2, 0, 0.2]
+
+ball_radius = 0.4
+ball_fore_offset = 3
+ball_sink = 0.6
+wood_density = 0.7
+steel_density = 7.85
+sample_spacing = 0.15
+
+rocking_tilt = np.deg2rad(15)
+reversal_spin_rate = -1.5
+reversal_pitch_rate = 0.1
+
+dt = 0.04
+rocking_duration = 8
+n_rocking_steps = round(rocking_duration / dt)
+n_reversal_steps = 250
+
+n_gallery_pixels = 420
+gallery_dt = 0.06
+gallery_duration_ms = 40
+gallery_span = (0.4, 7.2)
 
 
-# --- math -----------------------------------------------------------------------------
-def distribution(wood: core.Quadric, steel: core.Quadric) -> tuple[core.Point, core.Point, core.Inertia]:
-    """The grid points inside the body, its centre of mass, and its inertia about that: each point weighted by
-    the density of the part it lies inside, inside a part where it pairs negatively with each of its quadrics."""
-    low = -SEMI_AXES - [0, 2 * BALL_RADIUS, 0]
-    high = np.array([SEMI_AXES[0], SEMI_AXES[1] + 2 * BALL_RADIUS, DECK_HEIGHT])
-    axes = [np.arange(start, stop, SAMPLE_SPACING) + SAMPLE_SPACING / 2 for start, stop in zip(low, high)]
-    grid = mv.point(np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3))   # [grid] Point-
-    in_wood = ((wood[:, None](grid) & grid) <= 0).all(axis=0)                 # [grid]
-    in_steel = ((steel[:, None](grid) & grid) <= 0).any(axis=0)               # [grid]
-    densities = WOOD_DENSITY * in_wood + STEEL_DENSITY * in_steel            # [grid]
-    inside = densities > 0
-    samples, weights = grid[inside], densities[inside] / densities[inside].sum()   # [samples] Point-, [samples]
-    centre = (samples * weights).sum(axis=0)                                 # [] Point-
-    # Each sample joined with its own motion under a rate is its momentum; the inertia is their weighted sum.
-    relative = core.origin + (samples - centre)                              # [samples] Point-
-    inertia = relative.regressive(relative.commutator(core.Rate) * weights).sum(axis=0) * MASS  # Forque- <- Rate+
-    return samples, centre, inertia
+def rattleback_body() -> tuple[core.Shape, core.Direction, core.Inertia, core.Quadric, core.Quadric, core.Point]:
+    """The quadric hull and inset steel balls define the support map, centre offset, sampled inertia, and centred body geometry."""
+    directions = core.mirrors.dual()                                  # [3] Direction-
+    outline = (directions * (core.mirrors & core.Direction) * semi_axes).sum(axis=0)  # [] Direction- <- Direction-
+    shape = (directions * (core.Plane & directions) * semi_axes**2).sum(axis=0)       # [] Direction- <- Plane+
+    shell_planes = outline.adjugate().solve(core.mirrors)             # [3] Plane+
+    underside = (shell_planes * (shell_planes & core.Point)).sum(axis=0) - core.infinity * (core.infinity & core.Point)  # [] Plane+ <- Point-
+    deck = core.half_space(mv.z - core.infinity * deck_height)        # [] Plane+ <- Point-
+
+    side_turns = (mv.xy * np.array([0, np.pi]) / 2).exp()             # [2] Motor+
+    chamfer_turn = (mv.yz * (-chamfer_roll / 2)).exp() * (mv.xz * (chamfer_pitch / 2)).exp()  # [] Motor+
+    chamfer_normal = chamfer_turn >> mv.z                             # [] Plane+
+    chamfer_anchor = core.origin + mv.direction(chamfer_point)        # [] Point-
+    chamfer_planes = side_turns >> (chamfer_normal - core.infinity * (chamfer_normal & chamfer_anchor))  # [2] Plane+
+    chamfers = core.half_space(chamfer_planes)                        # [2] Plane+ <- Point-
+    hull_half_width = semi_axes[1] * np.sqrt(1 - (ball_fore_offset / semi_axes[0])**2)
+    ball_seat = core.origin + mv.direction([ball_fore_offset, hull_half_width + ball_radius * (1 - 2 * ball_sink), 0])  # [] Point-
+    balls = core.ball(side_turns >> ball_seat, ball_radius)           # [2] Plane+ <- Point-
+    wood = concatenate([underside[None], deck[None], chamfers, -balls])  # [6] Plane+ <- Point-
+
+    low = -semi_axes - [0, 2 * ball_radius, 0]
+    high = np.array([semi_axes[0], semi_axes[1] + 2 * ball_radius, deck_height])
+    grid_axes = [np.arange(start, stop, sample_spacing) + sample_spacing / 2 for start, stop in zip(low, high)]
+    grid_coords = np.stack(np.meshgrid(*grid_axes, indexing="ij"), axis=-1).reshape(-1, 3)
+    n_grid = len(grid_coords)
+    grid = mv.point(grid_coords)                                      # [n_grid] Point-
+    samples, mass_centre, inertia = core.mass_distribution(
+        wood, balls, grid, wood_density, steel_density, mass
+    )
+    n_samples = samples.shape[0]
+
+    centre_shift = ((core.origin - mass_centre) * core.origin.inverse() / 2).exp()  # [] Motor+
+    centred_wood = centre_shift >> wood(centre_shift << core.Point)   # [6] Plane+ <- Point-
+    centred_balls = centre_shift >> balls(centre_shift << core.Point)  # [2] Plane+ <- Point-
+    centred_samples = centre_shift >> samples                         # [n_samples] Point-
+    return shape, core.origin - mass_centre, inertia, centred_wood, centred_balls, centred_samples
 
 
-def body() -> tuple[core.Shape, core.Direction, core.Inertia, core.Body, core.Point]:
-    """The shell's support map, the shell's centre seen from the centre of mass, the inertia about the centre
-    of mass, and the body as built and the points its mass is read from, in the frame of its centre of mass."""
-    directions = mirrors.dual()                                              # [3] Direction-
-    outline = (directions * (mirrors & core.Direction) * SEMI_AXES).sum(axis=0)       # Direction- <- Direction-
-    shape = (directions * (core.Plane & directions) * SEMI_AXES**2).sum(axis=0)       # Direction- <- Plane+
-    # The unit ball's planes across its axes carried onto the shell: each pairs with a stretched direction as
-    # the ball's plane does with the direction, so the stretch's adjugate carries it back.
-    across = outline.adjugate().solve(mirrors)                               # [3] Plane+
-    underside = (across * (across & core.Point)).sum(axis=0) - mv.w * (mv.w & core.Point)   # Cut+ <- Point-
-    deck = half_space(mv.z - mv.w * DECK_HEIGHT)                             # Cut+ <- Point-
-
-    # Every cut and ball has its partner half a turn about the vertical.
-    sides = (mv.xy * np.array([0, np.pi]) / 2).exp()                         # [sides] Motor+
-    tipped = (mv.yz * (-CHAMFER_ROLL / 2)).exp() * (mv.xz * (CHAMFER_PITCH / 2)).exp() >> mv.z   # Plane+
-    corner = core.origin + mv.direction(CHAMFER_THROUGH)                     # Point-
-    chamfers = half_space(sides >> (tipped - mv.w * (tipped & corner)))      # [sides] Cut+ <- Point-
-    # A ball on the shell's side, its diameter pressed in by the sink.
-    side = SEMI_AXES[1] * np.sqrt(1 - (BALL_ALONG / SEMI_AXES[0])**2)
-    seat = core.origin + mv.direction([BALL_ALONG, side + BALL_RADIUS * (1 - 2 * BALL_SINK), 0])   # Point-
-    balls = ball(sides >> seat, BALL_RADIUS)                                 # [sides] Cut+ <- Point-
-
-    built = core.Body(underside, deck, chamfers, balls)
-    samples, centre, inertia = distribution(built.wood(), balls)
-    # Everything moved so that the centre of mass is the origin.
-    shift = ((core.origin - centre) * core.origin.inverse() / 2).exp()       # [] Motor+
-    placed = core.Body(*(shift >> part(shift << core.Point) for part in built))
-    return shape, core.origin - centre, inertia, placed, shift >> samples
+def launch_trajectory(tilt: float, spin_rate: float, pitch_rate: float, step_dt: float,
+                      shape: core.Shape, centre: core.Direction,
+                      inertia: core.Inertia) -> Iterator[tuple[core.Motor, core.Spin]]:
+    """Yields placements (`[] Motor+`) and body-frame spins (`[] Spin+`) for one table-resting launch."""
+    gravity = -core.up * gravity_strength                             # [] Direction-
+    spin = mv.xy * spin_rate - mv.xz * pitch_rate                     # [] Spin+
+    tilt_motor = (-mv.xz * (tilt / 2)).exp()                          # [] Motor+
+    normal = (tilt_motor << core.up).dual_inverse()                   # [] Plane+
+    height = (normal & shape(normal)).square_root() - (normal & centre)  # [] Scalar+
+    motor = (core.up * core.origin.inverse() * (height / 2)).exp() * tilt_motor  # [] Motor+
+    return core.trajectory(motor, spin, step_dt, shape, centre, inertia, mass, gravity, core.up)
 
 
-def launches(dt: float, n_steps: int) -> tuple[core.Body, core.Point, core.Motor, core.Spin, core.Scalar]:
-    """Both launches from their start over the steps `[steps + 1, cases]`: the body and the points its mass is
-    read from, the placements, the body-frame spins and the energies."""
-    shape, centre, inertia, built, samples = body()
-    up = mv.z.dual()                                                         # [] Direction-
-    gravity = -up * GRAVITY                                                  # [] Direction-
-    spin = mv.xy * SPINS - mv.xz * PITCH_RATES                               # [cases] Spin+
-    tilt = (-mv.xz * TILTS / 2).exp()                                        # [cases] Motor+
-    # Each launch lifted by its centre of mass's height, so that the shell rests on the table: the shell's
-    # centre's height, less how far that centre sits above the centre of mass.
-    normal = (tilt << up).dual_inverse()                                     # [cases] Plane+
-    height = (normal & shape(normal)).square_root() - (normal & centre)     # [cases] Scalar+
-    motor = (up * core.origin.inverse() * height / 2).exp() * tilt           # [cases] Motor+
-
-    def motion(motor: core.Motor, spin: core.Spin) -> tuple[core.Rate, core.Spin]:
-        return core.dynamics(motor, spin, shape, centre, inertia, MASS, gravity, up)
-
-    states = islice(core.evolve(motor, spin, dt, motion), n_steps + 1)
-    placements, spins = (stack(list(history)) for history in zip(*states))   # [steps + 1, cases] each
-    energies = core.energy(placements, spins, shape, centre, inertia, MASS, gravity, up)   # [steps + 1, cases] Scalar+
-    return built, samples, placements, spins, energies
-
-
-# --- plumbing -------------------------------------------------------------------------
-def half_space(cut: core.Cut) -> core.Quadric:
-    """The points on a plane's negative side, as the quadric pairing them with the plane and with the plane at
-    infinity, symmetrized."""
-    return (cut * (mv.w & core.Point) + mv.w * (cut & core.Point)) / 2
-
-
-def ball(centre: core.Point, radius: float) -> core.Quadric:
-    """Solid balls about points of unit weight: the planes across the axes through each centre, each one at a
-    radius from it, less the weight squared."""
-    across = mirrors - mv.w * (mirrors & centre[..., None])                  # [..., 3] Cut+
-    return (across * (across & core.Point)).sum(axis=-1) / radius**2 - mv.w * (mv.w & core.Point)
+def recorded_states(states: Iterator[tuple[core.Motor, core.Spin]],
+                    history: list[tuple[core.Motor, core.Spin]]) -> Iterator[tuple[core.Motor, core.Spin]]:
+    """Yields each `(motor, spin)` pair from `states` while appending it to `history`."""
+    for state in states:
+        history.append(state)
+        yield state
 
 
 def main() -> None:
+    """The scenario runner writes the setup still and both launch animations to `plots/` and checks spin reversal and energy conservation."""
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.rattleback import render
 
-    duration_ms = round(TIME_STEP * 1000)
-    built, samples, placements, spins, energies = launches(TIME_STEP, N_STEPS)
-    n_rocking_steps = round(ROCKING_DURATION / TIME_STEP)
-    save_figure(render.draw_setup(built, samples, placements[0, 1]), "rattleback_body")
-    save_animation(render.frames(placements[:n_rocking_steps + 1, 0], built, samples), "rattleback_rocking", duration_ms)
-    save_animation(render.frames(placements[:, 1], built, samples), "rattleback_reversal", duration_ms)
+    duration_ms = round(dt * 1000)
+    shape, centre, inertia, wood, balls, samples = rattleback_body()
+    gravity = -core.up * gravity_strength                             # [] Direction-
+
+    table_plane = core.up.dual_inverse()                              # [] Plane+
+    rest_height = (table_plane & shape(table_plane)).square_root() - (table_plane & centre)  # [] Scalar+
+    rest_placement = (core.up * core.origin.inverse() * (rest_height / 2)).exp()  # [] Motor+
+    save_figure(render.setup_figure(wood, balls, samples, rest_placement), "rattleback_body")
+
+    rocking_states: list[tuple[core.Motor, core.Spin]] = []
+    rocking_stream = islice(launch_trajectory(rocking_tilt, 0.0, 0.0, dt, shape, centre, inertia), n_rocking_steps + 1)
+    save_animation(render.frames(wood, balls, samples, recorded_states(rocking_stream, rocking_states)),
+                   "rattleback_rocking", duration_ms)
+
+    reversal_states: list[tuple[core.Motor, core.Spin]] = []
+    reversal_stream = islice(
+        launch_trajectory(0.0, reversal_spin_rate, reversal_pitch_rate, dt, shape, centre, inertia),
+        n_reversal_steps + 1,
+    )
+    save_animation(render.frames(wood, balls, samples, recorded_states(reversal_stream, reversal_states)),
+                   "rattleback_reversal", duration_ms)
 
     # checks
-    # The tipped body spins up from rest, the spinning one reverses, and the energy is kept.
-    spun = (-(placements >> spins).scalar_product(mv.xy)).to_array()          # [steps + 1, cases]
-    assert abs(spun[0, 0]) < 1e-11 and spun[-1, 0] > 1.4
-    assert spun[0, 1] < -1.4 and spun[-1, 1] > 1.4
-    np.testing.assert_allclose((energies / energies[0]).to_array(), 1, rtol=1e-2)
+    rocking_motors, rocking_spins = (stack(items) for items in zip(*rocking_states))
+    reversal_motors, reversal_spins = (stack(items) for items in zip(*reversal_states))
+    rocking_vertical_spin = -(rocking_motors >> rocking_spins).scalar_product(mv.xy)    # [n_rocking_steps + 1] Scalar+
+    reversal_vertical_spin = -(reversal_motors >> reversal_spins).scalar_product(mv.xy)  # [n_reversal_steps + 1] Scalar+
+    rocking_energies = core.energy(rocking_motors, rocking_spins, shape, centre, inertia, mass, gravity, core.up)      # [n_rocking_steps + 1] Scalar+
+    reversal_energies = core.energy(reversal_motors, reversal_spins, shape, centre, inertia, mass, gravity, core.up)   # [n_reversal_steps + 1] Scalar+
+
+    assert rocking_vertical_spin[0].abs() < 1e-11 and rocking_vertical_spin[-1] > 1.4
+    assert reversal_vertical_spin[0] < -1.4 and reversal_vertical_spin[-1] > 1.4
+    assert ((rocking_energies / rocking_energies[0] - 1).abs() < 1e-2).all()
+    assert ((reversal_energies / reversal_energies[0] - 1).abs() < 1e-2).all()
 
 
 def pinned() -> None:
-    """The pictures the repository tracks: the rattleback spun the unfavourable way, reversing, for the gallery."""
+    """The gallery runner writes the pinned spin-reversal animation."""
     from examples.util.animation import pin_animation
     from examples.mechanics.rattleback import render
 
-    first, last = (round(time / GALLERY_TIME_STEP) for time in GALLERY_SPAN)
-    built, samples, placements, _, _ = launches(GALLERY_TIME_STEP, last)
-    pin_animation(render.sized_frames(placements[first:, 1], built, samples, GALLERY_PIXELS), "rattleback",
-                  GALLERY_DURATION_MS)
+    first_step, last_step = (round(time / gallery_dt) for time in gallery_span)
+    shape, centre, inertia, wood, balls, samples = rattleback_body()
+    states = islice(
+        launch_trajectory(0.0, reversal_spin_rate, reversal_pitch_rate, gallery_dt, shape, centre, inertia),
+        first_step, last_step + 1,
+    )
+    pin_animation(render.sized_frames(wood, balls, samples, states, n_gallery_pixels), "rattleback",
+                  gallery_duration_ms)
 
 
 if __name__ == "__main__":

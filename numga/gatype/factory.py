@@ -1,4 +1,22 @@
-"""Per-algebra canonical construction of whole-extensor types."""
+"""Each algebra owns a flyweight factory (`ga.gatype`) that interns canonical `GAType` instances in
+a strong pool keyed by output-first `SubSpace` axes, per-axis `Orientation`s, normalized `TraitSet`s,
+and coupled field site counts. Because explicit traits already implied by the blade support are
+stripped before pooling, equivalent structural and trait specifications resolve to the same `GAType`
+object.
+
+Named constructors on `ga.gatype` mirror `ga.subspace` while attaching canonical geometric
+orientations: antivector-built spaces (`antiscalar`, `antivector`, `antibivector`, and complementary
+builders) default to `Orientation.intrinsic`, whereas vector-built spaces (`scalar`, `vector`,
+`bivector`, `even`, `odd`, `multivector`) default to `Orientation.extrinsic`. Semantic constructors
+such as `rotor` (aliased as `motor`) further attach certified `Versor` and `ReverseProductOne`
+traits to the even subalgebra.
+
+Calling `ga.gatype(...)` directly builds nullary, unary, or multilinear types from output-first
+nullary `GAType`s (which supply their own orientations), from bare `SubSpace`s paired with an
+explicit `orientation=...` keyword, or from a symbolic `Extensor` expression such as
+`ga.gatype(Point & Point)` whose output `GAType` records the support, orientation, and traits
+produced by that expression.
+"""
 
 from __future__ import annotations
 
@@ -25,13 +43,11 @@ if TYPE_CHECKING:
 
 
 class GATypeFactory(FlyweightFactory[GAType]):
-    """Strong flyweight pool scoped to one Algebra instance."""
+    """A per-algebra flyweight namespace constructs and interns canonical `GAType` instances."""
 
     __slots__ = ("_algebra", "__dict__")
 
-    # Public constructor protocol for namespaces which lift complete GATypes.
-    # Structural names come from the selected SubSpace factory; these names
-    # add semantic refinements rather than merely selecting support.
+    # Semantic constructors attach algebraic traits on top of a structural SubSpace.
     semantic_constructor_names = ("rotor", "motor")
 
     def __init__(self, algebra: Algebra) -> None:
@@ -47,6 +63,7 @@ class GATypeFactory(FlyweightFactory[GAType]):
     @property
     @lru_cache(maxsize=None)
     def constructor_names(self) -> tuple[str, ...]:
+        """Named constructors combine structural `SubSpace` builders with `rotor` and `motor`."""
         return tuple(
             dict.fromkeys(
                 (
@@ -58,18 +75,15 @@ class GATypeFactory(FlyweightFactory[GAType]):
 
     def __call__(
         self,
-        subspaces: SubSpace | GAType | Iterable[SubSpace | GAType] | Extensor,
+        subspaces: SubSpace | GAType | Iterable | Extensor,
         traits: TraitSet = EMPTY_TRAITS,
-        fields: tuple[tuple[int, int], ...] = (),
+        fields: tuple = (),
         *,
         orientation: Orientation | None = None,
     ) -> GAType:
-        """The type over these axes, output first. A nullary GAType axis carries its orientation; bare
-        subspace axes take `orientation`, which they require: a subspace is a layout and has none.
-
-        An extensor expression gives the type of what it produces, with the orientation its construction gives:
-        `ga.gatype(FirstSpinor * SecondSpinor)` for the products of two spinors, `ga.gatype(Spin + Antiscalar)` for
-        the sums of a spin and an antiscalar."""
+        """Calling `ga.gatype` builds a canonical `GAType` from output-first nullary `GAType`s,
+        from bare `SubSpace`s paired with an explicit `orientation`, or from a symbolic `Extensor`
+        expression whose `output_gatype` is extracted."""
         if isinstance(subspaces, numga.extensor.Extensor):
             if traits != EMPTY_TRAITS or fields or orientation is not None:
                 raise TypeError("an expression's type is what its construction gives: no traits, fields or orientation")
@@ -104,16 +118,14 @@ class GATypeFactory(FlyweightFactory[GAType]):
         subspaces: Iterable[SubSpace],
         orientations: Iterable[Orientation],
         traits: TraitSet = EMPTY_TRAITS,
-        fields: tuple[tuple[int, int], ...] = (),
+        fields: tuple = (),
     ) -> GAType:
-        """The GAType over these subspaces with these orientations, one per axis, output first."""
-
+        """Explicit output-first subspaces and per-axis orientations pool a canonical `GAType` after
+        stripping structurally implied traits."""
         axes = tuple(subspaces)
         orientations = tuple(orientations)
 
-        # Let the value object own detailed diagnostics and structural
-        # validation. Checking ownership here keeps a foreign type out of this
-        # algebra's pool without duplicating the full constructor.
+        # Reject foreign SubSpaces before pooling while leaving detailed arity and trait checks to GAType.
         if axes and any(
             not isinstance(axis, SubSpace) or axis.algebra is not self.algebra
             for axis in axes
@@ -131,15 +143,13 @@ class GATypeFactory(FlyweightFactory[GAType]):
 
     @lru_cache(maxsize=None)
     def rotor(self) -> GAType:
-        """Return the certified unit-versor refinement of even support."""
-
+        """Rotors span the extrinsic even subalgebra with certified `Versor` and `ReverseProductOne`
+        traits."""
         return self.oriented((self.algebra.subspace.even(),), (Orientation.extrinsic,), ROTOR_TRAITS)
 
     motor = rotor
 
-    def __getattr__(self, name: str) -> Callable[..., GAType]:
-        """Lift a declared SubSpace constructor into this GAType namespace."""
-
+    def __getattr__(self, name: str) -> Callable:
         if name.startswith("_"):
             raise AttributeError(
                 f"{type(self).__name__} has no attribute {name!r}"
@@ -154,11 +164,11 @@ class GATypeFactory(FlyweightFactory[GAType]):
         orientation = Orientation.intrinsic if intrinsic else Orientation.extrinsic
 
         @wraps(constructor)
-        def lifted_constructor(*args: object, **kwargs: object) -> GAType:
+        def constructed(*args: object, **kwargs: object) -> GAType:
             return self.oriented((constructor(*args, **kwargs),), (orientation,))
 
-        self.__dict__[name] = lifted_constructor
-        return lifted_constructor
+        self.__dict__[name] = constructed
+        return constructed
 
     def __dir__(self) -> list[str]:
         forwarded = set(self.constructor_names)

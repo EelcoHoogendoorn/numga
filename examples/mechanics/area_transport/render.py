@@ -1,6 +1,4 @@
-"""The cube's faces, oriented patches and volume: the deformed cube traced on the GPU, each face a translucent plate
-of its own colour so that every face shows through the others, its edges rods, and each patch an arrow from its face's
-centre, as long as its area; beside it, the areas and the volume as bars."""
+"""GPU ray casting and a companion bar chart display the deforming cube, its area-normal arrows, its face areas, and its volume."""
 
 from __future__ import annotations
 
@@ -17,85 +15,76 @@ from numga import stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
-from examples.util.wgsl import fitted, show, simplices, solids
+from numga.topology import Topology
+from numga.render import simplices, solids
+from examples.util.panels import fitted, show
 
-FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
-                  (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])
-# The cube's twelve edges: the corners, numbered by their bits along x, y and z, joined across each bit.
-EDGES = np.array([(corner, corner | bit) for bit in (4, 2, 1) for corner in range(8) if not corner & bit])
-COLOURS = ("#2563eb", "#0d9488", "#f97316")
-EDGE_COLOUR = "#334155"
-ARROW_SCALE = 0.36
+face_quads = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
+                       (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])              # [6, 4]
+# Number the eight corners by their bits along x, y, and z and connect pairs differing in one bit.
+edge_pairs = np.array([(corner, corner | bit) for bit in (4, 2, 1) for corner in range(8) if not corner & bit])  # [12, 2]
+axis_colours = ("#2563eb", "#0d9488", "#f97316")
+edge_colour = "#334155"
+arrow_scale = 0.36
 background = np.ones(3)
-# The view, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the cubes as a share
-# of the larger side.
+# Set elevation and azimuth in radians, with azimuth zero looking along +y, and pad the framed cube.
 elevation, azimuth = np.radians([23.0, -57.0 + 90.0])
 margin = 0.16
-# How many times over the first frame's view the animation's view takes, across and up, leaving room for the slide
-# along x and the arrows as the cube flattens.
+# Expand the first frame's camera bounds across and up to leave room for the sideways shear and arrows.
 view_room = np.array([1.35, 1.04])
-# How much of what lies behind each of a face's two sides hides; the radius of the edges, and the arrows' width with
-# the length of the strokes of the chevrons at their tips, in pixels.
 face_opacity = 0.1
 edge_radius = 0.87
 arrow_width = 2.84
 chevron_length = 11.4
-# A volume, the join of three points, is an intrinsic scalar; its unit carries an intrinsic patch to the plane square
-# to it, whose dual is the direction square to the patch.
-unit_volume = core.mv.antipseudoscalar([1])                                  # [] Antipseudoscalar-
+# Multiplying an intrinsic patch by the unit volume and taking the dual yields its outward area-normal displacement.
+unit_volume = core.mv.xyz.dual()                                                # [] Scalar-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def arrow_offsets(patches: core.Patch) -> core.Point:
-    """How far each patch's arrow reaches from its face's centre: along the direction square to the patch, as far as
-    its area."""
-    return (patches * unit_volume).dual() * ARROW_SCALE
+    """Multiplying each oriented face patch (`[...] Patch-`) by the unit volume and taking the dual gives its outward area-normal displacement (`[...] Point-`)."""
+    return (patches * unit_volume).dual() * arrow_scale
 
 
 def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> solids.View:
-    """A view framing every cube and arrow given."""
-    # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
-    corners = solids.origin + solids.context.include_from_algebra(vertices)            # [vertices] Point-
-    tips = solids.origin + solids.context.include_from_algebra(centres + arrow_offsets(patches))   # [faces] Point-
+    """One shared camera view frames both the cube corners (`[8] Point-`) and the patch-arrow tips (`[6] Point-`)."""
+    corners = solids.origin + solids.context.include_from_algebra(vertices)     # [8] Point-
+    tips = solids.origin + solids.context.include_from_algebra(centres + arrow_offsets(patches))  # [6] Point-
     return solids.view([corners, tips], 0.0, elevation, azimuth, margin, 1)
 
 
-def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view: solids.View) -> np.ndarray:
-    """The cube as the view sees it: its faces translucent, its edges and arrows opaque."""
-    # The projective embedding: places of space, offsets from its origin, as the renderer's points about its own.
-    places = solids.origin + solids.context.include_from_algebra(vertices)             # [vertices] Point-
-    offsets = arrow_offsets(patches)                                                               # [faces] Point-
-    # A crushed face has no area: nothing to draw, and no arrow.
-    lengths = offsets.norm()                                                   # [faces] Scalar+
-    shown = lengths > view.pixel
-    colours = np.array([to_rgb(colour) for colour in COLOURS * 2])            # [faces, 3]
-    starts = solids.origin + solids.context.include_from_algebra(centres[shown])         # [shown] Point-
-    ends = starts + solids.context.include_from_algebra(offsets[shown])                  # [shown] Point-
-    # Each arrow a tube ending in a chevron.
-    n_shown = starts.shape[0]
-    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), simplices.Topology.chains([2] * n_shown),
-                             colours[shown], arrow_width, view, gloss=solids.gloss, chevrons=np.ones(n_shown),
-                             chevron=chevron_length)
-    edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
-    edge_colour = np.array(to_rgb(EDGE_COLOUR))
-    opaque = [(edges, edge_colour), (joints, edge_colour)]
-    # Each face a plate a pixel thick, in its own colour.
-    faces = solids.plates(places[FACES[shown]], view.pixel)                  # [faces, 6] Plane+
-    return solids.draw(opaque, view, background, inks=[], translucent=[(faces, colours[shown], face_opacity)],
-                       meshes=[(arrows, 1.0)])
+def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, camera_view: solids.View) -> np.ndarray:
+    """Translucent face plates, opaque edge rods, and glossy chevron arrows depict one deformed cube state."""
+    places = solids.origin + solids.context.include_from_algebra(vertices)      # [8] Point-
+    offsets = arrow_offsets(patches)                                            # [6] Point-
+    # Omit faces and arrows whose crushed area falls below one pixel.
+    lengths = offsets.norm()                                                    # [6] Scalar+
+    visible = lengths > camera_view.pixel
+    n_visible = int(visible.sum())
+    colours = np.array([to_rgb(colour) for colour in axis_colours * 2])         # [6, 3]
+    starts = solids.origin + solids.context.include_from_algebra(centres[visible])  # [n_visible] Point-
+    ends = starts + solids.context.include_from_algebra(offsets[visible])       # [n_visible] Point-
+    arrows = simplices.tubes(stack((starts, ends), axis=-1).reshape(-1), Topology.chains([2] * n_visible),
+                             colours[visible], arrow_width, camera_view, gloss=solids.gloss,
+                             chevrons=np.ones(n_visible), chevron=chevron_length)
+    rods, joints = solids.edges(places[edge_pairs[:, 0]], places[edge_pairs[:, 1]], edge_radius * camera_view.pixel)
+    rod_colour = np.array(to_rgb(edge_colour))
+    opaque = [(rods, rod_colour), (joints, rod_colour)]
+    plates = solids.plates(places[face_quads[visible]], camera_view.pixel)      # [n_visible, 6] Plane+
+    return solids.draw(opaque, camera_view, background, inks=[],
+                       translucent=[(plates, colours[visible], face_opacity)], meshes=[(arrows, 1.0)])
 
 
 def heights(patches: core.Patch, volume: core.Scalar) -> np.ndarray:
-    """The areas of the faces normal to x, y and z, and the volume."""
+    """The norms of the first three face patches and the scalar volume form the four bar heights (`[4]`)."""
     return np.concatenate([patches[:3].norm().to_array(), volume.to_array()[None]])
 
 
 def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer:
-    """The bars of the areas and the volume, for an animation to set their heights."""
+    """Four bars compare the distinct face areas and the volume against the dotted unit-cube level."""
     values = heights(patches, volume)
-    bars = ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
+    bars = ax.bar(np.arange(len(values)), values, color=(*axis_colours, edge_colour), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":")
-    # The unit cube's measures, the one value read off; each column named by what it measures.
     ax.set(xticks=np.arange(len(values)), xticklabels=["face $x$", "face $y$", "face $z$", "volume"], yticks=[1],
            ylim=(0, 1.35))
     ax.tick_params(axis="x", length=0)
@@ -103,25 +92,19 @@ def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer
     return bars
 
 
-def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]],
-            room: np.ndarray = view_room) -> Iterator[np.ndarray]:
-    """The cube with its patches, from one camera framing the first frame's cube and arrows, `room` times over, beside
-    the bars of the areas of the faces normal to x, y and z and the volume, against the unit cube's."""
+def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]]) -> Iterator[np.ndarray]:
+    """Yields side-by-side RGB frames of the deforming cube and the face-area and volume bars."""
     states = iter(frames)
     first = next(states)
-    framed = view(*first[:3])
-    # Three quarters of the column: the cube's picture and four bars, side by side. The bars and their labels are
-    # made under the charts' style; the frames only change their heights.
+    initial_view = view(*first[:3])
     with charts.style():
-        figure, (cube, measured) = charts.subplots(600, 288, ncols=2, layout="constrained")
-        bars = measures(measured, *first[2:])
-    # The view fitted to the room the layout gives the cube's axes bare, as its picture shows them.
-    cube.set_axis_off()
-    seen = fitted(framed._replace(half=framed.half * room), cube)
-    image = show(cube, np.ones((*seen.shape, 3)), seen)
-    # The figure set up once; only the cube's picture and the bars' heights change between frames.
+        figure, (cube_ax, bar_ax) = charts.subplots(600, 288, ncols=2, layout="constrained")
+        bars = measures(bar_ax, *first[2:])
+    cube_ax.set_axis_off()
+    camera_view = fitted(initial_view._replace(half=initial_view.half * view_room), cube_ax)
+    image = show(cube_ax, np.ones((*camera_view.shape, 3)), camera_view)
     for vertices, centres, patches, volume in chain([first], states):
-        image.set_data(picture(vertices, centres, patches, seen))
+        image.set_data(picture(vertices, centres, patches, camera_view))
         for bar, height in zip(bars, heights(patches, volume)):
             bar.set_height(height)
         yield capture(figure)

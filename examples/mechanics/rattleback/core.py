@@ -1,144 +1,144 @@
-"""A rattleback: a body with an ellipsoidal underside rolling without slipping on a table, which turns
-rocking into spin and spin of one sense into rocking and back, in PGA3D.
+"""Rolling dynamics and quadric inertia of a rattleback on a horizontal table in 3D projective geometric algebra.
 
-Its points and directions are antivectors, and its underside a map from planes to directions, the support
-map: the table's plane through the shell's centre, read in the body, goes to the direction from that
-centre to the point that touches the table, `-shape(normal) / height`, with the height the pairing
-`normal & shape(normal)` under its square root. The body turns about its centre of mass, the origin, and
-the shell's centre sits off it by `centre`, so the touching point lies at `centre + support` from the
-centre of mass. Rolling holds that point still: a spin of the body about its centre of mass becomes the
-rate that turns it about the contact, the spin carried by the translation to the contact, the product
-`contact * origin.inverse()`. The adjugate of that rolling map pulls forques back onto spins and does so
-without the contact's reaction, which does no work under any rolling motion, so one solve gives the
-body's angular acceleration with the reaction eliminated.
-
-As the body rocks, the contact moves across the shell. Differentiating the rolling map contributes to
-the acceleration even at a fixed spin; this contribution and the rotation of the body's momentum remain
-in the balance being solved.
+Points and directions are intrinsic antivectors, while planes are extrinsic vectors. The ellipsoidal hull's support
+map sends the table normal in the body frame to the displacement from the hull centre to the lowest point,
+`-shape(normal) / height`, with `height = (normal & shape(normal)).square_root()`. Translating a body spin from the
+centre of mass at the origin to that contact point builds `rolling = contact_shift >> Spin`, the map from spins to
+rigid rates that hold the contact instantaneously at rest. Pulling forques back through `rolling.adjugate()` removes
+the unknown contact reaction because forces through a resting contact do no work on rolling rates, while
+`rolling.adjugate()(inertia(rolling))` forms the reduced rolling inertia on spins. Differentiating the moving contact
+point across the hull supplies the rate correction `rolling_change` alongside the Euler commutator in the acceleration
+solve.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from typing import NamedTuple
+from collections.abc import Iterator
 
-from numga import Algebra, concatenate
-from numga.backend.context import Context
+from numga import NumpyContext, stack
+from numga.algebras import PGA3D as ga
 
-ga: Algebra
-ctx: Context
+ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
-# Planes through the origin; points and directions are antivectors, intrinsic.
-Plane = ga.gatype.vector().derive.nondegenerate
+Plane = ga.gatype.vector()
 Point = ga.gatype.antivector()
 Direction = Point.derive.degenerate
 Spin = ga.gatype.bivector().derive.nondegenerate
 Rate = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
 Forque = ga.gatype.antibivector()
-AngularMomentum = Forque.derive.degenerate
-# The support map, from the table's plane to the direction of the touching point, and the stretch of the unit
-# sphere onto the shell.
 Shape = ga.gatype((Direction, Plane))
-Stretch = ga.gatype((Direction, Direction))
 Rolling = ga.gatype((Rate, Spin))
 Inertia = ga.gatype((Forque, Rate))
-# Planes anywhere, extrinsic; a quadric pairs each point with its plane, negative inside and zero on the surface,
-# where the plane is the tangent plane.
-Cut = ga.gatype.vector()
-Quadric = ga.gatype((Cut, Point))
+Quadric = ga.gatype((Plane, Point))
 
-infinity = mv.w
-origin = infinity.dual()
+infinity = mv.w                                                       # [] Plane+
+origin = infinity.dual()                                              # [] Point-
+up = mv.z.dual()                                                      # [] Direction-
+mirrors = stack((mv.x, mv.y, mv.z))                                   # [3] Plane+
 
 
 # --- math
 
+def half_space(plane: Plane) -> Quadric:
+    """Symmetrizing `plane` with `infinity` forms a quadric negative on `plane`'s inner side (`[...] Plane+ <- Point-`)."""
+    return (plane * (infinity & Point) + infinity * (plane & Point)) / 2
+
+
+def ball(centre: Point, radius: float) -> Quadric:
+    """Coordinate planes offset through unit-weight `centre` points define solid sphere quadrics (`[...] Plane+ <- Point-`) of `radius`."""
+    sphere_planes = mirrors - infinity * (mirrors & centre[..., None])  # [..., 3] Plane+
+    return (sphere_planes * (sphere_planes & Point)).sum(axis=-1) / radius**2 - infinity * (infinity & Point)
+
+
+def mass_distribution(wood: Quadric, balls: Quadric, grid: Point, wood_density: float,
+                      steel_density: float, mass: float) -> tuple[Point, Point, Inertia]:
+    """Interior grid points (`[...] Point-`) weighted by wood and steel densities determine the centre of mass (`[] Point-`) and body inertia (`[] Forque- <- Rate+`)."""
+    wood_mask = ((wood[:, None](grid) & grid) <= 0).all(axis=0)
+    steel_mask = ((balls[:, None](grid) & grid) <= 0).any(axis=0)
+    densities = wood_density * wood_mask + steel_density * steel_mask
+    body_mask = densities > 0
+    samples = grid[body_mask]                                         # [...] Point-
+    sample_masses = mass * densities[body_mask] / densities[body_mask].sum()
+    mass_centre = (samples * (sample_masses / mass)).sum(axis=0)      # [] Point-
+    # Joining each mass-weighted point with its velocity under Rate sums the translational and rotational inertia.
+    body_points = origin + (samples - mass_centre)                    # [...] Point-
+    inertia = (body_points * sample_masses).regressive(body_points.commutator(Rate)).sum(axis=0)  # [] Forque- <- Rate+
+    return samples, mass_centre, inertia
+
+
 def contact_geometry(motor: Motor, shape: Shape, centre: Direction,
                      up: Direction) -> tuple[Plane, Direction, Scalar, Rolling]:
-    """The table's plane in the body, the direction from the shell's centre to the lowest point, the shell
-    centre's height, and the motions that keep the lowest point instantaneously at rest."""
-    normal = (motor << up).dual_inverse()                         # Plane+
-    height = (normal & shape(normal)).square_root()               # Scalar+
-    support = -shape(normal) / height                             # Direction-
+    """The body-frame table normal determines the ellipsoid support offset, hull centre height, and rolling map (`[...] Rate+ <- Spin+`)."""
+    normal = (motor << up).dual_inverse()                             # [...] Plane+
+    height = (normal & shape(normal)).square_root()                   # [...] Scalar+
+    support = -shape(normal) / height                                 # [...] Direction-
 
-    # A spin about the centre of mass carried to the contact by the translation there, the product of the
-    # two points, turns the body about the contact.
-    rolling = ((centre + support) * origin.inverse() / 2).exp() >> Spin   # Rate+ <- Spin-
+    # Translating a spin from the centre of mass to the contact point turns the body instantaneously about the contact.
+    contact_shift = ((centre + support) * origin.inverse() / 2).exp()  # [...] Motor+
+    rolling = contact_shift >> Spin                                   # [...] Rate+ <- Spin+
     return normal, support, height, rolling
 
 
 def dynamics(motor: Motor, spin: Spin, shape: Shape, centre: Direction, inertia: Inertia,
              mass: float, gravity: Direction, up: Direction) -> tuple[Rate, Spin]:
-    """Rolling velocity and angular acceleration, with the contact force eliminated."""
+    """Pulling the force and Euler balance back across the rolling map gives the body rate (`[...] Rate+`) and angular acceleration (`[...] Spin+`)."""
     normal, support, height, rolling = contact_geometry(motor, shape, centre, up)
-    rate = rolling(spin)                                          # Rate+
+    rate = rolling(spin)                                              # [...] Rate+
 
-    # The touching point changes as the body rocks; differentiate its support geometry. The shell's centre
-    # is fixed in the body, so only the support moves.
-    normal_rate = spin.commutator(normal)                         # Plane+
-    contact_rate = -shape(normal_rate) / height - support * (normal & shape(normal_rate)) / height.squared()  # Direction-
-    rolling_change = (contact_rate * origin.inverse()).commutator(spin)   # Rate+
-    force = (origin & (motor << gravity)) * mass                  # Forque-
+    # Differentiate the support point as the table normal rotates in the body while the hull centre stays fixed.
+    normal_rate = spin.commutator(normal)                             # [...] Plane+
+    height_rate = (normal & shape(normal_rate)) / height              # [...] Scalar+
+    contact_rate = -shape(normal_rate) / height - support * height_rate / height  # [...] Direction-
+    rolling_change = (contact_rate * origin.inverse()).commutator(spin)  # [...] Rate+
+    force = (origin & (motor << gravity)) * mass                      # [...] Forque-
 
-    # The adjugate pairs forces with allowed rolling motions, so the resting contact does no work.
-    pullback = rolling.adjugate()                                 # AngularMomentum <- Forque-
-    effective = pullback(inertia(rolling))                        # AngularMomentum <- Spin-
-    acceleration = effective.solve(pullback(
+    # Pulling forques back across the rolling map annihilates the workless reaction at the resting contact.
+    pullback = rolling.adjugate()                                     # [...] Forque- <- Forque-
+    effective_inertia = pullback(inertia(rolling))                    # [...] Forque- <- Spin+
+    acceleration = effective_inertia.solve(pullback(
         force - inertia(rate).commutator(rate) - inertia(rolling_change)
-    ))                                                           # Spin-
+    ))                                                                # [...] Spin+
     return rate, acceleration
 
 
 def energy(motor: Motor, spin: Spin, shape: Shape, centre: Direction, inertia: Inertia,
            mass: float, gravity: Direction, up: Direction) -> Scalar:
-    """Kinetic and gravitational energy of a rolling body."""
+    """Kinetic and gravitational potential contributions sum to the total mechanical energy (`[...] Scalar+`) of the rolling body."""
     _, _, _, rolling = contact_geometry(motor, shape, centre, up)
-    rate = rolling(spin)                                          # Rate+
-    potential = -mass * (gravity.dual_inverse() & (motor >> origin))  # Scalar+
+    rate = rolling(spin)                                              # [...] Rate+
+    potential = -mass * (gravity.dual_inverse() & (motor >> origin))  # [...] Scalar+
     return (rate & inertia(rate)) / 2 + potential
 
 
 # --- plumbing
 
-class Body(NamedTuple):
-    """The rattleback as built, in the frame of its centre of mass, by intersections of quadrics: a wooden solid
-    inside its underside and its cuts and outside its balls, and the steel balls, each filling the pocket its
-    complement cuts into the wood."""
-    underside: Quadric                                        # [] the ellipsoid
-    deck: Quadric                                             # [] the flat top
-    chamfers: Quadric                                         # [sides] cuts across opposite corners of the top
-    balls: Quadric                                            # [sides]
-
-    def wood(self) -> Quadric:
-        """The wooden solid's quadrics `[quadrics]`, intersected: inside the underside and the cuts, outside the
-        balls."""
-        return concatenate([self.underside[None], self.deck[None], self.chamfers, -self.balls])
-
-
-def step(motor: Motor, spin: Spin, dt: float,
-         velocity_and_acceleration: Callable[[Motor, Spin], tuple[Rate, Spin]]) -> tuple[Motor, Spin]:
-    """A fourth-order Runge–Kutta–Munthe-Kaas step in the body's motion algebra."""
-    def derivative(increment: Rate, angular: Spin) -> tuple[Rate, Spin]:
-        rate, acceleration = velocity_and_acceleration(motor * increment.exp(), angular)
-        ad = increment.commutator(Rate) * 2                       # Rate+ <- Rate+
-        differential = Rate + ad / 2 + ad(ad) / 12                # Rate+ <- Rate+
-        return differential(-rate / 2), acceleration
-
-    first_motion, first_spin = derivative(spin * 0, spin)
-    second_motion, second_spin = derivative(first_motion * (dt / 2), spin + first_spin * (dt / 2))
-    third_motion, third_spin = derivative(second_motion * (dt / 2), spin + second_spin * (dt / 2))
-    fourth_motion, fourth_spin = derivative(third_motion * dt, spin + third_spin * dt)
-    increment = (first_motion + 2 * second_motion + 2 * third_motion + fourth_motion) * (dt / 6)  # Rate+
-    spin = spin + (first_spin + 2 * second_spin + 2 * third_spin + fourth_spin) * (dt / 6)  # Spin+
-    return motor * increment.exp(), spin
+def rkmk_step(motor: Motor, spin: Spin, dt: float, shape: Shape, centre: Direction,
+              inertia: Inertia, mass: float, gravity: Direction, up: Direction) -> tuple[Motor, Spin]:
+    """A fourth-order Runge-Kutta-Munthe-Kaas step advances `motor` and body-frame `spin` over `dt`."""
+    stage_increment = (spin * 0).retyped(Rate)                        # [...] Rate+
+    stage_spin = spin                                                 # [...] Spin+
+    total_increment = stage_increment                                 # [...] Rate+
+    total_spin_change = spin * 0                                      # [...] Spin+
+    for step_fraction, weight in ((0.5, 1 / 6), (0.5, 1 / 3), (1.0, 1 / 3), (0.0, 1 / 6)):
+        rate, acceleration = dynamics(motor * stage_increment.exp(), stage_spin,
+                                      shape, centre, inertia, mass, gravity, up)
+        adjoint = stage_increment.commutator(Rate) * 2                # [...] Rate+ <- Rate+
+        dexp_inverse = Rate + adjoint / 2 + adjoint(adjoint) / 12     # [...] Rate+ <- Rate+
+        increment_rate = dexp_inverse(-rate / 2)                      # [...] Rate+
+        total_increment = total_increment + increment_rate * (dt * weight)  # [...] Rate+
+        total_spin_change = total_spin_change + acceleration * (dt * weight)  # [...] Spin+
+        stage_increment = increment_rate * (dt * step_fraction)       # [...] Rate+
+        stage_spin = spin + acceleration * (dt * step_fraction)       # [...] Spin+
+    return motor * total_increment.exp(), spin + total_spin_change
 
 
-def evolve(motor: Motor, spin: Spin, dt: float,
-           velocity_and_acceleration: Callable[[Motor, Spin], tuple[Rate, Spin]]) -> Iterator[tuple[Motor, Spin]]:
-    """Placements and body-frame spins, from the start, without end."""
+def trajectory(motor: Motor, spin: Spin, dt: float, shape: Shape, centre: Direction,
+               inertia: Inertia, mass: float, gravity: Direction,
+               up: Direction) -> Iterator[tuple[Motor, Spin]]:
+    """Yields rigid placements (`[...] Motor+`) and body-frame spins (`[...] Spin+`) at steps of `dt`."""
     while True:
         yield motor, spin
-        motor, spin = step(motor, spin, dt, velocity_and_acceleration)
+        motor, spin = rkmk_step(motor, spin, dt, shape, centre, inertia, mass, gravity, up)

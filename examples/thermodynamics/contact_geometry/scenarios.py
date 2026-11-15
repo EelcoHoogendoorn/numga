@@ -1,4 +1,5 @@
-"""The ideal gas's equilibrium surface before and after the Legendre change to the Helmholtz energy."""
+"""Equilibrium surface, constant-volume section, and contact horizontal lift of an ideal gas before and after the
+Legendre transformation to the Helmholtz free energy."""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -6,41 +7,41 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga import stack
-from numga.backend.jax import derivative
 from examples.thermodynamics.contact_geometry import core
 
-# The gas's heat capacity at fixed volume, in nR.
+# Dimensionless heat capacity at fixed volume, in units of the gas constant times the number of moles.
 heat_capacity = 1.5
 
 
 # --- math -----------------------------------------------------------------------------
 def surfaces(entropies: np.ndarray, volumes: np.ndarray) -> tuple[core.Ambient, core.Ambient]:
-    """The equilibrium surface over entropies and volumes `[volumes, entropies]`, and its Legendre change."""
-    states = core.mv.s.dual() * entropies[None, :] + core.mv.v.dual() * volumes[:, None]
-    lifted = core.equilibrium(states, heat_capacity)
-    return lifted, core.helmholtz(lifted)
+    """Equilibrium surface sampled over a grid of entropies and volumes, paired with its Helmholtz Legendre image."""
+    states = core.mv.s.dual() * entropies[None, :] + core.mv.v.dual() * volumes[:, None]   # [..., ...] State-
+    points = core.equilibrium(states, heat_capacity)                                       # [..., ...] Ambient-
+    return points, core.helmholtz(points)
 
 
 def section(entropies: np.ndarray, volume: float) -> tuple[core.Ambient, core.Ambient, core.Ambient, core.Ambient]:
-    """The equilibrium points at a fixed volume, their changes along the entropy, and both after the Legendre change."""
-    states = core.mv.s.dual() * entropies + core.mv.v.dual() * volume
-    embedding = lambda state: core.equilibrium(state, heat_capacity)
-    points = embedding(states)
-    tangents = derivative(embedding)(states)(core.mv.s.dual())                       # [samples] Ambient-
-    return points, tangents, core.helmholtz(points), derivative(core.helmholtz)(points)(tangents)
+    """Equilibrium curve at fixed volume, its entropy tangents, and their images under the Helmholtz Legendre map."""
+    states = core.mv.s.dual() * entropies + core.mv.v.dual() * volume         # [...] State-
+    points = core.equilibrium(states, heat_capacity)                          # [...] Ambient-
+    tangents = core.entropy_tangent(states, heat_capacity)                    # [...] Ambient-
+    pushforwards = core.helmholtz_pushforward(points)                         # [...] Ambient- <- Ambient-
+    return points, tangents, core.helmholtz(points), pushforwards(tangents)
 
 
-def moving(points: core.Ambient, tangents: core.Ambient, changed_points: core.Ambient,
-           changed_tangents: core.Ambient) -> Iterator[tuple[core.Ambient, core.Ambient, core.Ambient, core.Ambient]]:
-    """The point of tangency moving along the section, before and after the change."""
+def tangent_stages(
+        points: core.Ambient, tangents: core.Ambient,
+        transformed_points: core.Ambient, transformed_tangents: core.Ambient,
+) -> Iterator[tuple[core.Ambient, core.Ambient, core.Ambient, core.Ambient]]:
+    """Yields each point of tangency and its tangent vector along the section before and after the Legendre map."""
     for index in range(points.shape[0]):
-        yield points[index], tangents[index], changed_points[index], changed_tangents[index]
+        yield points[index], tangents[index], transformed_points[index], transformed_tangents[index]
 
 
 def horizontal_lift() -> tuple[core.Ambient, core.Ambient]:
-    """A loop of entropy and temperature at fixed volume and pressure, lifted along the contact planes: every edge
-    changes the energy by temperature times the entropy's change, so the lift does not close but gains the area the
-    loop encloses."""
+    """Lifts a closed rectangle in entropy and temperature horizontally along the contact hyperplanes, accumulating an
+    energy gap equal to the enclosed area."""
     n_samples = 17
     entropy_limits = np.array([-0.6, 0.6])
     cold, hot = 0.5, 1.5
@@ -48,28 +49,37 @@ def horizontal_lift() -> tuple[core.Ambient, core.Ambient]:
     parameters = np.linspace(0, 1, n_samples)
     entropy_span = entropy_limits[1] - entropy_limits[0]
     mv = core.mv
-    slice_origin = mv.v.dual() + mv.p.dual()
+    slice_origin = mv.v.dual() + mv.p.dual()                                  # [] Ambient-
     corners = slice_origin + stack((
         mv.s.dual() * entropy_limits[0] + mv.t.dual() * cold + mv.u.dual() * initial_energy,
         mv.s.dual() * entropy_limits[0] + mv.t.dual() * hot + mv.u.dual() * initial_energy,
         mv.s.dual() * entropy_limits[1] + mv.t.dual() * hot + mv.u.dual() * (initial_energy + hot * entropy_span),
         mv.s.dual() * entropy_limits[1] + mv.t.dual() * cold + mv.u.dual() * (initial_energy + hot * entropy_span),
         mv.s.dual() * entropy_limits[0] + mv.t.dual() * cold + mv.u.dual() * (initial_energy + (hot - cold) * entropy_span),
-    ))
-    path = corners[:-1, None] * (1 - parameters) + corners[1:, None] * parameters
+    ))                                                                        # [5] Ambient-
+    path = corners[:-1, None] * (1 - parameters) + corners[1:, None] * parameters   # [4, n_samples] Ambient-
     return path, core.helmholtz(path)
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.contact_geometry import render
 
     n_entropies, section_volume, frame_duration_ms = 93, 1.0, 40
     entropies, volumes = np.linspace(-0.8, 1.2, n_entropies), np.array([0.6, 0.8, 1.0, 1.3, 1.7])
-    family, changed_family = surfaces(entropies, volumes)
-    points, tangents, changed_points, changed_tangents = section(entropies, section_volume)
-    save_figure(render.draw(family, changed_family, points, tangents, changed_points, changed_tangents),
+    family, transformed_family = surfaces(entropies, volumes)
+    points, tangents, transformed_points, transformed_tangents = section(entropies, section_volume)
+    save_figure(render.draw(family, transformed_family, points, tangents, transformed_points, transformed_tangents),
                 "thermodynamics_legendre")
-    save_animation(render.legendre(family, changed_family, points, tangents, changed_points, changed_tangents,
-                                   moving(points, tangents, changed_points, changed_tangents)),
+    save_animation(render.legendre(family, transformed_family, points, tangents, transformed_points,
+                                   transformed_tangents,
+                                   tangent_stages(points, tangents, transformed_points, transformed_tangents)),
                    "thermodynamics_legendre", frame_duration_ms)
+
+    # checks
+    np.testing.assert_allclose((core.contact_element(points) & tangents).kernel, 0, atol=1e-10)
+    np.testing.assert_allclose((core.contact_element(transformed_points) & transformed_tangents).kernel, 0, atol=1e-10)
+
+
+if __name__ == "__main__":
+    main()

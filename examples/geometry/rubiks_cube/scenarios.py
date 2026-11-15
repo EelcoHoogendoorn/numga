@@ -10,17 +10,17 @@ import numpy as np
 from examples.geometry.rubiks_cube import core
 
 # The scramble's quarter-turn count and random seed, and the search depth from each end.
-N_SCRAMBLE = 10
-SEED = 4
-DEPTH = 5
+n_scramble = 10
+seed = 4
+n_levels = 5
 # The animation's frames per quarter turn, and each frame's duration in milliseconds.
-N_STEPS = 9
-FRAME_DURATION = 40
+n_steps = 9
+frame_duration_ms = 40
 
 
 # --- math -----------------------------------------------------------------------------
 def random_turns(rng: np.random.Generator) -> Iterator[np.ndarray]:
-    """An endless stream of random quarter turns `(direction, side, axis)` with no move immediately undoing the one before."""
+    """Yields random quarter turns `(direction, side, axis)` (`[3]`) with no move immediately undoing the one before."""
     previous_move = rng.integers((2, 2, 3))
     yield previous_move
     while True:
@@ -30,13 +30,17 @@ def random_turns(rng: np.random.Generator) -> Iterator[np.ndarray]:
             yield move
 
 
-def scramble_and_solution(n_scramble: int = N_SCRAMBLE, depth: int = DEPTH) -> tuple[np.ndarray, np.ndarray, core.Point]:
-    """A random scramble of `n_scramble` quarter turns, the sequence of turns that solves it, found up to `depth` turns
-    from each end, and the scrambled sticker points."""
-    solved_stickers, _, _ = core.solved_cube()                              # [stickers] Point-
-    moves = np.array(list(islice(random_turns(np.random.default_rng(SEED)), n_scramble)))
-    scrambled_stickers = core.scramble(solved_stickers, moves)              # [stickers] Point-
-    return moves, core.solve(scrambled_stickers, solved_stickers, depth), scrambled_stickers
+def scramble_moves(n_moves: int, rng_seed: int) -> np.ndarray:
+    """Draws `n_moves` non-cancelling quarter turns `(direction, side, axis)` from `rng_seed` (`[n_moves, 3]`)."""
+    return np.array(list(islice(random_turns(np.random.default_rng(rng_seed)), n_moves)))  # [n_moves, 3]
+
+
+def scramble_and_solution(n_moves: int, search_levels: int) -> tuple[np.ndarray, np.ndarray, core.Point]:
+    """Scrambles the solved cube by `n_moves` random quarter turns and solves it within `search_levels` turns from each end (`[n_moves, 3]`, `[..., 3]`, `[54] Point-`)."""
+    solved_stickers, _, _ = core.solved_cube()                              # [54] Point-
+    moves = scramble_moves(n_moves, seed)                                   # [n_moves, 3]
+    scrambled_stickers = core.scrambled_cube(solved_stickers, moves)        # [54] Point-
+    return moves, core.solution_moves(scrambled_stickers, solved_stickers, search_levels), scrambled_stickers
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -44,19 +48,24 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.geometry.rubiks_cube import render
 
-    moves, solution, scrambled_stickers = scramble_and_solution()
+    moves, solution, scrambled_stickers = scramble_and_solution(n_scramble, n_levels)
     solved_stickers, solved_corners, colours = core.solved_cube()
-    states = core.animate(solved_stickers, solved_corners, np.concatenate([moves, solution]), N_STEPS)
-    save_animation(render.animate(states, colours), "rubiks_cube", FRAME_DURATION)
+    recorded_states: list[tuple[core.Point, core.Point]] = []
+
+    def streamed_states() -> Iterator[tuple[core.Point, core.Point]]:
+        for state in core.turn_frames(solved_stickers, solved_corners, np.concatenate([moves, solution]), n_steps):
+            recorded_states.append(state)
+            yield state
+
+    save_animation(render.cube_animation(colours, streamed_states()), "rubiks_cube", frame_duration_ms)
 
     # checks
-    # Every turn permutes the 54 sticker positions, and the solution restores the solved cube in no more turns than the scramble.
-    np.testing.assert_allclose(
-        np.unique(np.rint(scrambled_stickers.kernel), axis=0),
-        np.unique(np.rint(solved_stickers.kernel), axis=0),
-    )
-    np.testing.assert_allclose((core.scramble(scrambled_stickers, solution) - solved_stickers).kernel, 0.0, atol=1e-12)
-    assert len(solution) <= N_SCRAMBLE
+    # Every turn permutes the 54 sticker positions, and the streamed scramble-then-solution restores all sticker corners.
+    matches = (scrambled_stickers[:, None] - solved_stickers[None, :]).scalar_norm_squared() < 1e-12
+    assert (matches.sum(axis=1) == 1).all() and (matches.sum(axis=0) == 1).all()
+    final_corners, _ = recorded_states[-1]
+    assert ((final_corners - solved_corners).scalar_norm_squared() < 1e-12).all()
+    assert len(solution) <= n_scramble
 
 
 if __name__ == "__main__":

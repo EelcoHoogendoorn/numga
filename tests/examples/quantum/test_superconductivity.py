@@ -1,50 +1,75 @@
-"""The superconducting condensate: its linear response and its motion under a mirror, and its figures after one frame."""
+"""Coverage tests for the superconducting condensate, its mirror covariance, and its figures."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from numga import stack
 from examples.quantum.superconductivity import core, render, scenarios
 
-ROUND_OFF = 1e-11
+tolerance = 1e-10
 
 
 @pytest.fixture(scope="module")
-def quench():
-    return scenarios.quench(scenarios.QUENCH_RATIO, n_steps=scenarios.STEPS_PER_FRAME)
+def sample_quench():
+    n_test_levels = 16
+    n_test_alignment = 60
+    n_test_steps = scenarios.n_steps_per_frame
+    dispersion = core.energy_levels(n_test_levels, scenarios.cutoff)
+    pairing = scenarios.coupling * core.coherence
+    post_pairing = scenarios.quench_ratio * pairing
+    initial_spins = core.ground_state(dispersion, pairing, core.mv.yz, n_test_alignment)
+    equilibrium = core.ground_state(dispersion, post_pairing, core.mv.yz, n_test_alignment)
+    states = list(scenarios.quench_states(dispersion, initial_spins, post_pairing, n_test_steps))
+    times = np.arange(len(states)) * scenarios.n_steps_per_frame * scenarios.dt
+    return dispersion, post_pairing, initial_spins, equilibrium, times, states
 
 
-def test_response_is_the_derivative_and_contains_the_phase_zero_mode(quench):
-    model, initial, equilibrium, _, _ = quench
-    local, feedback = model.response(equilibrium)
-    delta = (core.mv.yz * 0.11 + core.mv.zx * 0.07).exp() >> (initial - equilibrium)
-    response = local(delta) + feedback(delta.sites.mean())
-    # The vector field is quadratic: its central difference is exactly its derivative.
-    difference = (model.rate(equilibrium + delta) - model.rate(equilibrium - delta)) / 2
-    np.testing.assert_allclose((response - difference).kernel, 0, atol=ROUND_OFF, rtol=0)
+def test_invariants_and_collective_phase_zero_mode(sample_quench):
+    dispersion, post_pairing, initial_spins, equilibrium, _, states = sample_quench
+    history = stack([spins for spins, _ in states])
+    energies = core.bcs_energy(history, dispersion, post_pairing)
+    assert ((energies - energies[0]).abs() < 1e-5).all()
+    occupations = (core.mv.xy & history).sites.mean()
+    assert ((occupations - occupations[0]).abs() < tolerance).all()
+    assert ((history.antinorm() - 0.5).abs() < 1e-5).all()
 
-    # Turning every pairing phase together gives another equilibrium. Local precession
-    # alone moves this disturbance; the changed pairing field cancels it exactly.
-    phase = -core.mv.xy.commutator(equilibrium)
-    local_phase = local(phase)
-    assert np.max(np.abs(local_phase.kernel)) > 0.1
-    np.testing.assert_allclose((local_phase + feedback(phase.sites.mean())).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-
-
-def test_precession_is_mirror_covariant(quench):
-    # Mirroring the condensate, its occupation planes and its pairing map with it, mirrors its motion.
-    model, initial, _, _, _ = quench
-    for mirror in (core.mv.x, core.mv.z, core.mv.vector([0.6, 0.0, 0.8])):
-        mirrored = core.Condensate(mirror >> model.dispersion, mirror >> model.pairing(mirror << core.Spin))
-        np.testing.assert_allclose((mirrored.rate(mirror >> initial) - (mirror >> model.rate(initial))).kernel,
-                                   0, atol=ROUND_OFF, rtol=0)
+    # Turning every pairing phase together produces another equilibrium; collective feedback cancels local precession.
+    local_map, feedback_map = core.response_maps(dispersion, post_pairing, equilibrium)
+    phase_shift = -core.mv.xy.commutator(equilibrium)
+    local_rate = local_map(phase_shift)
+    assert (local_rate.antinorm() > 1e-2).any()
+    assert ((local_rate + feedback_map(phase_shift.sites.mean())).antinorm() < tolerance).all()
 
 
-def test_the_figures_and_one_frame_draw(quench):
-    model, initial, equilibrium, times, history = quench
-    gaps, equilibrium_gap = model.gap(history), model.gap(equilibrium)
-    render.draw_equilibrium(model.dispersion, initial)
-    next(render.animate_quench(model.dispersion, history, gaps, times))
-    render.draw_gap(times, gaps, equilibrium_gap)
-    disturbance = scenarios.response(model, equilibrium, initial - equilibrium, n_steps=scenarios.STEPS_PER_FRAME)
-    render.draw_response(times, gaps - equilibrium_gap, model.gap(disturbance), scenarios.RESPONSE_NAMES)
+def test_precession_and_ground_state_are_mirror_covariant(sample_quench):
+    dispersion, post_pairing, initial_spins, _, _, _ = sample_quench
+    rate = core.precession_rate(initial_spins, dispersion, post_pairing)
+    for mirror in (core.mv.x, core.mv.z, core.mv.vector([3, 0, 4]).normalized()):
+        mirrored_dispersion = mirror >> dispersion
+        mirrored_pairing = mirror >> post_pairing(mirror << core.Spin)
+        mirrored_rate = core.precession_rate(mirror >> initial_spins, mirrored_dispersion, mirrored_pairing)
+        assert ((mirrored_rate - (mirror >> rate)).antinorm() < tolerance).all()
+        mirrored_ground = core.ground_state(mirrored_dispersion, mirrored_pairing, mirror >> core.mv.yz, 10)
+        expected_ground = mirror >> core.ground_state(dispersion, post_pairing, core.mv.yz, 10)
+        assert ((mirrored_ground - expected_ground).antinorm() < tolerance).all()
+
+
+def test_figures_and_single_frame_render(sample_quench):
+    dispersion, post_pairing, initial_spins, equilibrium, times, states = sample_quench
+    history = stack([spins for spins, _ in states])
+    gaps = stack([gap for _, gap in states])
+    equilibrium_gap = post_pairing(equilibrium.sites.mean())
+    try:
+        render.equilibrium_figure(dispersion, initial_spins)
+        frames = render.quench_animation(dispersion, times, iter(states[:1]))
+        frame = next(frames)
+        frames.close()
+        assert frame.ndim == 3 and frame.shape[2] == 3
+        render.gap_figure(times, gaps, equilibrium_gap)
+        disturbance = scenarios.linear_response(
+            dispersion, post_pairing, equilibrium, initial_spins - equilibrium, scenarios.n_steps_per_frame,
+        )
+        render.response_figure(times, gaps - equilibrium_gap, post_pairing(disturbance.sites.mean()), scenarios.response_names)
+    finally:
+        plt.close("all")

@@ -1,8 +1,11 @@
-"""Every picture the repository tracks, for its README and its docs, made again. Each example that pins pictures has a
-`pinned` in its scenarios that makes exactly those pictures, through `pin_figure` and `pin_animation`, which copy them
-over the checkout's `plots/` under their fixed names. `python -m examples.pinned` runs them all, one example at a time,
-each in a process of its own, and says how long each took, so that a slow one shows; naming examples,
-`python -m examples.pinned dynamo gps`, runs only theirs.
+"""Regenerating the figures and animations tracked in `plots/` for the README and documentation runs
+each listed example's `scenarios.pinned()` entry point in its own subprocess. Inside each scenario,
+`pin_figure` and `pin_animation` save to `PLOT_DIR` and overwrite the tracked file under `plots/`
+with its fixed name.
+
+Running `python -m examples.pinned` rebuilds every entry in gallery order and reports the elapsed
+seconds for each package; passing short names such as `python -m examples.pinned dynamo gps`
+rebuilds only the matching examples.
 """
 
 from __future__ import annotations
@@ -11,8 +14,8 @@ import subprocess
 import sys
 import time
 
-# The examples that pin pictures, as their packages under `examples`, in the order the gallery shows them, then the
-# docs' other pictures.
+# Example subpackages with a `scenarios.pinned()` entry point, ordered to match the gallery followed
+# by documentation figures.
 EXAMPLES = (
     "geometry.scenegraph",
     "relativity.kerr",
@@ -28,6 +31,7 @@ EXAMPLES = (
     "relativity.gravitational_waves",
     "mechanics.bending",
     "fluids.eigen_fluids",
+    "fluids.liquid_crystals",
     "electromagnetism.superconductor",
     "fluids.superfluid",
     "thermodynamics.magnetotransport",

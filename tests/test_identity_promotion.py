@@ -33,6 +33,20 @@ def test_scaled_and_negated_types_are_scaled_identities():
     np.testing.assert_allclose((Fraction(5, 2) * V).kernel.materialize(), 2.5 * np.eye(4))
     np.testing.assert_allclose((V * 3).kernel.materialize(), 3 * np.eye(4))
     np.testing.assert_allclose((-V).kernel.materialize(), -np.eye(4))
+    scales = np.array([0.2, 0.5, 1.0])
+    expected = scales[:, None, None] * np.eye(4)
+    np.testing.assert_allclose((scales * V).kernel, expected)
+    np.testing.assert_allclose((V * scales).kernel, expected)
+    np.testing.assert_allclose((V / np.array([2, 4])).kernel, np.array([0.5, 0.25])[:, None, None] * np.eye(4))
+
+
+@pytest.mark.parametrize("execution", ["dense", "sparse"])
+def test_float_scaled_exact_operator_binds_without_truncation(execution: str):
+    ga = PGA3D
+    mv = NumpyContext(ga, execution=execution).multivector
+    B = ga.gatype.bivector()
+    x = mv.bivector(np.array([0.3, -0.2, 0.5, 0.1, 0.7, -0.4]))
+    np.testing.assert_allclose(((0.3 * B)(x)).kernel, 0.3 * x.kernel)
 
 
 def test_nullary_gatype_promotes_and_positive_arity_is_rejected():

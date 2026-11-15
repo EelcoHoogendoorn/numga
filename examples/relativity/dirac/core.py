@@ -1,136 +1,132 @@
-"""The Dirac electron in the spacetime algebra.
+"""The Dirac electron in the spacetime algebra models the electron's state at a point as an even
+multivector built from a density, an angle beta, and a Lorentz rotor.
 
-An electron's state at a point is an even multivector,
-`psi = (pseudoscalar * (beta / 2)).exp() * rotor * np.sqrt(density)`: a density, an angle beta and a
-Lorentz rotor. Sandwiching a vector with psi applies that rotor and scales by the density, so
-`psi >> Vector` is a map on spacetime: it carries the observer's frame to the electron's.
-Its image of the observer's direction in time is the electron's current, and the patch of its own sandwich
-of the spin plane, `(psi >> spin_plane).dual()`, is its spin: the plane the electron turns in, which,
-where beta is zero, holds the current and the spin's axis.
-beta does not act on vectors at all. It acts on bivectors, where the spinor's own sandwich differs
-from what its vector map extends to by the factor `(pseudoscalar * beta).exp() / density`.
+Sandwiching spacetime vectors with the spinor (`psi >> Vector`) applies its Lorentz rotor and scales
+by the density, carrying the observer's frame to the electron's own. The image of the observer's
+time direction is the electron's charge current, while the patch of the sandwiched spin plane
+(`(psi >> spin_plane).dual()`) is its intrinsic spin plane. Because the pseudoscalar anticommutes
+with vectors, the angle beta drops out of vector sandwiches and acts instead on bivectors, where
+`psi >> Bivector` differs from the frame's outermorphism by multiplication by
+`(pseudoscalar * beta).exp() / density`.
 
-For a plane wave the Dirac equation becomes a linear map on even multivectors, the Hamiltonian.
-Its eigenvalues are plus and minus the energy, each fourfold. Right multiplication by the spin plane
-`spin_plane` is a map that squares to minus one and commutes with the Hamiltonian. Positive-energy
-states have `beta == 0` and negative-energy states `beta == np.pi`. A mixture of the two makes the
-current circulate at twice the energy: the trembling motion, Zitterbewegung.
-
-In matrix notation the spinor reads as a column of four complex numbers, the frame as the
-bilinear covariants of the spinor with the four gamma matrices, the Hamiltonian as the alpha
-matrices contracted with the momentum plus the Dirac beta matrix times the mass, and right
-multiplication by the spin plane as multiplication by the imaginary unit.
+For a plane wave of fixed spatial momentum, the Dirac equation reduces to a linear Hamiltonian map
+on spinors whose eigenvalues are plus and minus the relativistic energy, each fourfold degenerate.
+Right multiplication by the spin plane (`Spinor * spin_plane`) squares to minus one and commutes
+with the Hamiltonian, playing the algebraic role of the quantum phase generator. Positive-energy
+states carry `beta == 0` and negative-energy states carry `beta == np.pi`; mixing the two makes the
+charge current circulate near the speed of light at twice the energy, the trembling motion known as
+Zitterbewegung.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, concatenate
+from numga import Algebra, NumpyContext, stack
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 Vector = ga.gatype.vector()                         # Vector+
 Bivector = ga.gatype.bivector()                     # Bivector+
-Even = ga.gatype.even()                             # Even+
-# A Dirac spinor is an even multivector.
-Spinor = Even                                       # Even+
-# The spinor's map on spacetime.
-Frame = ga.gatype((Vector, Vector))                 # Vector+ <- Vector+
-# Currents and positions are directions in spacetime, antivectors.
+Spinor = ga.gatype.even()                           # Spinor+
+# Currents, velocities, positions, and sliced spin axes are spacetime directions, intrinsic antivectors.
 Antivector = ga.gatype.antivector()                 # Antivector-
-# A spin is the patch of the plane it turns in, intrinsic.
-Spin = ga.gatype.antibivector()                     # Antibivector-
-# Vectors in the observer's space, perpendicular to the time axis.
+# Intrinsic turning-plane patch of the electron's spin in spacetime.
+Spin = ga.gatype.antibivector()                     # Spin-
+# Spatial wavevectors in the observer's rest slice, perpendicular to the time covector.
 Spatial = Vector.derive.within(Algebra("x+y+z+"))   # Vector+
-# The plane-wave Dirac equation.
-Hamiltonian = ga.gatype((Even, Even))               # Even+ <- Even+
-# What a spinor does to bivectors beyond its frame's extension.
+# Linear map carrying spacetime covectors from the observer's frame to the electron's scaled frame.
+Frame = ga.gatype((Vector, Vector))                 # Vector+ <- Vector+
+# Linear map isolating the spinor's action on bivectors beyond its frame outermorphism.
 Duality = ga.gatype((Bivector, Bivector))           # Bivector+ <- Bivector+
-# The observer's direction in time, which pairs to one with its slice `mv.t`; the dual carries the minus of
-# t's square.
+# Plane-wave Dirac operator acting linearly on spinors.
+Hamiltonian = ga.gatype((Spinor, Spinor))           # Spinor+ <- Spinor+
+
+# Observer time direction pairing to +1 with the time slice; the minus offsets the negative square of t.
 time = -mv.t.dual()                                 # [] Antivector-
-# The unit volume.
 pseudoscalar = mv.xyzt                              # [] Pseudoscalar+
-# The spin plane `mv.x ^ mv.y`: right multiplication by it squares to minus one.
+# Rest-frame spin plane whose right multiplication on spinors squares to minus one.
 spin_plane = mv.xy                                  # [] Bivector+
+phase_unit = Spinor * spin_plane                    # [] Spinor+ <- Spinor+
 
 
-# --- math -----------------------------------------------------------------------------
-def spinor(density: float, beta: float, rotor: Even) -> Spinor:
-    """The spinor with the given density, angle beta and Lorentz rotor."""
-    return (pseudoscalar * (beta / 2)).exp() * rotor * np.sqrt(density)
+def dirac_spinor(density: float, beta: float, rotor: Spinor) -> Spinor:
+    """A density, a chiral mixing angle `beta`, and a Lorentz `rotor` combine into an even spacetime
+    spinor (`[] Spinor+`)."""
+    chiral_factor = (pseudoscalar * (beta / 2)).exp()   # [] Spinor+
+    return chiral_factor * rotor * np.sqrt(density)     # [] Spinor+
 
 
-def frame(psi: Spinor) -> Frame:
-    """The spinor's map on spacetime: the density times its Lorentz transformation. beta drops out,
-    because the pseudoscalar anticommutes with vectors."""
-    return psi >> Vector
+def bivector_duality(psi: Spinor) -> Duality:
+    """Composing the spinor's bivector sandwich with the inverse outermorphism of its vector frame
+    isolates multiplication by `(pseudoscalar * beta).exp() / density` (`[...] Bivector+ <- Bivector+`)."""
+    frame = psi >> Vector                               # [...] Vector+ <- Vector+
+    extended = frame.outermorphism(Bivector)            # [...] Bivector+ <- Bivector+
+    own = psi >> Bivector                               # [...] Bivector+ <- Bivector+
+    return own(extended.inverse())                      # [...] Bivector+ <- Bivector+
 
 
-def invariants(psi: Spinor) -> Even:
-    """psi times its reverse: `(pseudoscalar * beta).exp() * density`, a scalar plus a pseudoscalar."""
-    return psi.symmetric_reverse_product()
+def current_velocity(psi: Spinor) -> Antivector:
+    """Dividing the electron's spacetime current by the charge density across the observer's slice
+    and subtracting the observer's time direction leaves the spatial drift velocity (`[...] Antivector-`)."""
+    flow = psi >> time                                  # [...] Antivector-
+    charge_density = mv.t & flow                        # [...] Scalar+
+    return flow / charge_density - time                 # [...] Antivector-
 
 
-def duality(psi: Spinor) -> Duality:
-    """What the spinor does to bivectors beyond what its frame does: its own sandwich on bivectors,
-    composed with the inverse of the frame's extension to bivectors. It is multiplication by
-    `(pseudoscalar * beta).exp() / density`."""
-    return (psi >> Bivector)(frame(psi).outermorphism(Bivector).inverse())
+def spin_axis(psi: Spinor) -> Antivector:
+    """Meeting the intrinsic spin patch `(psi >> spin_plane).dual()` with the observer's slice cuts
+    out the spatial spin axis (`[...] Antivector-`)."""
+    spin_patch = (psi >> spin_plane).dual()             # [...] Spin-
+    return spin_patch ^ mv.t                            # [...] Antivector-
 
 
-def current(psi: Spinor) -> Antivector:
-    """The electron's current: the observer's direction in time, carried by the spinor."""
-    return psi >> time
+def plane_wave_hamiltonian(momentum: Vector, mass: float) -> Hamiltonian:
+    """Left multiplication by the relative momentum and slice reflection scaled by `mass` form the
+    plane-wave Dirac Hamiltonian on spinors (`[...] Spinor+ <- Spinor+`)."""
+    return (momentum * mv.t) * Spinor + mass * (mv.t * Spinor * mv.t.inverse())
 
 
-def spin(psi: Spinor) -> Spin:
-    """The electron's spin, in units of half the reduced Planck constant: the patch of the spin plane carried by
-    the spinor's own sandwich. Where beta is not zero, `(pseudoscalar * beta).exp()` turns it partly into its
-    complement; it stays defined where the density vanishes and beta with it."""
-    return (psi >> spin_plane).dual()
-
-
-def density(flow: Antivector) -> Scalar:
-    """The charge a current carries through the observer's slice of space."""
-    return mv.t & flow
-
-
-def velocity(flow: Antivector) -> Antivector:
-    """The velocity a current carries, as seen by the observer: the direction it advances per unit of
-    the observer's time, less that time direction itself, a direction within the slice."""
-    return flow / density(flow) - time
-
-
-def hamiltonian(momentum: Vector, mass: float) -> Hamiltonian:
-    """The Dirac equation for a plane wave of the given spatial momentum, as a map on spinors:
-    the momentum as a relative vector on the left, and the mass through the reflection in the
-    observer's slice."""
-    return (momentum * mv.t) * Even + mass * (mv.t * Even * mv.t.inverse())
-
-
-def energy(momentum: Vector, mass: float) -> Scalar:
-    """The energy of the plane wave: the root of the mass squared plus the momentum squared."""
+def plane_wave_energy(momentum: Vector, mass: float) -> Scalar:
+    """Mass and spatial momentum determine the positive relativistic energy of a free plane wave
+    (`[...] Scalar+`)."""
     return (mass**2 + (momentum | momentum)).square_root()
 
 
-def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spinor:
-    """The plane wave's spinor at the given times.
+def mixed_spinors(momentum: Vector, mass: float, mixtures: np.ndarray) -> Spinor:
+    """Superposing unit-density positive-energy and negative-energy eigenstates of `momentum`
+    produces initial spinors (`[n_mixtures] Spinor+`) with negative-energy weights `mixtures`."""
+    hamiltonian = plane_wave_hamiltonian(momentum, mass)                        # [] Spinor+ <- Spinor+
+    energy = plane_wave_energy(momentum, mass)                                  # [] Scalar+
+    identity = mv.rotor()                                                       # [] Spinor+
+    # Project unit-spinor seeds onto positive and negative energy, turning in opposite senses.
+    electron = 0.5 * (identity + hamiltonian(identity) / energy)                # [] Spinor+
+    positron = 0.5 * (mv.tx - hamiltonian(mv.tx) / energy)                      # [] Spinor+
+    electron = electron / electron.scalar_norm_squared().square_root()          # [] Spinor+
+    positron = positron / (-positron.scalar_norm_squared()).square_root()       # [] Spinor+
+    return electron * np.sqrt(1 - mixtures) + positron * np.sqrt(mixtures)      # [n_mixtures] Spinor+
 
-    The projector onto positive energy, `0.5 * (psi + hamiltonian(momentum, mass)(psi) / E)`,
-    splits the spinor into its positive- and negative-energy parts, which turn in the spin plane at
-    the energy, in opposite senses.
-    """
-    E = energy(momentum, mass)
-    positive = 0.5 * (psi + hamiltonian(momentum, mass)(psi) / E)
-    turn = (spin_plane * E * times).exp()           # [times] Rotor+
-    return positive * turn.reverse() + (psi - positive) * turn
 
-
-def path(velocities: Antivector, dt: float) -> Antivector:
-    """The positions a velocity carries a point through, from the origin, one step at a time along the
-    last axis."""
-    return concatenate([velocities[..., :1] * 0.0, (velocities[..., :-1] * dt).cumsum(axis=-1)], axis=-1)
+def trembling_states(
+    momentum: Vector, mass: float, initial: Spinor, dt: float, n_frames: int, n_substeps: int
+) -> Iterator[tuple[Antivector, Spinor]]:
+    """Yields `(trail, spinor)` states (`[n_mixtures, ...] Antivector-`, `[n_mixtures] Spinor+`) as
+    positive-energy and negative-energy spinor components counter-rotate in `spin_plane`."""
+    hamiltonian = plane_wave_hamiltonian(momentum, mass)                        # [] Spinor+ <- Spinor+
+    energy = plane_wave_energy(momentum, mass)                                  # [] Scalar+
+    positive = 0.5 * (initial + hamiltonian(initial) / energy)                  # [n_mixtures] Spinor+
+    negative = initial - positive                                               # [n_mixtures] Spinor+
+    step_turn = (spin_plane * (energy * dt)).exp()                              # [] Spinor+
+    position = 0 * (initial >> time)                                            # [n_mixtures] Antivector-
+    positions: list[Antivector] = []
+    for _ in range(n_frames):
+        for _ in range(n_substeps):
+            psi = positive + negative                                           # [n_mixtures] Spinor+
+            positions.append(position)
+            position = position + current_velocity(psi) * dt                    # [n_mixtures] Antivector-
+            positive = positive * step_turn.reverse()                           # [n_mixtures] Spinor+
+            negative = negative * step_turn                                     # [n_mixtures] Spinor+
+        yield stack(positions, axis=-1), psi

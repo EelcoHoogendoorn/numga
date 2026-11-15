@@ -1,5 +1,4 @@
-"""The drawings show the spectra of matching films, polarization-selective reflection by a twisted crystal, a
-pulse through it, and axion interfaces."""
+"""Charts and ray-traced frames display matching-film spectra, cholesteric handedness bands, internal wave patterns, axion reflection, and time-domain pulse splitting."""
 
 from __future__ import annotations
 
@@ -12,65 +11,60 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 from numga import stack
 from examples.optics.coating import core
 from examples.util import charts
-from examples.util.wgsl import simplices, solids
-from examples.util.wgsl.scene import Scene
+from numga.topology import Topology
+from numga.render import Scene, simplices, solids
 
-# The observer sees the point where its time line meets the spatial slice.
-space_slice = core.real.t ^ (core.Direction & -core.real.t.dual())
-# Electric planes meet the spatial slice in the direction they sweep through time.
-electric_direction = core.Bivector.dual_inverse() ^ core.real.t
+# Spatial projection along the observer's time line onto the rest-frame slice.
+space_slice = core.real.t ^ (core.Direction & -core.real.t.dual())                # Direction- <- Direction-
+# Intersecting a field bivector's dual with the observer's time 1-form recovers its spatial electric direction.
+electric_direction = core.Field.dual_inverse() ^ core.real.t                      # Direction- <- Field+
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
-# The quantity plots' sizes in pixels: one panel, about half the column, and two panels side by side.
+# Pixel dimensions of single-panel and two-panel quantity charts.
 single_size, double_size = (420, 280), (640, 280)
 sm = solids.mv
-# The pulse's view: elevation and azimuth in radians, its margin and the pixels across it. The field drawn
-# `field_length` nm across the line per unit; the stretch of line framed, as shares of its length cut from its
-# start and its end; the widths of the field's path, its spokes, the optic axes and the line, in pixels.
+# Camera elevation and azimuth in radians, viewport margin fraction, and pixel width of the 3D pulse animation.
 pulse_elevation, pulse_azimuth = np.radians(6.0), np.radians(30.0)
 pulse_margin, n_pulse_pixels = 0.02, 600
+# Display length in nm per unit electric field, trimmed line-end shares, and stroke widths in pixels.
 field_length = 3000.0
-framed_start, framed_end = 0.08, 0.12
+trim_start, trim_end = 0.08, 0.12
 path_width, spoke_width, optic_width, line_width = 2.25, 1.1, 1.5, 1.5
-# The spokes' share of the path's strength, and the least strength a spoke is drawn at; the optic axes' half length, the slab's half width across the line, both in field units, and the slab's colour
-# and opacity; the line's colour and the optic axes'.
+# Spoke opacity factor, minimum spoke strength, optic-axis half-length, slab half-width in field units, and colours.
 spoke_opacity, spoke_floor = 0.5, 0.02
 optic_half_length, slab_half_width, slab_opacity = 0.6, 1.0, 0.22
 slab_colour = np.array(to_rgb("#b8c4d4"))
 line_colour, optic_colour = np.array([0.75, 0.76, 0.78]), np.array([0.62, 0.63, 0.65])
-# The beam's frame turned into the scene's, whose z is up: a half turn about the line along x + z through the origin
-# carries the line, along z, onto x, across the picture, and the field's x onto z, up.
-upright = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()
-# The four corners of a square across the line, as steps along its two directions.
-square_corners = np.array([[-1, -1], [-1, 1], [1, -1], [1, 1]])            # [corners, 2]
+# Half-turn about x + z placing the propagation axis z horizontal along x and transverse x vertical along z.
+upright_turn = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()               # Rotor+
+# Signed transverse corner offsets of a unit square cross-section.
+square_corners = np.array([[-1, -1], [-1, 1], [1, -1], [1, 1]])                   # [4, 2]
 
 
 # --- plumbing -------------------------------------------------------------------------
 def quantity_axes(ax: plt.Axes) -> None:
-    """Axes of a quantity plot, without the frame's top and right."""
+    """Hiding top and right spines leaves clean horizontal and vertical quantity axes on `ax`."""
     ax.spines[["top", "right"]].set_visible(False)
 
 
 @charts.style()
-def spectra(wavelengths: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
-    """Reflected power as a percentage of the incident power for each coating."""
+def spectra_figure(wavelengths: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+    """Reflected power percentages across `wavelengths` (`[n_wavelengths]`) plot one curve per coating in `reflectance` (`[3, n_wavelengths] Scalar+`)."""
     figure, ax = charts.subplots(*single_size, layout="constrained")
     ax.set_prop_cycle(color=case_colours)
-    for spectrum, name in zip(reflectance.real().to_array(), names):
-        ax.plot(wavelengths, spectrum * 100, label=name)
+    for spectrum in reflectance.real().to_array():
+        ax.plot(wavelengths, spectrum * 100)
     ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, None),
            xlabel="wavelength (nm)", ylabel="reflectance (%)")
     quantity_axes(ax)
-    ax.legend(frameon=False)
     return figure
 
 
 @charts.style()
-def angular(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
-    """The two polarizations over wavelength and incidence angle, on one reflectance scale from none, black,
-    to all, white."""
+def angular_figure(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+    """Two side-by-side heatmaps display circular-polarization `reflectance` (`[2, n_angles, n_wavelengths] Scalar+`) across `wavelengths` and incidence `angles`."""
     figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
-                                 layout="constrained")
+                                     layout="constrained")
     for ax, spectrum in zip(panels, reflectance.real().to_array()):
         ax.pcolormesh(wavelengths, np.degrees(angles), spectrum,
                       shading="nearest", cmap="magma", vmin=0, vmax=1, rasterized=True)
@@ -81,127 +75,114 @@ def angular(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scala
 
 
 @charts.style()
-def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
-    """The signed electric field along x of the fields `[cases, layers, samples]` at the depths
-    `[layers, samples]`, over two optical cycles."""
+def internal_field_figure(depths: np.ndarray, fields: core.Field) -> plt.Figure:
+    """Signed `x`-component waveforms of `fields` (`[2, n_layers, n_samples] Field+`) across `depths` (`[n_layers, n_samples]`) render over two optical cycles."""
     n_cycles = 2
     n_samples_per_cycle = 80
     times = np.linspace(0, n_cycles, n_cycles * n_samples_per_cycle + 1)
     phase = 2 * np.pi * times
-    depths = depths.reshape(-1)
+    flat_depths = depths.reshape(-1)
     mv = fields.real().context.multivector
-    # The plane x sweeps through time reads the electric field along x.
-    along_x = mv.x.dual() & -mv.t.dual()                                     # [] Bivector-
-    # The real field a phase later: the complex field's real part once its positive imaginary phase has grown.
-    later = (fields.reshape(fields.shape[0], -1)[:, None] * np.exp(1j * phase)[:, None]).real()   # [cases, times, samples] Bivector+
-    waves = (later & along_x).to_array()                                     # [cases, times, samples]
+    # Worldsheet plane swept by x along the observer's time direction.
+    along_x = mv.x.dual() & -mv.t.dual()                                          # Excitation-
+    cycle_fields = (fields.reshape(fields.shape[0], -1)[:, None] * np.exp(1j * phase)[:, None]).real()  # [...] Field+
+    waves = (cycle_fields & along_x).to_array()
     limit = np.max(np.abs(waves))
     figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
-                                 layout="constrained")
+                                     layout="constrained")
     for ax, wave in zip(panels, waves):
-        ax.pcolormesh(depths, times, wave, shading="nearest", cmap="RdBu_r", vmin=-limit, vmax=limit,
+        ax.pcolormesh(flat_depths, times, wave, shading="nearest", cmap="RdBu_r", vmin=-limit, vmax=limit,
                       rasterized=True)
         ax.set(xlabel="depth (nm)")
         quantity_axes(ax)
-    # Whole optical cycles only; the colour is the field's sign and relative strength.
     panels[0].set(yticks=np.arange(n_cycles + 1))
     panels[0].set_ylabel("optical cycles")
     return figure
 
 
 @charts.style()
-def handedness(wavelengths: np.ndarray, reflectance: core.Scalar, polarizations: tuple[str, ...]) -> plt.Figure:
-    """Opposite material twists side by side, `[polarizations, twists, wavelengths]`, with the same
-    colours for the incident polarizations."""
+def handedness_figure(wavelengths: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+    """Side-by-side panels plot circular-polarization `reflectance` (`[2, 2, n_wavelengths] Scalar+`) across `wavelengths` for opposite crystal twists."""
     figure, axes = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
-                               layout="constrained")
+                                   layout="constrained")
     values = reflectance.real().to_array()
-    for helix, ax in enumerate(axes):
+    for twist_index, ax in enumerate(axes):
         ax.set_prop_cycle(color=case_colours)
-        for spectrum, polarization in zip(values[:, helix], polarizations):
-            ax.plot(wavelengths, spectrum * 100, label=polarization)
+        for spectrum in values[:, twist_index]:
+            ax.plot(wavelengths, spectrum * 100)
         ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, 100),
                xlabel="wavelength (nm)")
         quantity_axes(ax)
     axes[0].set_ylabel("reflectance (%)")
-    axes[1].legend(frameon=False)
     return figure
 
 
 @charts.style()
-def axion(jumps: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
-    """Reflected power in each polarization channel across an axion discontinuity."""
+def axion_figure(jumps: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+    """Co-polarized, cross-polarized, and total `reflectance` (`[3, n_jumps] Scalar+`) plot as percentages across axion `jumps` (`[n_jumps]`)."""
     figure, ax = charts.subplots(*single_size, layout="constrained")
     ax.set_prop_cycle(color=case_colours)
-    for channel, name in zip(reflectance.real().to_array(), names):
-        ax.plot(jumps, channel * 100, label=name)
-    # The jump is marked only where it vanishes, and with it the reflection.
+    for channel in reflectance.real().to_array():
+        ax.plot(jumps, channel * 100)
     ax.set(xlim=(jumps[0], jumps[-1]), ylim=(0, None), xticks=[0],
            xlabel="axion jump", ylabel="reflectance (%)")
     quantity_axes(ax)
-    ax.legend(frameon=False)
     return figure
 
 
-def faded(colours: np.ndarray, strength: np.ndarray) -> np.ndarray:
-    """Colours `[..., 3]` faded towards the white page as their strength `[...]` falls to zero."""
+def faded_colours(colours: np.ndarray, strength: np.ndarray) -> np.ndarray:
+    """Blending RGB `colours` (`[..., 3]`) toward white by `strength` (`[...]`) fades weak field regions into the background."""
     return 1 - strength[..., None] * (1 - colours)
 
 
-def pulse(nodes: core.Direction, slab: core.Direction, directors: core.Direction,
-          electric: Iterable[core.Bivector]) -> Iterator[np.ndarray]:
-    """The electric field along the line `[nodes]` at each frame, each drawn as it comes, seen from aside and a little
-    above: the path of its tip, coloured by its direction around the line, over faint spokes from the line out to it.
-    A field that turns traces loops; one that does not stays in its plane. The slab is a translucent box, its optic
-    axes grey rods."""
+def pulse_animation(
+    nodes: core.Direction,
+    slab: core.Direction,
+    directors: core.Direction,
+    case_index: int,
+    states: Iterable[tuple[core.Field, core.Field]],
+) -> Iterator[np.ndarray]:
+    """Yields ray-traced RGB frames of case `case_index` in `states` (`([3] Field+[V], [3] Field+[E])`) travelling along `nodes` through the translucent `slab` and its `directors`."""
     mv = nodes.context.multivector
-    # The directions across the line, and the planes they sweep through time, which read the electric field along them.
-    across = stack((mv.x.dual(), mv.y.dual()))                                        # [2] Direction-
-    swept = across & -mv.t.dual()                                                     # [2] Bivector-
-    # The optic axes at every third node of the slab, reaching out across the line on either side.
-    rod_middles = slab[::3]                                                           # [rods] Direction-
-    rod_reach = directors[::3] * (optic_half_length * field_length)                   # [rods] Direction-
+    across = stack((mv.x.dual(), mv.y.dual()))                                    # [2] Direction-
+    swept = across & -mv.t.dual()                                                 # [2] Excitation-
+    rod_middles = slab[::3]                                                       # [...] Direction-
+    rod_reach = directors[::3] * (optic_half_length * field_length)               # [...] Direction-
 
-    # The stretch of line framed, the box of the slab's reach across it.
-    length = nodes[-1] - nodes[0]                                                     # [] Direction-
-    framed = stack((nodes[0] + length * framed_start, nodes[-1] - length * framed_end))   # [ends] Direction-
+    length = nodes[-1] - nodes[0]                                                 # [] Direction-
+    frame_ends = stack((nodes[0] + length * trim_start, nodes[-1] - length * trim_end))  # [2] Direction-
     half_width = slab_half_width * field_length
-    corners = framed[:, None] + (across * (half_width * square_corners)).sum(axis=-1)   # [ends, corners] Direction-
-    scene_corners = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(corners)))
-    stations = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(nodes)))
+    corners = frame_ends[:, None] + (across * (half_width * square_corners)).sum(axis=-1)  # [2, 4] Direction-
+    scene_corners = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice(corners)))
+    stations = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice(nodes)))
     view = solids.view([scene_corners], 0.0, pulse_elevation, pulse_azimuth, pulse_margin, n_pulse_pixels)
     line = solids.rods(stations[0], stations[-1], line_width / 2 * view.pixel)[None]
-    # The slab: a box about its middle on the line, as long as the slab's stretch of it, turned upright with
-    # everything else.
-    middle = solids.origin + (upright >> solids.context.include_from_algebra(space_slice((slab[0] + slab[-1]) / 2)))
-    slab_length = mv.z & (slab[-1] - slab[0])
-    half_extents = stack((mv.scalar([half_width]), mv.scalar([half_width]), slab_length / 2))
-    box = solids.boxes(solids.translator(middle - solids.origin) * upright,
-                       solids.context.include_from_algebra(half_extents))[None]
-    rod_centres = solids.origin + (upright >> solids.context.include_from_algebra(space_slice(rod_middles)))
-    rod_offsets = upright >> solids.context.include_from_algebra(space_slice(rod_reach))
+    middle = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice((slab[0] + slab[-1]) / 2)))
+    slab_half_length = float(((slab[-1] - slab[0]).antinorm() / 2).to_array())
+    half_extents = np.array([half_width, half_width, slab_half_length])
+    box = solids.boxes(solids.translator(middle - solids.origin) * upright_turn, half_extents)[None]
+    rod_centres = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice(rod_middles)))
+    rod_offsets = upright_turn >> solids.context.include_from_algebra(space_slice(rod_reach))
     optics = solids.rods(rod_centres - rod_offsets, rod_centres + rod_offsets, optic_width / 2 * view.pixel)
 
-    # The line, the optic axes and the slab stay put.
     picture = Scene(view, np.ones(3), [(line, line_colour), (optics, optic_colour)], [],
                     inks=[], translucent=[(box, slab_colour, slab_opacity)])
-    for planes in electric:
-        # The field across the line, the direction it sweeps through time, drawn out from each node.
-        offsets = upright >> solids.context.include_from_algebra(field_length * electric_direction(planes))
-        tips = stations + offsets                                             # [nodes] Point-
-        # The field's direction around the line sets its hue, and its strength how far its colour shows: its
-        # readings by the planes the directions across the line sweep through time.
-        along_x, along_y = ((planes & plane).to_array() for plane in swept)          # [nodes], [nodes]
+    for electric, _ in states:
+        planes = electric[case_index].batch()                                     # [...] Field+
+        directions = electric_direction(planes)                                   # [...] Direction-
+        offsets = upright_turn >> solids.context.include_from_algebra(field_length * directions)
+        tips = stations + offsets                                                 # [...] Point-
+        along_x, along_y = (planes[..., None] & swept).to_array().T
         hue = (np.arctan2(along_y, along_x) / (2 * np.pi)) % 1
-        strength = np.clip(np.hypot(along_x, along_y) * 4, 0, 1)
+        strength = np.clip(directions.antinorm().to_array() * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
-        # Every other node's spoke, where the field shows.
-        spoked = np.flatnonzero(strength > spoke_floor)[::2]
-        spoke_ends = stack((stations[spoked], tips[spoked]), axis=1).reshape(-1)       # [spokes * 2] Point-
-        spokes = simplices.tubes(spoke_ends, simplices.Topology.chains([2] * len(spoked)),
-                                 faded(colours, spoke_opacity * strength)[spoked], spoke_width, view, gloss=solids.gloss)
-        # Each piece of the path in the colour and strength halfway along it.
-        shades = faded(colours, strength)
-        path = simplices.tubes(tips, simplices.Topology.chains([len(tips)]), (shades[:-1] + shades[1:]) / 2, path_width,
+        spoke_indices = np.flatnonzero(strength > spoke_floor)[::2]
+        n_spokes = len(spoke_indices)
+        spoke_ends = stack((stations[spoke_indices], tips[spoke_indices]), axis=1).reshape(-1)  # [n_spokes * 2] Point-
+        spokes = simplices.tubes(spoke_ends, Topology.chains([2] * n_spokes),
+                                 faded_colours(colours, spoke_opacity * strength)[spoke_indices],
+                                 spoke_width, view, gloss=solids.gloss)
+        shades = faded_colours(colours, strength)
+        path = simplices.tubes(tips, Topology.chains([len(tips)]), (shades[:-1] + shades[1:]) / 2, path_width,
                                view, gloss=solids.gloss)
         yield picture.draw([], inks=[], translucent=[], meshes=[(spokes, 1.0), (path, 1.0)])

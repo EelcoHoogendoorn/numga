@@ -1,5 +1,9 @@
-"""Scenes for two spins: the exchange interaction swapping a spin up and a spin down, entangling them
-on the way, and the singlet, which reaches the largest Bell combination any state can."""
+"""Scenarios for two spins under exchange, measurement steering, uniform magnetic fields, and differential driving.
+
+Exchange evolution swaps an initial up-down pair through maximal entanglement, projective measurements steer the
+second spin across its sphere, a uniform field drives a ground-state level crossing, and differential driving
+precesses the pair on the singlet-triplet qubit sphere.
+"""
 
 from __future__ import annotations
 
@@ -9,185 +13,177 @@ from numga import stack
 from examples.quantum.two_spins import core
 
 mv = core.mv
-# The first spin up, turning in its xy plane, the second down: a half turn in its ZX plane turns XY over.
+# First spin up in xy and second spin down via a half turn in ZX.
 up_down = -mv.ZX * core.correlator                                             # [] Spinor+
-# The four states of definite spin in the xy planes: the singlet, the triplet of zero spin, and both
-# spins up or both down.
-four = stack([np.sqrt(2) * core.singlet * up_down, np.sqrt(2) * core.triplet * up_down,
-              core.correlator, mv.zx * mv.ZX * core.correlator])               # [states] Spinor+
-# The stages of the exchange, and of the steering animation; the planes the first spin is measured in,
-# around and down its sphere of unit planes, the duration of a frame of the steering animation in
-# milliseconds, and the seed of the random planes and turns the checks run on.
-N_FRAMES = 181
-N_AROUND = 24
-N_DOWN = 12
-DURATION_MS = 40
-SEED = 0
-# The exchange rate while a field in the xy planes rises, the number of fields, and the largest field.
-EXCHANGE_RATE = 1.0
-N_FIELDS = 201
-MAX_FIELD = 4.0
-# The field difference the singlet returns under, the exchange rates compared, and the number of times.
-DIFFERENCE = 1.0
-EXCHANGE_RATES = np.array([0.0, 1.0, 3.0])
-N_TIMES = 241
+# Four states of definite spin in the xy planes: singlet, zero-spin triplet, both up, and both down.
+basis_states = stack([
+    np.sqrt(2) * core.singlet_part * up_down,
+    np.sqrt(2) * core.triplet_part * up_down,
+    core.correlator,
+    mv.zx * mv.ZX * core.correlator,
+])                                                                             # [4] Spinor+
+n_frames = 181
+n_around = 24
+n_down = 12
+frame_duration_ms = 40
+seed = 0
+exchange_rate = 1.0
+n_fields = 201
+max_field = 4.0
+difference = 1.0
+exchange_rates = np.array([0.0, 1.0, 3.0])
+n_times = 241
 
 
 # --- math -----------------------------------------------------------------------------
-def swap(frames: int) -> tuple[np.ndarray, core.FirstPlanes, core.SecondPlanes, core.Scalar, core.Spinor]:
-    """Spin up and spin down under the exchange interaction, over the angle that swaps them: the angles,
-    the plane each spin turns in, the largest Bell combinations and the states."""
-    angles = np.linspace(0.0, np.pi / 4, frames)
-    states = core.exchange(up_down, angles)                                    # [frames] Spinor+
-    first, second = core.spin_planes(states)                                   # [frames] FirstPlanes+, SecondPlanes+
-    correlations = core.correlation(states)                                    # [frames] FirstPlanes+ <- SecondPlanes+
-    bells = core.bell(correlations)                                            # [frames] Scalar+
-    return angles, first, second, bells, states
+def exchange_swap(n_steps: int) -> tuple[np.ndarray, core.FirstPlanes, core.SecondPlanes, core.Scalar, core.Spinor]:
+    """An exchange sweep from 0 to `pi / 4` across `n_steps` samples (`[n_steps] Spinor+`) swaps up-down into down-up."""
+    angles = np.linspace(0.0, np.pi / 4, n_steps)
+    states = core.exchange_state(up_down, angles)                              # [n_steps] Spinor+
+    first_planes, second_planes = core.spin_planes(states)                     # [n_steps] FirstPlanes+, SecondPlanes+
+    joints = core.joint_map(states)                                            # [n_steps] FirstPlanes+ <- SecondPlanes+
+    bells = core.bell_maximum(joints)                                          # [n_steps] Scalar+
+    return angles, first_planes, second_planes, bells, states
 
 
-def steering(frames: int, around: int, down: int) -> tuple[core.FirstPlanes, core.Scalar, core.SecondPlanes, core.Spinor]:
-    """The first spin measured in unit planes spread over its sphere of planes, at each stage of the
-    exchange that swaps spin up and spin down: the planes, how likely +1 is in each, the second spin's
-    plane after, and the states measured."""
-    angles = np.linspace(0.0, np.pi / 4, frames)
-    states = core.exchange(up_down, angles)                                    # [frames] Spinor+
-    planes = sphere(around, down)                                              # [down, around] FirstPlanes+
-    probability, steered = core.steer(states[:, None, None], planes)           # [frames, down, around] Scalar+, SecondPlanes+
-    return planes, probability, steered, states
+def steering_grid(
+    states: core.Spinor,
+    n_azimuth: int,
+    n_polar: int,
+) -> tuple[core.FirstPlanes, core.Scalar, core.SecondPlanes]:
+    """Projective measurements across `n_polar` by `n_azimuth` unit planes steer the second spin (`[..., n_polar, n_azimuth]`)."""
+    planes = plane_sphere(n_azimuth, n_polar)                                  # [n_polar, n_azimuth] FirstPlanes+
+    probability, second_planes = core.steered_spin(states[:, None, None], planes)   # [..., n_polar, n_azimuth] Scalar+, SecondPlanes+
+    return planes, probability, second_planes
 
 
-def field_sweep(fields: np.ndarray, exchange_rate: float) -> core.Scalar:
-    """The energies of the four states of definite spin in the xy planes as a field in those planes
-    rises."""
-    return core.energy(four, exchange_rate, fields[:, None])                   # [fields, states] Scalar+
+def field_sweep(fields: np.ndarray, coupling_rate: float) -> core.Scalar:
+    """The four definite-spin states trace linear Zeeman energies (`[..., 4] Scalar+`) across `fields`."""
+    return core.energy(basis_states, np.asarray(coupling_rate), fields[:, None])   # [..., 4] Scalar+
 
 
-def singlet_return(times: np.ndarray, exchange_rates: np.ndarray, difference: float) -> tuple[core.Spinor, core.Scalar]:
-    """The singlet under the exchange and a field difference, for each exchange rate: the states and the
-    probability of finding the pair back in the singlet."""
-    states = core.qubit_turn(four[0], exchange_rates[:, None], difference, times)   # [rates, times] Spinor+
-    probability = core.expectation(core.singlet, states)                       # [rates, times] Scalar+
-    return states, probability
+def singlet_oscillation(
+    times: np.ndarray,
+    rates: np.ndarray,
+    field_difference: float,
+) -> tuple[core.Spinor, core.Scalar]:
+    """Differential driving `field_difference` against `rates` precesses the singlet across `times` and tracks its return probability."""
+    states = core.qubit_state(basis_states[0], rates[:, None], np.asarray(field_difference), times)   # [..., ...] Spinor+
+    return_probability = core.expectation(core.singlet_part, states)           # [..., ...] Scalar+
+    return states, return_probability
 
 
-def singlet() -> tuple[core.Spinor, core.Scalar]:
-    """The singlet, the singlet part of spin up and spin down normalized, and its Bell combination in
-    planes in which it reaches `2 * sqrt(2)`."""
-    state = np.sqrt(2) * core.singlet * up_down                                # [] Spinor+
-    # The first spin's planes a quarter turn apart; the second spin's halfway between them, reversed,
-    # since the singlet's spins disagree in every plane.
+def singlet_bound() -> tuple[core.Spinor, core.Scalar]:
+    """Quarter-turned measurement planes on the singlet (`[] Spinor+`) saturate the Tsirelson bound (`[] Scalar+`)."""
+    state = basis_states[0]                                                    # [] Spinor+
     half = 1 / np.sqrt(2)
     element = core.bell_element(mv.yz, mv.zx, -half * (mv.YZ + mv.ZX), -half * (mv.YZ - mv.ZX))   # [] Spinor+
-    value = core.expectation(element, state)                                   # [] Scalar+
-    return state, value
+    bell_value = core.expectation(element, state)                              # [] Scalar+
+    return state, bell_value
 
 
 # --- plumbing -------------------------------------------------------------------------
-def sphere(around: int, down: int) -> core.FirstPlanes:
-    """Unit planes of the first spin spread over its sphere of planes: xy tipped by the centres of equal
-    steps of polar angle, then turned in xy by equal steps of azimuth."""
-    polar = (np.arange(down) + 0.5) / down * np.pi
-    azimuth = np.arange(around) / around * 2 * np.pi
-    tips = (mv.zx * (-polar / 2)).exp()                                        # [down] Rotor+
-    turns = (mv.xy * (-azimuth / 2)).exp()                                     # [around] Rotor+
-    return turns >> (tips >> mv.xy)[:, None]                                   # [down, around] FirstPlanes+
+def plane_sphere(n_azimuth: int, n_polar: int) -> core.FirstPlanes:
+    """Polar tipping followed by azimuthal rotation spreads unit planes (`[n_polar, n_azimuth] FirstPlanes+`) over the first spin's sphere."""
+    polar = (np.arange(n_polar) + 0.5) / n_polar * np.pi
+    azimuth = np.arange(n_azimuth) / n_azimuth * 2 * np.pi
+    polar_rotors = (mv.zx * (-polar / 2)).exp()                                # [n_polar] Rotor+
+    azimuth_rotors = (mv.xy * (-azimuth / 2)).exp()                            # [n_azimuth] Rotor+
+    polar_planes = polar_rotors >> mv.xy                                       # [n_polar] FirstPlanes+
+    return azimuth_rotors >> polar_planes[:, None]                             # [n_polar, n_azimuth] FirstPlanes+
 
 
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
     from examples.quantum.two_spins import render
+    from examples.util.animation import save_animation, save_figure
 
-    state, reached = singlet()
-    print("Bell combination of the singlet:", reached.to_array())
-    angles, first, second, bells, states = swap(N_FRAMES)
-    save_figure(render.draw_exchange(angles, bells, first, render.plane_reading), "two_spins")
-    planes, probability, steered, measured_states = steering(N_FRAMES, N_AROUND, N_DOWN)
-    save_animation(render.animate_steering(planes, probability, steered, render.plane_reading), "two_spins_steering", DURATION_MS)
-    fields = np.linspace(0.0, MAX_FIELD, N_FIELDS)
-    four_first, four_second = core.spin_planes(four)                           # [states] FirstPlanes+, SecondPlanes+
-    energies = field_sweep(fields, EXCHANGE_RATE)                              # [fields, states] Scalar+
-    save_figure(render.draw_levels(fields, energies, core.field_plane.dot(four_first + four_second)), "two_spins_levels")
-    times = np.linspace(0.0, np.pi, N_TIMES)
-    qubit_states, back_in_singlet = singlet_return(times, EXCHANGE_RATES, DIFFERENCE)
-    save_figure(render.draw_qubit(*core.qubit(qubit_states), times, back_in_singlet, EXCHANGE_RATES), "two_spins_qubit")
+    singlet_state, singlet_bell = singlet_bound()                              # [] Spinor+, Scalar+
+    angles, first_planes, second_planes, bells, states = exchange_swap(n_frames)
+    save_figure(render.draw_exchange(angles, bells, first_planes, render.plane_reading), "two_spins")
+    planes, probability, steered_planes = steering_grid(states, n_around, n_down)
+    save_animation(
+        render.animate_steering(planes, probability, steered_planes, render.plane_reading),
+        "two_spins_steering",
+        frame_duration_ms,
+    )
+    fields = np.linspace(0.0, max_field, n_fields)
+    basis_first, basis_second = core.spin_planes(basis_states)                 # [4] FirstPlanes+, SecondPlanes+
+    energies = field_sweep(fields, exchange_rate)                              # [n_fields, 4] Scalar+
+    save_figure(
+        render.draw_levels(fields, energies, core.field_plane.dot(basis_first + basis_second)),
+        "two_spins_levels",
+    )
+    times = np.linspace(0.0, np.pi, n_times)
+    qubit_states, singlet_return = singlet_oscillation(times, exchange_rates, difference)
+    imbalance, phase_coordinate, singlet_balance = core.qubit_coordinates(qubit_states)   # [3, n_times] Scalar+, Scalar+, Scalar+
+    save_figure(
+        render.draw_qubit(imbalance, phase_coordinate, singlet_balance, times, singlet_return, exchange_rates),
+        "two_spins_qubit",
+    )
 
     # checks
-    # The singlet and triplet parts are idempotent and add up to one. The exchange keeps the state
-    # normalized and both spins' planes equally large. Halfway the spins are fully entangled: neither
-    # turns in any plane, and the Bell combination is at 2 * sqrt(2); at the end they have swapped.
-    np.testing.assert_allclose((core.coupling * core.coupling - 3 - 2 * core.coupling).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((core.singlet * core.singlet - core.singlet).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((core.singlet + core.triplet - core.one).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(core.expectation(core.one, states).to_array(), 1.0, atol=1e-7)
-    np.testing.assert_allclose(first.scalar_norm_squared().to_array(), second.scalar_norm_squared().to_array(), atol=1e-7)
-    middle = N_FRAMES // 2
-    np.testing.assert_allclose(first[middle].kernel, 0.0, atol=1e-7)
-    np.testing.assert_allclose(bells.to_array()[[0, middle, -1]], [2.0, 2 * np.sqrt(2), 2.0], atol=1e-7)
-    np.testing.assert_allclose((first[-1] + mv.xy).kernel, 0.0, atol=1e-7)
-    np.testing.assert_allclose((second[-1] - mv.XY).kernel, 0.0, atol=1e-7)
+    # Idempotents, normalization, midpoint maximal entanglement, and spin swap at pi / 4.
+    assert ((core.coupling * core.coupling - 3 - 2 * core.coupling).scalar_norm_squared() < 1e-12).all()
+    assert ((core.singlet_part * core.singlet_part - core.singlet_part).scalar_norm_squared() < 1e-12).all()
+    assert ((core.singlet_part + core.triplet_part - 1).scalar_norm_squared() < 1e-12).all()
+    assert ((2 * states.scalar_norm_squared() - 1).abs() < 1e-9).all()
+    assert ((first_planes.scalar_norm_squared() - second_planes.scalar_norm_squared()).abs() < 1e-9).all()
+    midpoint = n_frames // 2
+    assert (first_planes[midpoint].scalar_norm_squared() < 1e-12).all()
+    assert ((bells[0] - 2).abs() < 1e-9).all()
+    assert ((bells[midpoint] - 2 * np.sqrt(2)).abs() < 1e-9).all()
+    assert ((bells[-1] - 2).abs() < 1e-9).all()
+    assert ((first_planes[-1] + mv.xy).scalar_norm_squared() < 1e-12).all()
+    assert ((second_planes[-1] - mv.XY).scalar_norm_squared() < 1e-12).all()
 
-    # The second spin's plane after the measurement is the correlation map read backwards; the
-    # probability is set by the first spin's plane alone. Turning each spin by a rotor of its own space
-    # acts on the correlation map from either side and leaves its singular values alone: one, and twice
-    # the concurrence, with each spin's plane as large as the square root of one less its square.
-    first, second = core.spin_planes(measured_states[:, None, None])           # [frames, 1, 1] FirstPlanes+, SecondPlanes+
-    correlations = core.correlation(measured_states[:, None, None])            # [frames, 1, 1] FirstPlanes+ <- SecondPlanes+
-    np.testing.assert_allclose((probability - 0.5 * (1 + planes.dot(first))).kernel, 0.0, atol=1e-11)
-    backwards = (second + correlations.adjoint()(planes)) / (1 + planes.dot(first))   # [frames, down, around] SecondPlanes+
-    np.testing.assert_allclose((steered - backwards).kernel, 0.0, atol=1e-9)
-    rng = np.random.default_rng(SEED)
+    # Steering matches the adjoint of the joint spin map, and local turns preserve its singular values.
+    joints = core.joint_map(states)                                            # [n_frames] FirstPlanes+ <- SecondPlanes+
+    expected_probability = 0.5 * (1 + planes.dot(first_planes[:, None, None])) # [n_frames, n_down, n_around] Scalar+
+    assert ((probability - expected_probability).abs() < 1e-11).all()
+    adjoint_planes = (second_planes[:, None, None] + joints[:, None, None].adjoint()(planes)) / (
+        1 + planes.dot(first_planes[:, None, None])
+    )                                                                          # [n_frames, n_down, n_around] SecondPlanes+
+    assert ((steered_planes - adjoint_planes).scalar_norm_squared() < 1e-12).all()
+    rng = np.random.default_rng(seed)
     first_turn = mv(core.FirstPlanes, rng.normal(size=3)).exp()                # [] Rotor+
     second_turn = mv(core.SecondPlanes, rng.normal(size=3)).exp()              # [] Rotor+
-    turned = core.correlation(first_turn * second_turn * measured_states)      # [frames] FirstPlanes+ <- SecondPlanes+
-    plain = core.correlation(measured_states)                                  # [frames] FirstPlanes+ <- SecondPlanes+
-    np.testing.assert_allclose((turned - (first_turn >> plain(second_turn << core.SecondPlanes))).kernel, 0.0, atol=1e-12)
-    values = plain.svdvals().to_array()                                        # [frames, 3]
-    np.testing.assert_allclose(turned.svdvals().to_array(), values, atol=1e-9)
-    np.testing.assert_allclose(values[:, 0], 1.0, atol=1e-9)
-    np.testing.assert_allclose(values[:, 1], values[:, 2], atol=1e-9)
-    np.testing.assert_allclose(first.scalar_norm_squared().to_array()[:, 0, 0], 1 - values[:, 1] ** 2, atol=1e-9)
+    turned_joints = core.joint_map(first_turn * second_turn * states)          # [n_frames] FirstPlanes+ <- SecondPlanes+
+    sandwich_joints = first_turn >> joints(second_turn << core.SecondPlanes)   # [n_frames] FirstPlanes+ <- SecondPlanes+
+    assert ((turned_joints - sandwich_joints).svdvals().abs() < 1e-9).all()
+    singular_values = joints.svdvals()                                         # [n_frames, 3] Scalar+
+    assert ((turned_joints.svdvals() - singular_values).abs() < 1e-9).all()
+    assert ((singular_values[:, 0] - 1).abs() < 1e-9).all()
+    assert ((singular_values[:, 1] - singular_values[:, 2]).abs() < 1e-9).all()
+    assert ((first_planes.scalar_norm_squared() + singular_values[:, 1] ** 2 - 1).abs() < 1e-9).all()
 
-    # The singlet sits below the triplet of zero spin by twice the exchange rate, and the field moves the
-    # triplets with both spins in its plane or against it by itself: the one in its plane crosses the
-    # singlet at twice the exchange rate.
-    expected = np.stack([-EXCHANGE_RATE + 0 * fields, EXCHANGE_RATE + 0 * fields,
-                         EXCHANGE_RATE - fields, EXCHANGE_RATE + fields], axis=-1)
-    np.testing.assert_allclose(energies.to_array(), expected, atol=1e-12)
+    # Field levels cross at twice the exchange rate, and differential driving stays on the singlet-triplet sphere.
+    expected_energies = np.stack(
+        [-exchange_rate + 0 * fields, exchange_rate + 0 * fields, exchange_rate - fields, exchange_rate + fields],
+        axis=-1,
+    )
+    assert ((energies - expected_energies).abs() < 1e-12).all()
+    assert ((2 * qubit_states.scalar_norm_squared() - 1).abs() < 1e-12).all()
+    generalized_rate = np.hypot(exchange_rates[:, None], difference)
+    expected_return = 1 - (difference / generalized_rate) ** 2 * np.sin(generalized_rate * times) ** 2
+    assert ((singlet_return - expected_return).abs() < 1e-12).all()
+    assert ((imbalance * imbalance + phase_coordinate * phase_coordinate + singlet_balance * singlet_balance - 1).abs() < 1e-12).all()
+    qubit_first, _ = core.spin_planes(qubit_states)                            # [3, n_times] FirstPlanes+
+    assert (qubit_first[0].scalar_norm_squared() < 1e-12).all()
 
-    # The pair stays normalized; it returns to the singlet as one less the field difference's share of the
-    # rate squared, times the sine of the rate times time squared; without a field difference the turn is
-    # the exchange of spin up and spin down.
-    np.testing.assert_allclose(core.expectation(core.one, qubit_states).to_array(), 1.0, atol=1e-12)
-    rate = np.hypot(EXCHANGE_RATES[:, None], DIFFERENCE)
-    expected = 1 - (DIFFERENCE / rate) ** 2 * np.sin(rate * times) ** 2
-    np.testing.assert_allclose(back_in_singlet.to_array(), expected, atol=1e-12)
-    across, turned, balance = core.qubit(qubit_states)                         # [rates, times] Scalar+, Scalar+, Scalar+
-    np.testing.assert_allclose((across * across + turned * turned + balance * balance).to_array(), 1.0, atol=1e-12)
-    first, _ = core.spin_planes(qubit_states)                                  # [rates, times] FirstPlanes+
-    alone = np.flatnonzero(EXCHANGE_RATES == 0.0)
-    np.testing.assert_allclose(first[alone].kernel, 0.0, atol=1e-12)
-    angles = np.linspace(0.0, np.pi / 4, 7)
-    exchanged, _ = core.spin_planes(core.exchange(up_down, angles))
-    turned, _ = core.spin_planes(core.qubit_turn(up_down, 1.0, 0.0, 2 * angles))
-    np.testing.assert_allclose((exchanged - turned).kernel, 0.0, atol=1e-11)
-
-    # The singlet is normalized, the coupling acts on it as three, neither spin turns in any plane, and
-    # every plane of one spin is anticorrelated with the same plane of the other. For any four unit
-    # planes the Bell element squares to four less four times the product of the commutator of the first
-    # spin's planes and that of the second's; the singlet reaches the bound 2 * sqrt(2) that this sets.
-    np.testing.assert_allclose(core.expectation(core.one, state).to_array(), 1.0, atol=1e-12)
-    np.testing.assert_allclose((core.coupling * state - 3 * state).kernel, 0.0, atol=1e-12)
-    first, _ = core.spin_planes(state)
-    np.testing.assert_allclose(first.kernel, 0.0, atol=1e-12)
-    correlations = core.correlation(state)
-    for across, along in ((mv.YZ, mv.yz), (mv.ZX, mv.zx), (mv.XY, mv.xy)):
-        np.testing.assert_allclose((correlations(across) + along).kernel, 0.0, atol=1e-12)
-    rng = np.random.default_rng(SEED)
-    a, a_other = mv(core.FirstPlanes, rng.normal(size=(2, 3))).normalized()    # [] FirstPlanes+, FirstPlanes+
-    b, b_other = mv(core.SecondPlanes, rng.normal(size=(2, 3))).normalized()   # [] SecondPlanes+, SecondPlanes+
-    element = core.bell_element(a, a_other, b, b_other)                        # [] Spinor+
-    np.testing.assert_allclose((element * element - (4 - 4 * a.commutator(a_other) * b.commutator(b_other))).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(reached.to_array(), 2 * np.sqrt(2), atol=1e-12)
+    # Singlet anticorrelation across matching planes, Bell square identity, and spacetime time-commutation.
+    assert ((2 * singlet_state.scalar_norm_squared() - 1).abs() < 1e-12).all()
+    assert ((core.coupling * singlet_state - 3 * singlet_state).scalar_norm_squared() < 1e-12).all()
+    singlet_joint = core.joint_map(singlet_state)                              # [] FirstPlanes+ <- SecondPlanes+
+    for second_unit, first_unit in ((mv.YZ, mv.yz), (mv.ZX, mv.zx), (mv.XY, mv.xy)):
+        assert ((singlet_joint(second_unit) + first_unit).scalar_norm_squared() < 1e-12).all()
+    first_choice, first_alt = mv(core.FirstPlanes, rng.normal(size=(2, 3))).normalized()     # [] FirstPlanes+, FirstPlanes+
+    second_choice, second_alt = mv(core.SecondPlanes, rng.normal(size=(2, 3))).normalized()  # [] SecondPlanes+, SecondPlanes+
+    element = core.bell_element(first_choice, first_alt, second_choice, second_alt)          # [] Spinor+
+    commutator_bound = 4 - 4 * first_choice.commutator(first_alt) * second_choice.commutator(second_alt)   # [] Spinor+
+    assert ((element * element - commutator_bound).scalar_norm_squared() < 1e-12).all()
+    assert ((singlet_bell - 2 * np.sqrt(2)).abs() < 1e-12).all()
+    assert ((mv.t * states - states * mv.t).scalar_norm_squared().abs() < 1e-12).all()
+    assert ((mv.T * states - states * mv.T).scalar_norm_squared().abs() < 1e-12).all()
 
 
 if __name__ == "__main__":

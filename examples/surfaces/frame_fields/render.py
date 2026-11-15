@@ -10,7 +10,10 @@ import numpy as np
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples.surfaces.frame_fields import core
-from examples.util.wgsl import image_figure, meshes, simplices, solids
+from numga.topology import Topology
+from numga.render.drawing import Draw
+from numga.render import meshes, simplices, solids
+from examples.util.panels import image_figure
 
 background = np.ones(3)
 surface_colour = np.array([0.91, 0.93, 0.95])
@@ -21,7 +24,7 @@ blue = np.array([0.12, 0.40, 0.88])
 gold = np.array([0.99, 0.67, 0.10])
 violet = np.array([0.57, 0.27, 0.84])
 path_colours = np.stack((coral, gold, teal, blue, violet, [0.90, 0.20, 0.57]))
-pixels = 300
+n_pixels = 300
 n_curve_samples = 96
 n_profile_samples = 7
 n_ribbons = 5
@@ -29,238 +32,224 @@ n_meridians = len(path_colours)
 triangle_view = np.array([38.0, -48.0])
 disk_view = np.array([40.0, -42.0])
 saddle_view = np.array([32.0, -38.0])
-# Straight up, and the unit volume, an intrinsic scalar: a patch's dual, the plane its directions turn in, times it is
-# the unit direction square to the patch.
+# Upward unit direction and intrinsic unit volume element used to turn patch duals into normal directions.
 vertical = core.mv.z.dual()                                                  # [] Point-
-unit_volume = core.mv.antipseudoscalar([1.0])                                # [] Antipseudoscalar-
+unit_volume = core.mv.antipseudoscalar([1])                                  # [] Antipseudoscalar-
 
 
 # --- plumbing -------------------------------------------------------------------------
 def square_view(view_degrees: np.ndarray, vertices: core.Point, spare: float) -> solids.View:
-    """A square orthographic view frames the supplied geometric points."""
+    """Frames the supplied geometric points inside a square orthographic view."""
     elevation, azimuth = np.radians(view_degrees + [0, 90])
-    places = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
-    return solids.view([places], spare, elevation, azimuth, 0.06, pixels).squared()
+    places = solids.origin + solids.context.include_from_algebra(vertices.batch())  # [...] Point-
+    return solids.view([places], spare, elevation, azimuth, 0.06, n_pixels).squared()
 
 
-def sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
-          view: solids.View) -> meshes.Samples:
-    """A lit sheet carries its vertex colours at the image's own pixel size."""
-    return meshes.samples(points, faces, colours, meshes.smooth(points, meshes.Topology(len(points), faces)), view,
+def lit_sheet(points: solids.Point, faces: np.ndarray, colours: np.ndarray,
+              view: solids.View) -> Draw:
+    """Draws a smooth-shaded triangulated sheet at the view's pixel resolution."""
+    return meshes.samples(points, faces, colours, meshes.smooth(points, Topology(len(points), faces)), view,
                           face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
-def boundary_lines(topology: core.Topology, points: solids.Point, view: solids.View) -> meshes.Samples:
-    """Thin outlines keep the reference geometry visible beneath the field."""
-    # The rim: the mesh of the boundary's edges.
+def boundary_lines(topology: Topology, points: solids.Point, view: solids.View) -> Draw:
+    """Draws thin tubes along the boundary edges of `topology`."""
     rim = topology.border
     return simplices.tubes(points, rim, ink, 1.1, view, solids.gloss)
 
 
-def panels(images: list[np.ndarray]) -> plt.Figure:
-    """Separate geometric views share a narrow white gutter."""
-    gutter = np.full((pixels, 8, 3), 255, dtype=np.uint8)
+def joined_panels(images: list[np.ndarray]) -> plt.Figure:
+    """Joins rendered panel images side by side with a narrow white gutter."""
+    gutter = np.full((n_pixels, 8, 3), 255, dtype=np.uint8)
     pieces = [piece for i, picture in enumerate(images) for piece in ([gutter, picture] if i else [picture])]
     return image_figure(np.concatenate(pieces, axis=1))
 
 
 def frame_patches(starts: core.Point, rotors: core.Rotor, size: float,
-                  view: solids.View) -> tuple[meshes.Samples, meshes.Samples]:
-    """Coloured rigid patches expose a frame's plane and its in-plane orientation."""
+                  view: solids.View) -> tuple[Draw, Draw]:
+    """Builds coloured rigid square patches and perimeter tubes showing each rotor's plane and in-plane orientation."""
     mv = rotors.context.multivector
-    # A square in the frame's own x and y about its middle, the middle raised a little along its z: a shallow ridge
-    # lets light reveal an almost edge-on patch.
+    # Raised centre apex lets lighting distinguish edge-on patches.
     profile = np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0], [0, 0, 0.16]])
-    shape = (stack((mv.x.dual(), mv.y.dual(), mv.z.dual())) * (size * profile)).sum(axis=-1)   # [profile] Point-
-    places = starts[:, None] + (rotors.batch()[:, None] >> shape)             # [patches, profile] Point-
-    # The patches' projective embedding, once for their faces and their perimeters.
-    embedded = solids.origin + solids.context.include_from_algebra(places)    # [patches, profile] Point-
+    shape = (stack((mv.x.dual(), mv.y.dual(), mv.z.dual())) * (size * profile)).sum(axis=-1)  # [5] Point-
+    places = starts[:, None] + (rotors.batch()[:, None] >> shape)             # [..., 5] Point-
+    embedded = solids.origin + solids.context.include_from_algebra(places)    # [..., 5] Point-
     n_patches, n_profile = places.shape
     local_faces = np.array([[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]])
     faces = (local_faces[None] + np.arange(n_patches)[:, None, None] * n_profile).reshape(-1, 3)
     colours = np.broadcast_to(np.stack((coral, gold, teal, blue))[None, :, None, :], (n_patches, 4, 3, 3)).reshape(-1, 3, 3)
-    patches = sheet(embedded.reshape(-1), faces, colours, view)
-    perimeters = embedded[:, :4]                                              # [patches, corners] Point-
-    seams = simplices.tubes(perimeters.reshape(-1), simplices.Topology.loops([4] * n_patches), ink, 1.0, view, solids.gloss)
+    patches = lit_sheet(embedded.reshape(-1), faces, colours, view)
+    perimeters = embedded[:, :4]                                              # [n_patches, 4] Point-
+    seams = simplices.tubes(perimeters.reshape(-1), Topology.loops([4] * n_patches), ink, 1.0, view, solids.gloss)
     return patches, seams
 
 
-def draw_darboux_whitney(
+def darboux_figure(
     corners: core.Point, points: core.Point,
-    topology: core.Topology, fine_vertices: core.Point, fine_norms_squared: core.Scalar,
+    topology: Topology, fine_vertices: core.Point, fine_norms_squared: core.Scalar,
     corner_rotors: core.Rotor, unit_rotors: core.Rotor,
     whitney_rates: core.RateMap,
 ) -> plt.Figure:
-    """Frame patches, rate-plane arcs, and a chord-norm bowl expose the derivative's grade split."""
+    """Renders the three-panel Darboux–Whitney triangle view of frame patches, rate-plane arcs, and chord-norm relief."""
     view = square_view(triangle_view, corners, 0.30)
-    # The unit direction square to the triangle: the dual of its patch, the join of two of its sides.
-    normal = ((corners[1] - corners[0]) & (corners[2] - corners[0])).normalized()   # [] Patch-
+    normal = ((corners[1] - corners[0]) & (corners[2] - corners[0])).normalized()  # [] Patch-
     lift = normal.dual() * unit_volume                                       # [] Point-
-    # The fine mesh's projective embedding, once for its sheet and its outline.
-    fine_places = solids.origin + solids.context.include_from_algebra(fine_vertices.batch())   # [vertices] Point-
+    fine_places = solids.origin + solids.context.include_from_algebra(fine_vertices.batch())  # [...] Point-
     outline = boundary_lines(topology, fine_places, view)
-    base = sheet(fine_places, topology.elements[2], surface_colour, view)
+    base = lit_sheet(fine_places, topology.elements[2], surface_colour, view)
 
-    n_inner_patches = 4
-    selected = np.linspace(0, points.shape[0] - 1, n_inner_patches, dtype=int)
+    n_selected = 4
+    selected_indices = np.linspace(0, points.shape[0] - 1, n_selected, dtype=int)
     corner_tiles, corner_seams = frame_patches(corners + lift * 0.04, corner_rotors, 0.13, view)
-    tiles, seams = frame_patches(points[selected] + lift * 0.07, unit_rotors[selected], 0.085, view)
-    orientation = solids.draw([], view, background, inks=[], translucent=[],
-                             meshes=[(base, 1.0), (outline, 1.0), (corner_tiles, 1.0), (corner_seams, 1.0), (tiles, 1.0), (seams, 1.0)])
+    tiles, seams = frame_patches(points[selected_indices] + lift * 0.07, unit_rotors[selected_indices], 0.085, view)
+    orientation_image = solids.draw(
+        [], view, background, inks=[], translucent=[],
+        meshes=[(base, 1.0), (outline, 1.0), (corner_tiles, 1.0), (corner_seams, 1.0), (tiles, 1.0), (seams, 1.0)],
+    )
 
-    # The visible probe fixes the input of the rate map; the arcs lie in its returned bivector planes.
-    probe = (corners[1] - corners[0]).normalized()
-    rates = whitney_rates(probe)[selected]
-    ray = probe.commutator(rates).normalized()
-    # Each arc turns the ray in its rate's plane, through an angle 2.4 times the rate.
+    probe = (corners[1] - corners[0]).normalized()                          # [] Point-
+    rates = whitney_rates(probe)[selected_indices]                           # [n_selected] Bivector+
+    ray = probe.commutator(rates).normalized()                               # [n_selected] Point-
     phases = np.linspace(0, 1, n_curve_samples)
-    turns = (rates[:, None] * (2.4 * phases / 2)).exp()                       # [selected, samples] Rotor+
-    centres = points[selected] + lift * 0.14                                  # [selected] Point-
-    arc_points = centres[:, None] + (turns >> ray[:, None]) * 0.115           # [selected, samples] Point-
+    turns = (rates[:, None] * (2.4 * phases / 2)).exp()                      # [n_selected, n_curve_samples] Rotor+
+    centres = points[selected_indices] + lift * 0.14                         # [n_selected] Point-
+    arc_points = centres[:, None] + (turns >> ray[:, None]) * 0.115          # [n_selected, n_curve_samples] Point-
     progression = phases[:-1, None] * gold + (1 - phases[:-1, None]) * coral
-    arc_colours = np.broadcast_to(progression, (len(selected), n_curve_samples - 1, 3))
-    arc_places = solids.origin + solids.context.include_from_algebra(arc_points)  # [selected, samples] Point-
-    # Each arc a chain of edges, each edge in its own colour along the arc.
-    arcs = simplices.tubes(arc_places.reshape(-1), simplices.Topology.chains([n_curve_samples] * len(selected)),
+    arc_colours = np.broadcast_to(progression, (n_selected, n_curve_samples - 1, 3))
+    arc_places = solids.origin + solids.context.include_from_algebra(arc_points)  # [n_selected, n_curve_samples] Point-
+    arcs = simplices.tubes(arc_places.reshape(-1), Topology.chains([n_curve_samples] * n_selected),
                            arc_colours.reshape(-1, 3), 3.0, view, solids.gloss)
-    probe_starts = points[selected] + lift * 0.025 - probe * 0.08             # [selected] Point-
-    probe_ends = probe_starts + probe * 0.18                                  # [selected] Point-
-    probe_tips = solids.origin + solids.context.include_from_algebra(probe_ends)  # [selected] Point-
-    probe_segments = stack((solids.origin + solids.context.include_from_algebra(probe_starts), probe_tips), axis=-1)   # [selected, 2] Point-
-    probes = simplices.tubes(probe_segments.reshape(-1), simplices.Topology.chains([2] * len(selected)), blue, 2.0, view,
+    probe_starts = points[selected_indices] + lift * 0.025 - probe * 0.08    # [n_selected] Point-
+    probe_ends = probe_starts + probe * 0.18                                 # [n_selected] Point-
+    probe_tips = solids.origin + solids.context.include_from_algebra(probe_ends)  # [n_selected] Point-
+    probe_segments = stack((solids.origin + solids.context.include_from_algebra(probe_starts), probe_tips), axis=-1)  # [n_selected, 2] Point-
+    probes = simplices.tubes(probe_segments.reshape(-1), Topology.chains([2] * n_selected), blue, 2.0, view,
                              solids.gloss)
     probe_ends_mark = solids.ball(probe_tips, 0.018)[:, None]
     arc_ends = solids.ball(arc_places[:, -1], 0.018)[:, None]
     rates_image = solids.draw([(probe_ends_mark, blue), (arc_ends, gold)], view, background, inks=[], translucent=[],
-                             meshes=[(base, 1.0), (outline, 1.0), (probes, 1.0), (arcs, 1.0)])
+                              meshes=[(base, 1.0), (outline, 1.0), (probes, 1.0), (arcs, 1.0)])
 
-    # Height makes the chord's loss of norm a geometric bowl, with its corners pinned to unit norm.
-    bowl_points = fine_vertices.batch() + lift * (1.3 * (fine_norms_squared.batch() - 1))      # [vertices] Point-
+    bowl_points = fine_vertices.batch() + lift * (1.3 * (fine_norms_squared.batch() - 1))  # [...] Point-
     norms = fine_norms_squared.batch().to_array()
     depth = np.clip((1 - norms) / (1 - norms.min()), 0, 1)
     bowl_colours = (1 - depth[:, None]) * np.array([0.50, 0.83, 0.98]) + depth[:, None] * blue
-    bowl = sheet(solids.origin + solids.context.include_from_algebra(bowl_points), topology.elements[2],
-                 bowl_colours[topology.elements[2]], view)
+    bowl = lit_sheet(solids.origin + solids.context.include_from_algebra(bowl_points), topology.elements[2],
+                     bowl_colours[topology.elements[2]], view)
     corner_marks = solids.ball(solids.origin + solids.context.include_from_algebra(corners), 0.025)[:, None]
     norm_image = solids.draw([(corner_marks, gold)], view, background, inks=[], translucent=[], meshes=[(bowl, 1.0), (outline, 1.0)])
-    return panels([orientation, rates_image, norm_image])
+    return joined_panels([orientation_image, rates_image, norm_image])
 
 
-def shadow(vertices: core.Point) -> core.Point:
-    """The vertices' shadows on the level plane through the origin, straight below or above them."""
+def horizontal_shadow(vertices: core.Point) -> core.Point:
+    """Horizontal projection of `vertices` onto the `z = 0` plane."""
     return vertices - vertical * (core.mv.z & vertices)
 
 
 def concentric_paths(vertices: core.Point) -> core.Point:
-    """Circular display paths `[ribbons, samples]` on the level plane, inside the shadow of the disk's polygonal
-    boundary: the farthest shadow's distance from the middle, scaled, turned about the vertical."""
+    """Concentric circular sample curves (`[n_ribbons, n_curve_samples] Point-`) inside the horizontal footprint of `vertices`."""
     mv = core.mv
-    radii = shadow(vertices.batch()).norm()
-    radius = radii.max()
-    radii = radius * np.linspace(0.18, 0.90, n_ribbons)
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_curve_samples) / 2)).exp()   # [samples] Rotor+
-    return turns >> (mv.x.dual() * radii[:, None])                            # [ribbons, samples] Point-
+    radii = horizontal_shadow(vertices.batch()).norm()
+    max_radius = radii.max()
+    ring_radii = max_radius * np.linspace(0.18, 0.90, n_ribbons)
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_curve_samples) / 2)).exp()  # [n_curve_samples] Rotor+
+    return turns >> (mv.x.dual() * ring_radii[:, None])                       # [n_ribbons, n_curve_samples] Point-
 
 
-def sampling(topology: core.Topology, vertices: core.Point, samples: core.Point) -> SparseExtensor:
-    """The map carrying a field on the vertices to samples on the level plane `[samples] Point-`, linear across each
-    face of the mesh's shadow there: a sample's hats in the face that holds it, the face where its least hat is
-    largest, weight that face's corners."""
-    corners = topology.incidence[2, 0]                                        # [3] Scalar+[faces <- vertices]
-    flat = shadow(vertices)                                                   # Point-[vertices]
-    sides = topology.boundary[2, 1] * (topology.d[0] * flat)                  # [3] Point-[faces]
-    patches = (sides[0] & sides[1]) / 2                                       # Patch-[faces]
-    # A hat rises from zero along the side facing its corner to one at the corner.
-    gradients = ((sides | patches.inverse()) / 2).batch()                     # [3, faces] Plane+
-    hats = 1 + (gradients[:, None] & (samples[:, None] - (corners * flat).batch()[:, None]))   # [3, samples, faces] Scalar+
-    least_hats = hats.min(axis=0)
-    holding = least_hats.argmax(axis=-1)                    # [samples]
-    weights = hats[:, np.arange(samples.shape[0]), holding].field()           # [3] Scalar+[samples]
-    return (spdiag(weights) * (topology.reading(holding, 2) * corners)).sum(axis=0)  # Scalar+[samples <- vertices]
+def surface_sampler(topology: Topology, vertices: core.Point, sample_points: core.Point) -> SparseExtensor:
+    """Linear simplex-gradient interpolation map from surface vertices `V` to planar `sample_points` (`[...] Point-`)."""
+    n_samples = sample_points.shape[0]
+    corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
+    flat_vertices = horizontal_shadow(vertices)                               # Point-[V]
+    sides = topology.boundary[2, 1] * (topology.d[0] * flat_vertices)         # [3] Point-[F]
+    patches = (sides[0] & sides[1]) / 2                                       # Patch-[F]
+    gradients = ((sides | patches.inverse()) / 2).batch()                     # [3, F] Plane+
+    corner_weights = 1 + (gradients[:, None] & (sample_points[:, None] - (corners * flat_vertices).batch()[:, None]))  # [3, n_samples, F] Scalar+
+    least_weights = corner_weights.min(axis=0)
+    containing_faces = least_weights.argmax(axis=-1)                          # [n_samples]
+    weights = corner_weights[:, np.arange(n_samples), containing_faces].field()  # [3] Scalar+[n_samples]
+    return (spdiag(weights) * (topology.reading(containing_faces, 2) * corners)).sum(axis=0)  # Scalar+[n_samples <- V]
 
 
-def draw_skyrmion(topology: core.Topology, vertices: core.Point, directors: core.Point) -> plt.Figure:
-    """Matched paths show the disk's centre reaching the north pole and its rim collapsing to the south pole."""
+def skyrmion_figure(topology: Topology, vertices: core.Point, directors: core.Point) -> plt.Figure:
+    """Renders matched radial and circular curves on the planar disk and on the sphere of directors."""
     mv = core.mv
     disk_frame = square_view(disk_view, vertices, 0.04)
     sphere_frame = square_view(np.array([0.0, -42.0]), directors, 0.04)
-    rings = concentric_paths(vertices)                                        # [ribbons, samples] Point-
-    # The meridians run out to the boundary vertices nearest in direction to evenly spaced turns of x about the
-    # vertical.
-    rim = (topology.reading(topology.exterior[0], 0) * vertices).batch()      # [rim] Point-
-    headings = (mv.xy * (-np.linspace(-np.pi, np.pi, n_meridians, endpoint=False) / 2)).exp() >> mv.x.dual()   # [meridians] Point-
-    ends = rim[headings[:, None].dot(rim.normalized()[None]).argmax(axis=-1)]                                  # [meridians] Point-
-    meridians = ends[:, None] * np.linspace(0, 1, n_curve_samples)            # [meridians, samples] Point-
+    rings = concentric_paths(vertices)                                        # [n_ribbons, n_curve_samples] Point-
+    rim = (topology.reading(topology.exterior[0], 0) * vertices).batch()      # [...] Point-
+    heading_turns = (mv.xy * (-np.linspace(-np.pi, np.pi, n_meridians, endpoint=False) / 2)).exp()  # [n_meridians] Rotor+
+    headings = heading_turns >> mv.x.dual()                                   # [n_meridians] Point-
+    ends = rim[headings[:, None].dot(rim.normalized()[None]).argmax(axis=-1)]  # [n_meridians] Point-
+    meridians = ends[:, None] * np.linspace(0, 1, n_curve_samples)            # [n_meridians, n_curve_samples] Point-
 
-    paths = concatenate((rings, meridians))                                   # [paths, samples] Point-
-    along_paths = sampling(topology, vertices, paths.reshape(-1))             # Scalar+[paths * samples <- vertices]
-    domain_points = (along_paths * vertices).batch().reshape(paths.shape) + vertical * 0.012  # [paths, samples] Point-
-    sphere_points = (along_paths * directors).batch().reshape(paths.shape).normalized() * 1.012  # [paths, samples] Point-
-    domain_paths = solids.origin + solids.context.include_from_algebra(domain_points)  # [paths, samples] Point-
-    sphere_paths = solids.origin + solids.context.include_from_algebra(sphere_points)  # [paths, samples] Point-
-    colours = np.concatenate((np.broadcast_to([0.56, 0.64, 0.72], (rings.shape[0], 3)), path_colours))
-    # Each path a chain of edges, each edge in its path's colour.
-    chains = simplices.Topology.chains([n_curve_samples] * len(paths))
+    paths = concatenate((rings, meridians))                                   # [n_paths, n_curve_samples] Point-
+    n_paths = paths.shape[0]
+    along_paths = surface_sampler(topology, vertices, paths.reshape(-1))      # Scalar+[n_paths * n_curve_samples <- V]
+    domain_points = (along_paths * vertices).batch().reshape(paths.shape) + vertical * 0.012  # [n_paths, n_curve_samples] Point-
+    sphere_points = (along_paths * directors).batch().reshape(paths.shape).normalized() * 1.012  # [n_paths, n_curve_samples] Point-
+    domain_paths = solids.origin + solids.context.include_from_algebra(domain_points)  # [n_paths, n_curve_samples] Point-
+    sphere_paths = solids.origin + solids.context.include_from_algebra(sphere_points)  # [n_paths, n_curve_samples] Point-
+    colours = np.concatenate((np.broadcast_to([0.56, 0.64, 0.72], (n_ribbons, 3)), path_colours))
+    chains = Topology.chains([n_curve_samples] * n_paths)
     chain_colours = np.repeat(colours, n_curve_samples - 1, axis=0)
 
-    disk = sheet(solids.origin + solids.context.include_from_algebra(vertices.batch()), topology.elements[2], surface_colour,
-                 disk_frame)
+    disk = lit_sheet(solids.origin + solids.context.include_from_algebra(vertices.batch()), topology.elements[2], surface_colour,
+                     disk_frame)
     domain_grid = simplices.tubes(domain_paths.reshape(-1), chains, chain_colours, 2.4, disk_frame, solids.gloss)
     centre = solids.ball((solids.origin + solids.context.include_from_algebra(vertical * 0.018))[None], 0.045)[:, None]
-    domain = solids.draw([(centre, coral)], disk_frame, background, inks=[], translucent=[], meshes=[(disk, 1.0), (domain_grid, 1.0)])
+    domain_image = solids.draw([(centre, coral)], disk_frame, background, inks=[], translucent=[], meshes=[(disk, 1.0), (domain_grid, 1.0)])
     sphere = solids.ball(solids.origin[None], 1.0)[:, None]
     sphere_grid = simplices.tubes(sphere_paths.reshape(-1), chains, chain_colours, 2.8, sphere_frame, solids.gloss)
     poles = solids.ball(solids.origin + solids.context.include_from_algebra(stack([vertical, -vertical]) * 1.02), 0.045)[:, None]
-    image = solids.draw([(sphere, surface_colour), (poles, np.stack((coral, blue)))], sphere_frame, background,
-                        inks=[], translucent=[], meshes=[(sphere_grid, 1.0)])
-    return panels([domain, image])
+    sphere_image = solids.draw([(sphere, surface_colour), (poles, np.stack((coral, blue)))], sphere_frame, background,
+                               inks=[], translucent=[], meshes=[(sphere_grid, 1.0)])
+    return joined_panels([domain_image, sphere_image])
 
 
-def ribbon_panel(topology: core.Topology, vertices: core.Point, rotors: core.Rotor, rings: core.Point,
+def ribbon_panel(topology: Topology, vertices: core.Point, rotors: core.Rotor, rings: core.Point,
                  along_rings: SparseExtensor, view: solids.View) -> np.ndarray:
-    """Fixed centre curves `[ribbons, samples]` carry cross-sections turned by the rotor field, its chords across
-    each face made unit again: the radial direction turned gives the width, and the vertical the height."""
-    centres = (along_rings * vertices).batch().reshape(rings.shape) + vertical * 0.09  # [ribbons, samples] Point-
-    frames = (along_rings * rotors).batch().reshape(rings.shape).normalized()  # [ribbons, samples] Rotor+
-    widths = frames >> rings.normalized()                                     # [ribbons, samples] Point-
-    heights = frames >> vertical                                              # [ribbons, samples] Point-
+    """Renders twisted ribbons along `rings` carried by the interpolated rotor field over `vertices`."""
+    centres = (along_rings * vertices).batch().reshape(rings.shape) + vertical * 0.09  # [n_ribbons, n_curve_samples] Point-
+    frames = (along_rings * rotors).batch().reshape(rings.shape).normalized()  # [n_ribbons, n_curve_samples] Rotor+
+    widths = frames >> rings.normalized()                                     # [n_ribbons, n_curve_samples] Point-
+    heights = frames >> vertical                                              # [n_ribbons, n_curve_samples] Point-
     profile = np.linspace(-1, 1, n_profile_samples)
     ribbons = (centres[..., None] + widths[..., None] * (0.065 * profile)
-               + heights[..., None] * (0.022 * (1 - profile**2)))             # [ribbons, samples, profile] Point-
+               + heights[..., None] * (0.022 * (1 - profile**2)))             # [n_ribbons, n_curve_samples, n_profile_samples] Point-
     n_segments = n_curve_samples - 1
     first = np.arange(n_segments)[:, None] * n_profile_samples + np.arange(n_profile_samples - 1)
     faces = np.concatenate((np.stack((first, first + 1, first + n_profile_samples), axis=-1).reshape(-1, 3),
                             np.stack((first + 1, first + n_profile_samples + 1, first + n_profile_samples), axis=-1).reshape(-1, 3)))
     across_colours = (1 - (profile + 1)[:, None] / 2) * coral + ((profile + 1)[:, None] / 2) * blue
     colours = np.broadcast_to(across_colours, (n_curve_samples, n_profile_samples, 3)).reshape(-1, 3)
-    # The surface's and the ribbons' projective embeddings, each once for its sheets and its lines.
-    points = solids.origin + solids.context.include_from_algebra(vertices.batch())             # [vertices] Point-
-    ribbon_places = solids.origin + solids.context.include_from_algebra(ribbons)  # [ribbons, samples, profile] Point-
-    base = sheet(points, topology.elements[2], surface_colour, view)
+    points = solids.origin + solids.context.include_from_algebra(vertices.batch())  # [...] Point-
+    ribbon_places = solids.origin + solids.context.include_from_algebra(ribbons)  # [n_ribbons, n_curve_samples, n_profile_samples] Point-
+    base = lit_sheet(points, topology.elements[2], surface_colour, view)
     layers = [(base, 0.34), (boundary_lines(topology, points, view), 0.65)]
-    for ribbon in range(ribbons.shape[0]):
-        layers.append((sheet(ribbon_places[ribbon].reshape(-1), faces, colours[faces], view), 1.0))
-        edges = ribbon_places[ribbon][:, [0, -1]]                             # [samples, 2] Point-
-        seam = simplices.tubes(concatenate((edges[:, 0], edges[:, 1])), simplices.Topology.chains([n_curve_samples] * 2),
+    for ribbon_index in range(n_ribbons):
+        layers.append((lit_sheet(ribbon_places[ribbon_index].reshape(-1), faces, colours[faces], view), 1.0))
+        edges = ribbon_places[ribbon_index][:, [0, -1]]                       # [n_curve_samples, 2] Point-
+        seam = simplices.tubes(concatenate((edges[:, 0], edges[:, 1])), Topology.chains([n_curve_samples] * 2),
                                np.repeat(np.stack((gold, teal)), n_curve_samples - 1, axis=0), 1.3, view, solids.gloss)
         layers.append((seam, 1.0))
     return solids.draw([], view, background, inks=[], translucent=[], meshes=layers)
 
 
-def draw_rotor_frames(topology: core.Topology, vertices: core.Point, harmonic_rotors: core.Rotor) -> plt.Figure:
-    """Ribbon cross-sections compare orientation fields with different boundary prescriptions."""
+def rotor_frames_figure(topology: Topology, vertices: core.Point, harmonic_rotors: core.Rotor) -> plt.Figure:
+    """Renders side-by-side ribbon panels comparing harmonic rotor fields under distinct boundary prescriptions."""
     view = square_view(saddle_view, vertices, 0.20)
-    rings = concentric_paths(vertices)                                        # [ribbons, samples] Point-
-    along_rings = sampling(topology, vertices, rings.reshape(-1))             # Scalar+[ribbons * samples <- vertices]
-    return panels([ribbon_panel(topology, vertices, rotors.field(), rings, along_rings, view)
-                   for rotors in harmonic_rotors.batch()])
+    rings = concentric_paths(vertices)                                        # [n_ribbons, n_curve_samples] Point-
+    along_rings = surface_sampler(topology, vertices, rings.reshape(-1))      # Scalar+[n_ribbons * n_curve_samples <- V]
+    return joined_panels([ribbon_panel(topology, vertices, rotors.field(), rings, along_rings, view)
+                          for rotors in harmonic_rotors.batch()])
 
 
-def animate_relaxation(topology: core.Topology, vertices: core.Point,
-                       states: Iterable[tuple[core.Rotor, core.Scalar]]) -> Iterator[np.ndarray]:
-    """Ribbon cross-sections settle as the unit rotor field smooths over its fixed surface."""
+def relaxation_animation(topology: Topology, vertices: core.Point,
+                         states: Iterable[core.Rotor]) -> Iterator[np.ndarray]:
+    """Yields rendered ribbon panels as the unit rotor field smooths across the saddle surface."""
     view = square_view(saddle_view, vertices, 0.20)
-    rings = concentric_paths(vertices)                                        # [ribbons, samples] Point-
-    along_rings = sampling(topology, vertices, rings.reshape(-1))             # Scalar+[ribbons * samples <- vertices]
-    for rotors, _ in states:
+    rings = concentric_paths(vertices)                                        # [n_ribbons, n_curve_samples] Point-
+    along_rings = surface_sampler(topology, vertices, rings.reshape(-1))      # Scalar+[n_ribbons * n_curve_samples <- V]
+    for rotors in states:
         yield ribbon_panel(topology, vertices, rotors, rings, along_rings, view)
