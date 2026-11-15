@@ -21,26 +21,26 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "numpy>=1.24",
+    "numpy>=2.0",
 ]
 
 [project.optional-dependencies]
 linalg = [
-    "scipy>=1.10",
+    "scipy>=1.13",
 ]
 wgpu = [
     "wgpu>=0.32",
 ]
 jax = [
-    "jax>=0.4",
+    "jax>=0.5",
 ]
 torch = [
-    "torch>=2.1",
+    "torch>=2.3",
 ]
 examples = [
-    "matplotlib>=3.7",
+    "matplotlib>=3.8",
     "pillow>=10",
-    "scipy>=1.10",
+    "scipy>=1.13",
     "wgpu>=0.32",
 ]
 test = [
