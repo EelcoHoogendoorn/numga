@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from examples.util import shapes
 from numga.render import drawing, meshes, Scene, simplices, solids
+
+pytest.importorskip("wgpu")
 
 
 def test_view_to_camera_and_solids_scene_draw():
@@ -20,6 +23,7 @@ def test_view_to_camera_and_solids_scene_draw():
 
 
 def test_meshes_and_simplices_without_matplotlib():
+    pytest.importorskip("scipy")
     topo, coords = shapes.sphere(1)
     pts = solids.mv.point(0.7 * coords)
     cam_view = solids.View(solids.aim(solids.origin, elevation=0.25, azimuth=0.5), np.array([1.2, 1.2]), pixels=64)
