@@ -1,0 +1,2 @@
+# Exclude rendered gallery animations and figures from GitHub source tarballs and Colab archive installs.
+/plots export-ignore

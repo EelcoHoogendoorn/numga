@@ -1,9 +1,9 @@
 """Builds the PyPI wheel and source distribution containing `numga` without `examples`.
 
-GitHub installs (`pip install "numga[examples] @ git+..."`, used by the Colab notebooks) read the repository's root
-`pyproject.toml` and install `numga` and `examples` together from the same commit. PyPI releases run this module to
-stage `numga`, `LICENSE`, a link-resolved `README.md` and a `numga`-only `pyproject.toml`, then build and verify both
-archives in `dist/`.
+GitHub archive installs (`pip install "numga[examples] @ .../archive/HEAD.tar.gz"`, used by the Colab notebooks) read
+the repository's root `pyproject.toml` and install `numga` and `examples` together from the same commit while
+`.gitattributes` omits `plots/` from the tarball. PyPI releases run this module to stage `numga`, `LICENSE`, a
+link-resolved `README.md` and a `numga`-only `pyproject.toml`, then build and verify both archives in `dist/`.
 
     python -m tools.package
     python -m tools.package --tag v2.0.0 --outdir dist
