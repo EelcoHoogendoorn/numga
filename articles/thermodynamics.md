@@ -4,6 +4,8 @@ Geometric algebra can describe physical space, time and motion, and exterior alg
 
 The joined algebra represents the coupling between the variables of a material, both in equilibrium and in transport. Among the benefits of joining the algebras, Maxwell's relations in equilibrium and Onsager's reciprocal relations in transport take the same form, and Onsager's hold by construction. Combined with [discrete differential geometric algebra](ddga.md), the joined algebra leads to structure-preserving discrete representations of the physics.
 
+Differential-form thermodynamics models extensive variables such as entropy as directions of a metric-free state space, paired linearly with their conjugate potentials. Joining the two algebras places those directions alongside space and time as null basis vectors that square to zero, like the projective dimension. This document assumes that exterior state-space picture together with the complementary orientations, regressive pairing (`&`) and map adjugate developed in [Why orientation](orientation.md) and [Complementarity](complementarity.md).
+
 ## Introduction
 
 Extending an algebra by a dimension can unify what were separate descriptions. When space is extended with a time dimension to spacetime, the electric and magnetic fields can be modelled together as a single spacetime bivector. When geometry is extended with a projective dimension, rotation and translation can be modelled as one rigid motion, and one inertia relates its rate to its momentum. Extending the algebra once more, with, for instance, a direction for entropy, is a step of the same kind.
