@@ -15,26 +15,30 @@ import sys
 import time
 
 # Example subpackages with a `scenarios.pinned()` entry point, ordered to match the gallery followed
-# by documentation figures.
+# by documentation and article figures.
 EXAMPLES = (
-    "geometry.scenegraph",
-    "relativity.kerr",
     "estimation.multiview",
+    "relativity.kerr",
     "thermodynamics.snowflake",
-    "fluids.wing",
-    "quantum.kane_mele",
-    "electromagnetism.dynamo",
-    "relativity.twistors",
-    "electromagnetism.beltrami_fields",
     "quantum.condensate",
+    "fluids.wing",
+    "electromagnetism.dynamo",
     "mechanics.rattleback",
     "relativity.gravitational_waves",
+    "quantum.kane_mele",
+    "electromagnetism.beltrami_fields",
+    "thermodynamics.rubber_band",
+    "geometry.scenegraph",
+    "surfaces.arap",
     "mechanics.bending",
-    "fluids.eigen_fluids",
-    "fluids.liquid_crystals",
+    "quantum.skyrmions",
+    "relativity.twistors",
     "electromagnetism.superconductor",
     "fluids.superfluid",
     "thermodynamics.magnetotransport",
+    "fluids.eigen_fluids",
+    "electromagnetism.induced_charge",
+    "fluids.liquid_crystals",
     "quantum.process_tomography",
     "mechanics.elastica",
     "electromagnetism.piezoelectric",
@@ -42,7 +46,6 @@ EXAMPLES = (
     "relativity.ligo",
     "electromagnetism.moving_charge",
     "quantum.magnetic_resonance",
-    "surfaces.arap",
     "fluids.jeffery",
     "mechanics.slip_systems",
     "thermodynamics.phase_change",
@@ -52,6 +55,8 @@ EXAMPLES = (
     "relativity.gps",
     "orientation.normals",
     "orientation.mirror_energy",
+    "orientation.spinning_wheel",
+    "optics.crystal_diffraction",
 )
 
 

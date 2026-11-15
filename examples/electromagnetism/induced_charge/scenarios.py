@@ -22,6 +22,7 @@ rod_centre = core.origin + .48 * mv.x.dual() - .08 * mv.y.dual()    # Point-
 rod_turn = (mv.xy * (-np.pi / 12)).exp()                            # Rotor+
 rod_lengths = np.array([.16, .48])
 frame_duration_ms = 40
+n_gallery_pixels, n_gallery_colours = 256, 24
 
 
 def conductor_scene(n_across: int, n_frames: int) -> tuple[Topology, core.Point, core.Scalar, core.Scalar, core.Scalar]:
@@ -82,6 +83,19 @@ def main() -> None:
     # checks
     assert ((net_charge - body_charges).abs() < .01).all()
     assert (negative_charge[-1] > negative_charge[0]).all()
+
+
+def pinned() -> None:
+    """Saves the gallery animation of oppositely charged conductors relaxing in a turning field."""
+    from examples.electromagnetism.induced_charge import render
+    from examples.util.animation import pin_animation
+
+    topology, vertices, fractions, _, boundary = conductor_scene(n_across, n_frames)
+    metal = fractions.sum(axis=0)                                   # Scalar+[V]
+    states = core.relaxation_states(topology, vertices, fractions, boundary, permittivity,
+                                    conductivities, body_charges, frame_step, n_substeps)
+    pin_animation(render.relaxation_animation(topology, vertices, metal, states, n_gallery_pixels),
+                  "induced_charge", frame_duration_ms, colors=n_gallery_colours)
 
 
 if __name__ == "__main__":

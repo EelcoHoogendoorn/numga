@@ -6,7 +6,7 @@ build/
 dist/
 *.egg-info/
 
-# Generated renders; retain only the figures and animations linked by README.md and docs/extensors.md.
+# Generated renders; retain only the figures and animations linked by README.md, docs/ and articles/.
 /plots/*
 !/plots/arap_bending.gif
 !/plots/area_transport.gif
@@ -16,9 +16,11 @@ dist/
 !/plots/gravitational_waves_inside.gif
 !/plots/gravitational_waves_quadrupole.gif
 !/plots/condensate.gif
+!/plots/crystal_diffraction.png
 !/plots/dynamo_lines.gif
 !/plots/eigen_fluids.gif
 !/plots/gps.gif
+!/plots/induced_charge.gif
 !/plots/jeffery.gif
 !/plots/kane_mele.gif
 !/plots/kerr.gif
@@ -36,10 +38,13 @@ dist/
 !/plots/radiating_charge_fast.gif
 !/plots/rattleback.gif
 !/plots/resonance_echo.gif
+!/plots/rubber_band_lamp_and_pull.gif
 !/plots/sandwich.gif
 !/plots/scenegraph.gif
+!/plots/skyrmions.gif
 !/plots/slip_systems.gif
 !/plots/snowflake.gif
+!/plots/spinning_wheel_plane.gif
 !/plots/superfluid.gif
 !/plots/superconductor.gif
 !/plots/telephone_cord.gif

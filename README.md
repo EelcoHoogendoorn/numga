@@ -21,7 +21,7 @@ Extensors generalize matrices and tensors from vectors to multivectors, and from
 A short example of the extensor syntax: building unary maps and bilinear forms, and solving for the vibration modes of four point masses on springs:
 
 ```python
-points = mv.vector([[0, 0, 0, 1], [1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]).dual()   # four unit masses
+points = mv.point([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])   # four unit masses
 inertia = (points & points.commutator(Bivector)).sum(axis=0)   # Antibivector <- Bivector
 
 springs = points[:, None] & points[None, :]                    # [points, points] Antibivector: a line through each pair
@@ -36,6 +36,10 @@ The full example: [vibration modes](examples/mechanics/modes/modes.ipynb) [![Ope
 
 * [Geometric algebra](docs/tutorial/geometric-algebra/00-introduction.md): a primer for readers new to geometric algebra.
 * [Extensors](docs/tutorial/extensors/00-introduction.md): a primer for readers new to extensors.
+
+## Articles
+
+[Conceptual articles](articles/README.md) on orientation, complementarity, discrete differential geometric algebra and coupled thermodynamics, and how extensors relate to linear algebra, tensors and forms.
 
 ## Install and run
 

@@ -63,6 +63,10 @@ The material map has four readings, the change of each potential that each chang
 
 The two cells off the diagonal are the band's two effects, and the symmetry of the material map makes them equal: added entropy changes the band's pull by as much as a stretch changes its temperature. That symmetry is the tie between the band's warming and its pull, as the [rubber band](../examples/thermodynamics/rubber_band/rubber_band.ipynb) example computes it. Symmetries of this kind are known as Maxwell's relations.
 
+<p align="center"><img src="../plots/rubber_band_lamp_and_pull.gif" alt="Two hanging rubber bands side by side: the left band warms under a lamp, contracts and lifts its weight; the right band warms slightly when pulled down and cools when released" width="300" /></p>
+
+*Figure: two hanging rubber bands on a shared timeline, coloured by temperature. On the left, heat from a lamp warms the band, raising its tension and lifting the weight; on the right, pulling the unlit band down warms it slightly at fixed entropy and releasing it cools it back.*
+
 Where the coupled variables occupy different grades, the state and the potentials become mixed-grade elements and the material map remains a single symmetric extensor. In a [paramagnetic salt](../examples/thermodynamics/paramagnetic_salt/paramagnetic_salt.ipynb), magnetization is an intrinsic patch of the spin plane and entropy is the dual of its basis vector, paired with the magnetic field's bivector and temperature's vector: magnetizing the salt warms it, removing the field cools it, and inverting that mixed-grade material map gives the change of magnetization and entropy for a given change of field and temperature.
 
 ## Transport
@@ -105,6 +109,10 @@ In this algebra a parcel is the sum of these units, each weighted by the amount 
 Because every basis vector of the quantity sector squares to zero, the subalgebra they generate is an exterior algebra: its geometric product reduces to the outer product `^`, paired with `&` on complements. On its own, that subalgebra models a thermodynamic state space without spatial geometry, such as heating under held variables in [state space](../examples/thermodynamics/state_space/state_space.ipynb) and the work integrated around a cycle in [heat cycles](../examples/thermodynamics/heat_cycles/heat_cycles.ipynb). In the language of geometric thermodynamics, the same exterior structure represents the curvature of thermal fluctuations in [Ruppeiner geometry](../examples/thermodynamics/ruppeiner/ruppeiner.ipynb), the contact two-form and Legendre transformations of [contact geometry](../examples/thermodynamics/contact_geometry/contact_geometry.ipynb), and the reversible and dissipative brackets of [GENERIC](../examples/thermodynamics/generic/generic.ipynb).
 
 Conversions between quantities, such as burning or freezing, also act among the quantity basis vectors alone. A conversion is a direction among the quantities, and a quantity that it conserves is a plane that pairs with that direction to zero, `energy & reaction == 0`, as energy does with burning in the [flame](../examples/thermodynamics/flame/flame.ipynb) and with freezing in the [snowflake](../examples/thermodynamics/snowflake/snowflake.ipynb).
+
+<p align="center"><img src="../plots/snowflake.gif" alt="A seed of ice in undercooled water growing into a six-armed dendrite, its latent heat glowing into the cold water around it" width="300" /></p>
+
+*Figure: a seed of ice growing into a six-armed dendrite in undercooled water, with latent heat released along the freezing direction glowing into the liquid around the tips.*
 
 When the two algebras are joined, a plane spanned by two basis vectors `a ^ b` and its intrinsic complement `a.dual() & b.dual()` fall into three groups by sector:
 
@@ -162,6 +170,10 @@ The inverse turns the push through the carrier's Hall angle and shortens it by t
 The top left block reads the charge that an electric drive moves, and the bottom right block the entropy that a thermal drive moves. The other two blocks read the entropy that an electric drive moves and the charge that a thermal drive moves. In each block the flux along the drive is on the diagonal, and the flux across it, which the magnetic field adds, is off it. Reversing the magnetic field gives `response.adjugate()`: the part of the response that is even in the field is symmetric and dissipative, and the part that is odd in it is antisymmetric and dissipates no power. This is the Onsager–Casimir form of the reciprocal relations. [*Onsager Relations in Coupled Electric, Thermoelectric and Spin Transport: The Ten-Fold Way*](https://arxiv.org/pdf/1207.1629), Section I, states the microreversibility assumptions for electric, thermal and spin transport.
 
 A measured Hall resistance, Seebeck coefficient or Nernst signal follows from the response once the conditions at the conductor's boundary are imposed. In the interior of a long bar those conditions hold at every place alike, and the coefficients follow from the response at one place, as [transport coefficients in a magnetic field](../examples/thermodynamics/magnetotransport/magnetotransport_one_place.ipynb) computes them. Where electrons and holes are in balance, the Hall resistance vanishes and the Nernst signal is largest. A bar builds up voltages across its insulating sides, and a Corbino ring lets its currents circulate; the magnetotransport example computes both over the whole conductor.
+
+<p align="center"><img src="../plots/magnetotransport.gif" alt="A bar and a Corbino ring warmed at one contact in a perpendicular magnetic field as their carrier balance sweeps from electrons only to holes only" width="375" /></p>
+
+*Figure: a Hall bar on the left and a Corbino ring on the right, warmed at one gold contact in the perpendicular magnetic field marked between them as the carrier balance sweeps from electrons to holes. Background colour shows temperature from blue to red, dark lines trace electrochemical equipotentials, and white and black streaks show the two carrier drifts.*
 
 ## Conclusion
 

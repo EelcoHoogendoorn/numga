@@ -64,7 +64,7 @@ moved_phase = moved_wavevector & moved_displacement                      # [] Sc
 
 The pairing `wavevector & displacement` uses no metric, so the same line counts phase across the three bonds of a honeycomb sheet in the plane, across a crystal in space, and across an event in spacetime, where time squares to minus one. Under any linear map `deformation` on displacements, its adjugate pulls a wavevector back so that `deformation.adjugate()(wavevector) & displacement == wavevector & deformation(displacement)`, even when `deformation` flattens a volume onto a plane and has no inverse. When an invertible stretch, shear and turn deforms a crystal, solving forward through `deformation.adjugate()` carries each reciprocal-lattice wavevector so that its phase at every displaced atom stays what it was: doubling the spacing along x halves the wavevector component along x.
 
-<p align="center"><img src="../plots/crystal_diffraction.png" alt="A square crystal layer, stretched along x, and stretched, sheared and turned, above the scattered intensity and reciprocal lattice peaks of each" width="460" /></p>
+<p align="center"><img src="../plots/crystal_diffraction.png" alt="A square crystal layer, stretched along x, and stretched, sheared and turned, above the scattered intensity and reciprocal lattice peaks of each" width="318" /></p>
 
 *Figure: a square layer of atoms (top left), stretched along x (top centre), and stretched, sheared and turned (top right), above the scattered intensity of each; circles mark the reciprocal wavevectors carried by solving through the deformation's adjugate.*
 

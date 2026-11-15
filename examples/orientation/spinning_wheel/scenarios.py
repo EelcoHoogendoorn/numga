@@ -87,5 +87,17 @@ def main() -> None:
     assert ((space_powers - embed(plane_powers)).abs() < 1e-9).all()
 
 
+def pinned() -> None:
+    """Saves the repository-tracked animation of the planar wheel and its mirror image."""
+    from examples.orientation.spinning_wheel import render
+    from examples.util.animation import pin_animation
+
+    times = np.linspace(0, 2 * np.pi / speed, n_frames, endpoint=False)
+    points, pushes, rates, *_ = wheel_in_the_plane()
+    core = instantiate(CORE, rates.algebra)
+    pin_animation(render.animate(points, rates, masses, core.turning(points, pushes, rates, times)),
+                  "spinning_wheel_plane", frame_duration_ms)
+
+
 if __name__ == "__main__":
     main()

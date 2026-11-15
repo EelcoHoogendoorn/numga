@@ -68,6 +68,10 @@ The same holds for other values. A rotor field blended and differentiated across
 
 Every such value carries an extrinsic or intrinsic [orientation](orientation.md) and pairs across `&` with its [complement](complementarity.md) without a metric or a mirror sign change.
 
+<p align="center"><img src="../plots/arap_bending.gif" alt="A triangulated bar clamped at one end and bent upward through a right angle while keeping its cross-section" width="400" /></p>
+
+*Figure: a triangulated bar clamped at one end and bent upward through a right angle in as-rigid-as-possible deformation, alternating local rotor eigenvectors at the vertices with a global linear solve.*
+
 Discrete differential geometry represents rotations by angles or by matrices: a connection by transport angles on the edges relative to local tangent frames ([*Trivial Connections on Discrete Surfaces*](https://www.cs.cmu.edu/~kmcrane/Projects/TrivialConnections/paper.pdf)), a direction field by complex numbers on those frames, and a local best rotation by the singular value decomposition of a covariance matrix, sign-corrected where the determinant is negative ([*As-Rigid-As-Possible Surface Modeling*](https://igl.ethz.ch/projects/ARAP/arap_web.pdf)). The electromagnetic field is held as differential forms on the edges and faces of a complex, Whitney's edge elements, or as vector proxies of them.
 
 ## Out along the arity axis
@@ -82,13 +86,17 @@ advection = Point * (gradients & Point)    # [corners] (Antivector- <- (Antivect
 
 An operator read backwards across the regressive pairing is its adjugate, and a coupling and its adjugate are one map. The piezoelectric coupling that turns a voltage into forces on a body, read backwards, turns the body's motion into charge, in the [piezoelectric bimorph](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb). In an electrokinetic channel one coupling turns a pressure drop into a current and an electric field into a flow, so the streaming current and electro-osmosis are reciprocal by construction, in [electrokinetics](../examples/fluids/electrokinetics/electrokinetics.ipynb). Forms of two arguments are as plain: the kinetic energy and the enstrophy of a dynamo's flows, solved against each other as an eigenproblem, in the [dynamo](../examples/electromagnetism/dynamo/dynamo.ipynb).
 
+<p align="center"><img src="../plots/piezoelectric.gif" alt="A clamped two-layer piezoelectric strip bent up and down at its free tip, strained near its root while a voltage builds along its floating electrode" width="525" /></p>
+
+*Figure: a clamped two-layer piezoelectric strip bent at its free tip, with opposite layer polings marked by grey arrows, interior axial strain shaded in blue and copper, and the induced voltage colouring the outer electrodes.*
+
 In vector calculus and finite elements, fluid advection is written as $(\mathbf{u}\cdot\nabla)\mathbf{u}$, an elastic material is held as a fourth-order tensor $C_{ijkl}$ flattened to a matrix in Voigt's notation or formulated through a variant Hilbert complex for elasticity with weak symmetry ([*Finite element exterior calculus: from Hodge theory to numerical stability*](https://arxiv.org/pdf/0906.4325), §7), and a coupled multiphysics problem is assembled as a block matrix whose off-diagonal blocks are wired by numbering the degrees of freedom; reciprocity across those blocks, such as Maxwell–Betti's in elasticity, Saxén's in electrokinetics, or Onsager's for coupled transport under reversal of time-reversal-breaking fields ([*Onsager Relations in Coupled Electric, Thermoelectric and Spin Transport: The Ten-Fold Way*](https://arxiv.org/pdf/1207.1629), §I), is imposed as a transpose relation between them.
 
 ## Waves of the three-sphere's geometry
 
 Small waves of the geometry of a closed universe run on the 600-cell, a tetrahedral topology on the three-sphere, in [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb). The geometry is given by the squared lengths of the edges, Regge's variables, and the wave step combines higher-grade values with higher-arity maps.
 
-<p align="center"><img src="../plots/gravitational_waves_quadrupole.gif" alt="The three-sphere projected along its Hopf circles onto a sphere: a quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays" /></p>
+<p align="center"><img src="../plots/gravitational_waves_quadrupole.gif" alt="The three-sphere projected along its Hopf circles onto a sphere: a quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays" width="300" /></p>
 
 *Figure: the three-sphere projected along its Hopf circles onto a sphere. A quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays.*
 

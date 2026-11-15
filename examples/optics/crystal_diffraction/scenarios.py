@@ -95,5 +95,19 @@ def main() -> None:
     assert (brightness >= 0).all()
 
 
+def pinned() -> None:
+    """Writes the tracked comparison figure of real-space crystal deformation and reciprocal-space
+    diffraction."""
+    import matplotlib.pyplot as plt
+
+    from examples.optics.crystal_diffraction import render
+    from examples.util.animation import pin_figure
+
+    _, _, positions, reciprocal, transfers, brightness = comparison_cases()
+    figure = render.comparison_figure(positions, reciprocal, transfers, brightness)
+    pin_figure(figure, "crystal_diffraction")
+    plt.close(figure)
+
+
 if __name__ == "__main__":
     main()

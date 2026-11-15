@@ -59,6 +59,10 @@ rebuilt = Line - ((motor >> center) & (Line ^ (motor >> plane))) / focal # [] An
 
 Because `motor >>` distributes across every product and cancels `motor <<` on `Line`, `moved` and `rebuilt` are the same map. One action moves the ray, the lens and the motion itself, and nothing in the scene is set apart from the objects it transforms.
 
+<p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D with a two-lens camera and sample sight ray on the left, and the rendered sensor image on the right" width="598" /></p>
+
+*Figure: an articulated robot arm and a moving two-lens camera in three dimensions on the left, with the image produced on the sensor by composing the body motors, lens maps and sensor meet on the right.*
+
 In tensor algebra the order is the reverse. The transformations come first, given as rotation matrices, and a tensor is defined as an array that responds to them by the tensor transformation law, $T' = R T R^{\mathsf T}$, one factor of the rotation on each of its axes. The rotation is a linear map on vectors and therefore a tensor itself, yet the definition treats it as given beforehand, standing outside as the test the other objects must pass. Here a transformation is an extensor from the start, and no object is defined by testing it against something posited outside the algebra. The tensor transformation law is a consequence instead: the expression for the moved lens, `motor >> lens(motor << Line)`, reads in that notation as $R T R^{\mathsf T}$, the motion applied on the output and undone on the input.
 
 ## 3. The mathematical lens

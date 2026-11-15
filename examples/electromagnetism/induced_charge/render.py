@@ -38,9 +38,12 @@ def composited_frame(layers: list[np.ndarray]) -> np.ndarray:
 
 
 def relaxation_animation(topology: Topology, vertices: core.Point, metal: core.Scalar,
-                         states: Iterable[tuple[core.Scalar, core.Scalar, core.Scalar, core.Point]]) -> Iterator[np.ndarray]:
-    """Yields `[n_pixels, n_pixels, 3]` RGB frames of charge density, gold equipotentials, and ice-blue electric-field streaks."""
+                         states: Iterable[tuple[core.Scalar, core.Scalar, core.Scalar, core.Point]],
+                         n_view_pixels: int = n_pixels) -> Iterator[np.ndarray]:
+    """Yields `[n_view_pixels, n_view_pixels, 3]` RGB frames of charge density, gold equipotentials, and ice-blue electric-field streaks."""
     V, E, F = topology.n_elements
+    scale = n_view_pixels / n_pixels
+    view = Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0., np.zeros(2), np.full(2, 1.02), n_view_pixels)
     points = vertices.batch()                                       # [V] Point-
     fraction = np.asarray(metal.batch().to_array())                 # [V]
     corners = topology.incidence[2, 0]                              # [3] Scalar+[F <- V]
@@ -48,7 +51,8 @@ def relaxation_animation(topology: Topology, vertices: core.Point, metal: core.S
     face_points = (corners * vertices).batch().reshape(-1)          # [3 * F] Point-
     split_topology = Topology(n_corners * F, np.arange(n_corners * F).reshape(n_corners, F).T)
     base = background + fraction[:, None] * (metal_colour - background)
-    lines = contours.Lines(line_spacing, line_spacing / 2, line_ink, line_width)
+    lines = contours.Lines(line_spacing, line_spacing / 2, line_ink, max(1.0, line_width * scale))
+    boundary_edge = contours.Level(.5, edge_ink, max(1.0, 1.2 * scale))
     for potential, _, density, force in states:
         signed = np.asarray(density.batch().to_array())             # [V]
         strength = np.arcsinh(np.abs(signed) / charge_scale)
@@ -59,24 +63,24 @@ def relaxation_animation(topology: Topology, vertices: core.Point, metal: core.S
         highlight = signed ** 2 / (signed ** 2 + peak_scale ** 2)
         colours += (1 - colours) * highlight[:, None]
         voltage = np.asarray(potential.batch().to_array())          # [V]
-        layers = [contours.picture(points, topology, fraction, colours, camera)]
+        layers = [contours.picture(points, topology, fraction, colours, view)]
         # Streak length retains field magnitude on one scale throughout the animation.
         corner_force = concatenate([force.batch()] * n_corners)     # [3 * F] Point-
-        field_layer = flow.layer(face_points, split_topology, corner_force, camera, texture_reference, field_ink,
-                                 length=texture_length, grain_pixels=texture_grain,
-                                 speck_pixels=texture_speck, ink_opacity=texture_opacity,
+        field_layer = flow.layer(face_points, split_topology, corner_force, view, texture_reference, field_ink,
+                                 length=texture_length * scale, grain_pixels=texture_grain * scale,
+                                 speck_pixels=texture_speck * scale, ink_opacity=texture_opacity,
                                  downstream_fraction=.5)
         # Fade the seed ink with the local field too, so a vanishing field leaves no specks.
         magnitude = force.antinorm()                                # Scalar+[F]
         fade = concatenate([(magnitude / (magnitude + texture_fade)).batch()] * n_corners).to_array()  # [3 * F]
         coverage = drawing.composited([contours.picture(
-            face_points, split_topology, fade, np.repeat(fade[:, None], 3, axis=1), camera)])
+            face_points, split_topology, fade, np.repeat(fade[:, None], 3, axis=1), view)])
         field_layer[..., 3] *= coverage[..., 0]
         layers.append(field_layer)
-        layers.append(contours.picture(points, topology, voltage, np.zeros(3), camera,
+        layers.append(contours.picture(points, topology, voltage, np.zeros(3), view,
                                        lines=(lines,), opacity=0.))
-        layers.append(contours.picture(points, topology, fraction, np.zeros(3), camera,
-                                       levels=(edge,), opacity=0.))
+        layers.append(contours.picture(points, topology, fraction, np.zeros(3), view,
+                                       levels=(boundary_edge,), opacity=0.))
         yield composited_frame(layers)
 
 

@@ -21,6 +21,10 @@ step = curvature.lstsq(-slope, rcond=1e-4)                        # [cameras] Bi
 
 Evaluating the cone directly preserves its intended measurement weighting instead of squaring it and introducing an arbitrary coefficient norm on planes, leaving the local curvature and slope ready for the linear solve. In the joint problem, stepping cameras by twists (`Bivector+`) and landmarks by spatial directions (`Antivector-`) keeps each landmark block three-dimensional and nonsingular, so eliminating the landmarks in the Schur complement uses a direct solve rather than a pseudoinverse over homogeneous coordinates.
 
+<p align="center"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligning step by step, with their sight cones and the splat ellipsoids they fuse into" width="300" /></p>
+
+*Figure: three cameras aligning step by step from image measurements, showing their back-projected sight cones and the orange landmark ellipsoids formed by summing those cones across views.*
+
 In matrix notation, a cone cost $x^{\mathsf T}Qx$ composed with a point-motion Jacobian $M$ gives the Gauss–Newton Hessian $M^{\mathsf T}QM$, whereas treating the polar plane $Qx$ as a Euclidean residual produces $M^{\mathsf T}Q^{\mathsf T}QM$ with a squared copy of $Q$.
 
 ### Motion and force in robot control
@@ -53,6 +57,10 @@ flux_pullback = areas.adjugate()                                  # [] Bivector+
 ```
 
 As algebraic maps, both `areas` and `flux_pullback` remain defined when a deformation becomes singular, extending cofactor area transport beyond the regular regime where a physical Cauchy stress is defined. For a regular deformation, stress conversions follow the same composition: composing a Cauchy traction map (from current patches to current forces) with `areas` gives the first Piola–Kirchhoff map on reference patches, and pulling the force output back through the inverse deformation gives the second Piola–Kirchhoff map, with each factor's domain and codomain explicit.
+
+<p align="center"><img src="../plots/area_transport.gif" alt="A cube sheared and flattened to zero volume on the left, with bars tracking its three face areas and volume on the right" width="600" /></p>
+
+*Figure: a cube sheared and flattened onto a horizontal plane on the left, while the bars on the right track its three face areas and its volume through the collapse to zero volume.*
 
 In the matrix notation of continuum mechanics, for a regular orientation-preserving deformation $F$ with Jacobian determinant $J$, deformed and reference area vectors satisfy $n\,da=J F^{-\mathsf T}N\,dA$ ([Piola transformation](https://authors.library.caltech.edu/records/s9jhk-sn323/files/MFE_Chapter_1.pdf?download=1), §1.7), and for Cauchy traction $t=\sigma n$ the first and second Piola–Kirchhoff stresses read $P=J\sigma F^{-\mathsf T}$ and $S=F^{-1}P$ ([definitions of the Piola–Kirchhoff stresses](https://authors.library.caltech.edu/records/s9jhk-sn323/files/MFE_Chapter_2.pdf?download=1), §2.2).
 
@@ -163,6 +171,10 @@ With the double-cover sign of `tip` aligned to `root` beforehand so antipodal re
 ### Electromagnetic fields under a boost
 
 Vector electrodynamics transforms electric and magnetic fields under a Lorentz boost through separate parallel and transverse three-vector formulas ([Lorentz transformations of the fields](https://www.feynmanlectures.caltech.edu/II_26.html), §26-3, Table 26-4), whereas tensor electrodynamics transforms an antisymmetric four-by-four field matrix. Spacetime algebra represents the electromagnetic field as a single spacetime bivector boosted by a rotor and split into electric and magnetic parts only relative to a chosen observer's velocity ([spacetime bivector electrodynamics](https://davidhestenes.net/geocalc/pdf/SpacetimePhysics.pdf), §§III–IV, VI), which the [moving-charge example](../examples/electromagnetism/moving_charge/moving_charge.ipynb) types as `Bivector+` and boosts directly from a Coulomb rest field by `boost >> field`.
+
+<p align="center"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling near the speed of light, sending a spiral wave of boosted electromagnetic field outward" width="300" /></p>
+
+*Figure: a point charge circling near the speed of light, with its boosted electromagnetic field spiralling outward from the retarded worldline.*
 
 ### Composition of boosts
 

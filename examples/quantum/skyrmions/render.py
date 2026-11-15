@@ -115,10 +115,11 @@ def spin_frames(
     bonds: Extensor,
     periods: Extensor,
     states: Iterable[Extensor],
+    n_view_pixels: int = n_pixels,
 ) -> Iterator[np.ndarray]:
     """Yields RGB frames of the tiled spin texture as each state (`Spin-[V]`) arrives from `states`."""
     places, tile_topology = tiled_triangles(topology, vertices, bonds, periods)
-    view = film_camera(periods, np.zeros(2), period_bounds(periods), n_pixels)
+    view = film_camera(periods, np.zeros(2), period_bounds(periods), n_view_pixels)
     for spins in states:
         yield white_composite(composited(spin_layers(topology, spins, places, tile_topology, view)))
 

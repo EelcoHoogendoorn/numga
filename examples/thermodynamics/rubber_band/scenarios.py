@@ -119,5 +119,16 @@ def main() -> None:
                    "rubber_band_lamp_and_pull", frame_duration_ms)
 
 
+def pinned() -> None:
+    """Saves the repository-tracked animation of the lamp-driven heat engine beside the hand-pulled band."""
+    from examples.thermodynamics.rubber_band import render
+    from examples.util.animation import pin_animation
+
+    topology, in_weight, states = engine_and_pull(n_settling)
+    pin_animation(render.animate_together(topology, in_weight, lamp, room_temperature, lamp_temperature, pull_swing,
+                                          pull_drop, states),
+                  "rubber_band_lamp_and_pull", frame_duration_ms)
+
+
 if __name__ == "__main__":
     main()

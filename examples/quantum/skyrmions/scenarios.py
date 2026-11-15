@@ -17,6 +17,7 @@ n_sites = 48
 twist_angle = 0.55
 damping, time_step, n_substeps = 0.5, 0.2, 12
 frame_duration_ms = 40
+n_gallery_colours = 24
 
 # Crystallization uses geometrically growing time steps so early aggregation and late lattice relaxation advance evenly across frames.
 crystal_field, n_crystal_frames, first_time_step = 0.4, 140, 0.014
@@ -258,6 +259,22 @@ def main() -> None:
     total_energy = core.energy(topology, carriers, crystal_field * core.film, crystal)   # [] Scalar+
     decomposed_energy = heisenberg + dzyaloshinskii_moriya + anisotropy + zeeman         # [] Scalar+
     assert bool((total_energy - decomposed_energy).abs() < 1e-9 * total_energy.abs())
+
+
+def pinned() -> None:
+    """Saves the gallery animation of a skyrmion crystal swelling, collapsing, and nucleating stripes under a field sweep."""
+    from examples.quantum.skyrmions import render
+    from examples.util.animation import pin_animation
+
+    topology, vertices, bonds, periods, carriers = torus_lattice(n_sites)
+    *_, crystal = crystallization(topology, bonds, carriers)
+    pin_animation(
+        render.spin_frames(topology, vertices, bonds, periods, field_sweep(topology, bonds, carriers, crystal),
+                           render.n_panel_pixels),
+        "skyrmions",
+        frame_duration_ms,
+        colors=n_gallery_colours,
+    )
 
 
 if __name__ == "__main__":
