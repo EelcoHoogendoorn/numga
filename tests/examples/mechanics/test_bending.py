@@ -41,7 +41,7 @@ def test_stiffness_holds_the_area_and_the_second_moments():
         walls = topology.incidence[1, 0] * nodes
         rigidity = core.bending_stiffness(walls, thickness, scenarios.modulus)
         axial_energy = core.shift_along_beam & rigidity(core.shift_along_beam)
-        assert bool((axial_energy - scenarios.modulus * area).abs() < 1e-12 * area)
+        assert (axial_energy - scenarios.modulus * area).abs() < 1e-12 * area
         square = stack([core.mv.y, core.mv.x])                              # [2] Plane+
         centre = core.centroid(walls, thickness)                            # [] Point-
         turns = (square - (square & centre) * core.mv.w) ^ core.section_plane  # [2] Strain+
@@ -70,7 +70,7 @@ def test_slotted_tube_matches_a_thin_circular_arc():
     turns = (square - (square & centre) * core.mv.w) ^ core.section_plane   # [2] Strain+
     # Polygonal approximation tolerances match the discretized circular arc.
     total_area = ((tail & head).norm() * thickness).sites.sum()
-    assert bool((total_area - area).abs() < 1e-2 * area)
+    assert (total_area - area).abs() < 1e-2 * area
     np.testing.assert_allclose(render.section_coordinates(centre), [centre_x, 0.0], rtol=1e-2, atol=1e-12)
     expected = scenarios.modulus * np.array([up, across])
     assert (((turns & rigidity(turns)) - expected).abs() < 1e-2 * expected).all()
@@ -81,12 +81,12 @@ def test_warping_from_the_shear_centre_is_invisible_to_bending():
     for topology, nodes, thickness in section_walls():
         shear = core.shear_centre(topology, nodes, thickness)
         couples = core.warping(topology, nodes, thickness, shear).cast(core.Couples)
-        assert bool(couples.dual().norm() < 1e-12)
+        assert couples.dual().norm() < 1e-12
     for topology, nodes, thickness in section_walls()[:-1]:
         # Mirror or half-turn symmetry places the shear centre on the centroid.
         shear = core.shear_centre(topology, nodes, thickness)
         centre = core.centroid(topology.incidence[1, 0] * nodes, thickness)
-        assert bool((shear & centre).norm() < 1e-12)
+        assert (shear & centre).norm() < 1e-12
 
 
 def test_torque_twists_about_the_shear_centre():
@@ -100,7 +100,7 @@ def test_torque_twists_about_the_shear_centre():
             scenarios.beam_length, scenarios.modulus, scenarios.shear_modulus, 2)
         angle = torque * scenarios.beam_length / torsion_constant
         expected_turn = (core.mv.xy * (-angle / 2)).exp()
-        assert bool(((expected_turn >> core.mv.x.dual()) - (frames[-1] >> core.mv.x.dual())).dual().norm() < 1e-12 * angle)
+        assert ((expected_turn >> core.mv.x.dual()) - (frames[-1] >> core.mv.x.dual())).dual().norm() < 1e-12 * angle
         np.testing.assert_allclose(render.section_coordinates(frames[-1] >> shear),
                                    render.section_coordinates(shear), atol=1e-12)
         # Loading through the shear centre bends the cantilever without twisting it about the beam.
@@ -118,7 +118,7 @@ def test_neutral_axes_and_principal_bending_directions():
         strains, _, principal, _ = core.cantilever(
             topology, nodes, thickness, core.tip_points(centre, scenarios.beam_length) & down_load,
             scenarios.beam_length, scenarios.modulus, scenarios.shear_modulus, 2)
-        assert bool((centre & strains[0].cast(core.Strain)).norm() < 1e-12)
+        assert (centre & strains[0].cast(core.Strain)).norm() < 1e-12
         assert ((centre & principal).norm() < 1e-12).all()
 
 
@@ -128,7 +128,7 @@ def test_kern_and_reciprocity():
         walls = topology.incidence[1, 0] * nodes
         rigidity = core.bending_stiffness(walls, thickness, scenarios.modulus)
         centre = core.centroid(walls, thickness)
-        assert bool(core.polar_strains(rigidity, centre).norm() < 1e-12)
+        assert core.polar_strains(rigidity, centre).norm() < 1e-12
         _, stresses, polars = core.axial_pushes(
             topology, nodes, thickness, push_points, scenarios.modulus, scenarios.axial_push)
         assert (stresses[0] < 0).all() and (stresses[1] > 0).any()

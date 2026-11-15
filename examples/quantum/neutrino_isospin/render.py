@@ -94,7 +94,7 @@ def path_marks(path: core.Isospin, view: solids.View) -> tuple[Draw, tuple[solid
 def flavor_labels(ax: plt.Axes, view: solids.View) -> None:
     """Places pole labels just beyond the electron and muon flavor markers in `ax`."""
     for (x, y), name, colour in zip(view.across(solids.origin + flavor_directions * label_distance),
-                                    ("\u03bd\u2091", "\u03bd\u03bc"), flavor_colours):
+                                    (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):
         ax.text(x, y, name, ha="center", va="center", fontweight="bold", color=colour)
 
 

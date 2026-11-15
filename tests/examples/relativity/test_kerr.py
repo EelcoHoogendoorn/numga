@@ -185,7 +185,7 @@ def test_disk_opacity_face_on_and_where_its_gas_recedes():
     approaching, receding = core.disk_opacity(sides, slanted, mv.scalar([depth]), mv.z, mv.xy, spin, mass)
 
     assert ((straight - (1 - np.exp(-depth))).abs() < 1e-4).all()
-    assert bool((receding > approaching).all())
+    assert (receding > approaching).all()
 
 
 def test_frequency_ratio_of_orbiting_gas_seen_by_a_camera_at_rest():
@@ -219,11 +219,11 @@ def test_relativistic_thin_disk_temperature():
 
     assert ((nearly_still - schwarzschild).abs() < 1e-6).all()
     edge = core.innermost_stable_orbit(orbit, orbit.dual() * 0.8, mass)
-    assert bool((core.disk_temperature(edge, orbit, orbit.dual() * 0.8, mass, scale) < 1e-3).all())
+    assert (core.disk_temperature(edge, orbit, orbit.dual() * 0.8, mass, scale) < 1e-3).all()
     sample_radii = mv.scalar(np.linspace(6.0, 20.0, 32)[:, None])
     peak_low = core.disk_temperature(sample_radii, orbit, orbit.dual() * 0.5, mass, scale)
     peak_high = core.disk_temperature(sample_radii, orbit, orbit.dual() * 0.8, mass, scale)
-    assert bool((peak_high > peak_low).any())
+    assert (peak_high > peak_low).any()
 
 
 def test_innermost_stable_orbit():

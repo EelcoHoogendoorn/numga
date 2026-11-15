@@ -199,7 +199,7 @@ def corner_phases(topology: Topology, vertices: core.Point, lines: core.Point,
         expected = unwrapped_phases[-1] + target[:, side]
         plane = corner_patches[(side + 1) % 3].dual()[:, None]                                    # [F, 1] Bivector+
         mismatch = (plane * (local_phase[:, (side + 1) % 3] - expected)).exp()                    # [F, n_families] Rotor+
-        unwrapped_phases.append(expected + mismatch.log().scalar_product(plane))
+        unwrapped_phases.append(expected + mismatch.log().scalar_product(~plane))
     phase_walk = stack(unwrapped_phases, axis=1)                                                  # [F, 4, n_families] Scalar+
     turns = np.rint(((phase_walk[:, 3] - phase_walk[:, 0]) / (2 * np.pi)).to_array()).astype(int)  # [F, n_families]
     corner_angles = phase_walk[:, :3] - 2 * np.pi * turns[:, None] * (np.arange(3) / 3)[:, None]  # [F, 3, n_families] Scalar+

@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import gc
 import io
+import os
 import shutil
 import sys
 import time
@@ -122,6 +123,8 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: 
     """Quantizing `[rows, columns, 3]` RGB `frames` to a shared modal palette writes a looping GIF at
     `path` at the frames' native pixel dimensions."""
     frames = list(frames)
+    if os.environ.get("NUMGA_NO_PLOT_WRITES") == "1":
+        return path
 
     # Sampling per-frame palettes gives short transient flashes weight alongside colours present in
     # every frame, and picking each cluster's modal colour rather than its mean keeps flat backgrounds exact.
@@ -155,6 +158,8 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: 
 def kept(path: Path) -> Path:
     """Each directory in `DUMP_DIRS` receives an auto-numbered copy of `path` before `path` is
     printed and returned."""
+    if os.environ.get("NUMGA_NO_PLOT_WRITES") == "1":
+        return path
     for dump in DUMP_DIRS:
         dump.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, auto_increment_path(dump / path.name))
@@ -166,6 +171,10 @@ def save_figure(figure: plt.Figure, name: str) -> Path:
     """Saves `figure` to `PLOT_DIR/<name>.png` and records a numbered copy in each `DUMP_DIRS`
     folder."""
     path = PLOT_DIR / f"{name}.png"
+    if os.environ.get("NUMGA_NO_PLOT_WRITES") == "1":
+        plt.close(figure)
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path, **CROP)
     return kept(path)
 
@@ -173,6 +182,10 @@ def save_figure(figure: plt.Figure, name: str) -> Path:
 def pin_figure(figure: plt.Figure, name: str) -> Path:
     """Saves `figure` via `save_figure` and copies the PNG over the tracked `PINNED_DIR/<name>.png`."""
     pinned = PINNED_DIR / f"{name}.png"
+    if os.environ.get("NUMGA_NO_PLOT_WRITES") == "1":
+        plt.close(figure)
+        return pinned
+    pinned.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(save_figure(figure, name), pinned)
     print(f"Pinned {pinned}")
     return pinned
@@ -213,7 +226,11 @@ def pin_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, col
     """Saves `frames` via `save_animation` and copies the GIF over the tracked
     `PINNED_DIR/<name>.gif`."""
     pinned = PINNED_DIR / f"{name}.gif"
-    shutil.copyfile(save_animation(frames, name, duration_ms, colors, forward_then_back, stepped), pinned)
+    saved = save_animation(frames, name, duration_ms, colors, forward_then_back, stepped)
+    if os.environ.get("NUMGA_NO_PLOT_WRITES") == "1":
+        return pinned
+    pinned.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(saved, pinned)
     print(f"Pinned {pinned}")
     return pinned
 
@@ -249,6 +266,8 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_
         shown.update(embedded(images[-1], "PNG", count, compress_level=1))
     if forward_then_back:
         images = forward_and_back(images)
+    if os.environ.get("NUMGA_NO_PLOT_WRITES") == "1":
+        return
     path = PLOT_DIR / f"{name}.gif"
     save_gif([np.asarray(image) for image in images], str(path), duration_ms, colors)
     shown.update(HTML(scaled_image(kept(path).read_bytes(), "gif", images[0].width)))

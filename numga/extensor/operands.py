@@ -8,9 +8,9 @@ run.
 
 Each promotion maps its operand category to a canonical `Extensor`. Plain Python numbers become
 extrinsic `Scalar` values, backend arrays of any rank append a length-1 blade axis to form `Scalar`
-batches of the array's exact shape (switching a NumPy context to `JaxContext` when paired with a JAX
-array or tracer), and a nullary `GAType` promotes to its identity linear map under `LINEAR`
-operators while remaining invalid as a `DIVISOR`.
+batches of the array's exact shape (promoting an exact context to the array's backend and switching
+a NumPy context to `JaxContext` when paired with a JAX array or tracer), and a nullary `GAType`
+promotes to its identity linear map under `LINEAR` operators while remaining invalid as a `DIVISOR`.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from __future__ import annotations
 from enum import Enum
 from numbers import Number
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 import numga
 from numga.gatype import GAType, UnorientedSubspace
@@ -80,8 +82,24 @@ def scalar(context: Context, number: Number) -> Extensor:
 
 def batch(context: Context, array: Any) -> Extensor:
     """Appending a length-one blade axis wraps a backend array as a `Scalar` batch of the array's
-    shape, switching a NumPy context to `JaxContext` when paired with a JAX array."""
-    if context.key[0] == "numpy" and type(array).__module__.split(".")[0] in ("jax", "jaxlib"):
+    shape, promoting an exact context to the array's backend and switching a NumPy context to
+    `JaxContext` when paired with a JAX array."""
+    module = type(array).__module__.split(".")[0]
+    if context.is_exact:
+        if module in ("jax", "jaxlib"):
+            from numga.backend.jax import JaxContext
+            dtype = np.dtype(array.dtype)
+            context = JaxContext(context.algebra, dtype if dtype.kind in "fc" else np.float64)
+        elif module == "torch":
+            import torch
+            from numga.backend.torch import TorchContext
+            dtype = array.dtype if array.is_floating_point() or array.is_complex() else torch.get_default_dtype()
+            context = TorchContext(context.algebra, dtype, array.device)
+        else:
+            from numga.backend.numpy import NumpyContext
+            dtype = np.dtype(array.dtype)
+            context = NumpyContext(context.algebra, dtype if dtype.kind in "fc" else np.float64)
+    elif context.key[0] == "numpy" and module in ("jax", "jaxlib"):
         from numga.backend.jax import JaxContext
         context = JaxContext(context.algebra)
     return context.multivector.scalar(array[..., None])

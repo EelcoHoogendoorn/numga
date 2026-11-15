@@ -5,7 +5,7 @@ growth, and figure rendering."""
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
+from numga import Algebra, stack
 from examples.electromagnetism.second_harmonic import core, render, scenarios
 
 mv = core.mv
@@ -23,7 +23,7 @@ def test_response_has_tetrahedral_component_law_and_ignores_magnetic_fields():
         first[:, 2] * second[:, 0] + first[:, 0] * second[:, 2],
         first[:, 0] * second[:, 1] + first[:, 1] * second[:, 0],
     ), axis=-1)).sum(axis=-1) & core.time                                      # [7] Polarization-
-    magnetic_fields = mv(core.Field.derive.within("x y z"), rng.normal(size=(2, 7, 3)))
+    magnetic_fields = mv(core.Field.derive.within(Algebra("x+y+z+")), rng.normal(size=(2, 7, 3)))
     assert ((crystal(first_field, second_field) - expected).norm_squared() < 1e-12).all()
     assert ((crystal(first_field)(second_field) - expected).norm_squared() < 1e-12).all()
     assert ((crystal(first_field + magnetic_fields[0], second_field + magnetic_fields[1]) - expected).norm_squared() < 1e-12).all()

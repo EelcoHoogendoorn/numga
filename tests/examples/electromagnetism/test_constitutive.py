@@ -20,11 +20,6 @@ electric_part = (Field - t * Field * t.inverse()) / 2
 magnetic_part = Field - electric_part
 
 
-def euclidean_norm(element):
-    """Positive-definite Euclidean norm (`Scalar+`) induced by the rest-frame observer `t`."""
-    return element.reverse().scalar_product(t * element.involute() * t.inverse()).square_root()
-
-
 def isotropic_medium(permittivity: float, permeability: float) -> core.Constitutive:
     """Isotropic medium with uniform `permittivity` and `permeability` across all three spatial axes."""
     return core.medium(np.full(3, permittivity), np.full(3, 1.0 / permeability))
@@ -37,7 +32,7 @@ def phase_speeds(medium_map: core.Constitutive, direction: core.Covector, speeds
 
 def test_unit_medium_matches_vacuum() -> None:
     fields = mv.bivector(np.random.default_rng(5).normal(size=(5, 6)))
-    assert (euclidean_norm(isotropic_medium(1.0, 1.0)(fields) - core.vacuum(fields)) < 1e-12).all()
+    np.testing.assert_allclose((isotropic_medium(1.0, 1.0)(fields) - core.vacuum(fields)).kernel, 0.0, atol=1e-12)
 
 
 def test_isotropic_medium_speed() -> None:
@@ -71,7 +66,7 @@ def test_constitutive_and_stress_energy_forms() -> None:
 
     vacuum_current = core.stress_energy(fields, core.vacuum(fields))
     for direction in (t, x, z):
-        assert (euclidean_norm(vacuum_current(direction.dual()) - (fields >> direction).dual() / 2) < 1e-11).all()
+        np.testing.assert_allclose((vacuum_current(direction.dual()) - (fields >> direction).dual() / 2).kernel, 0.0, atol=1e-11)
 
 
 def test_crystal_birefringence_and_ferrite_permeability() -> None:
@@ -88,8 +83,8 @@ def test_crystal_and_vacuum_eigenmodes_satisfy_maxwell() -> None:
     along_z = z.dual() & time
     across_z = mv.xy.dual()
 
-    assert (euclidean_norm(wavevectors ^ fields) < 1e-11).all()
-    assert (euclidean_norm(wavevectors ^ crystal(fields)) < 1e-11).all()
+    np.testing.assert_allclose((wavevectors ^ fields).kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose((wavevectors ^ crystal(fields)).kernel, 0.0, atol=1e-11)
     assert ((fields & along_z).abs() < 1e-11).all()
     assert ((fields & across_z).abs() < 1e-11).all()
 
@@ -100,8 +95,8 @@ def test_crystal_and_vacuum_eigenmodes_satisfy_maxwell() -> None:
     stress_form = core.Covector & core.stress_energy(modes, core.vacuum(modes))
 
     assert int((singular_values < 1e-11).sum()) == 2
-    assert (euclidean_norm(wavevector ^ modes) < 1e-11).all()
-    assert (euclidean_norm(wavevector ^ core.vacuum(modes)) < 1e-11).all()
+    np.testing.assert_allclose((wavevector ^ modes).kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose((wavevector ^ core.vacuum(modes)).kernel, 0.0, atol=1e-11)
     assert (action_form(modes, modes).abs() < 1e-11).all()
     assert (stress_form(t, time) > 0.0).all()
 
@@ -117,7 +112,7 @@ def test_axion_coupling_leaves_bulk_wave_speeds_and_stress_unchanged() -> None:
         axion_form = Field & axion
         action_change = (axion_form(field, field) - base_form(field, field)) / 2
         assert np.allclose(phase_speeds(axion, z, trial_speeds), phase_speeds(glass, z, trial_speeds), atol=scan_tolerance)
-        assert (euclidean_norm(action_change - coupling * (field & field) / 2) < 1e-11).all()
+        np.testing.assert_allclose((action_change - coupling * (field & field) / 2).kernel, 0.0, atol=1e-11)
         assert ((core.stress_energy(field, axion(field)) - base_current).svdvals().max() < 1e-11).all()
 
 
@@ -138,7 +133,7 @@ def test_lorentz_covariance_and_fresnel_drag() -> None:
     stress_form = core.Covector & current
     moved_stress_form = core.Covector & moved_current
 
-    assert (euclidean_norm(moving(fields) - rebuilt(fields)) < 1e-7).all()
+    np.testing.assert_allclose((moving(fields) - rebuilt(fields)).kernel, 0.0, atol=1e-7)
     assert ((moved_form(moved_fields, moved_fields) - form(fields, fields)).abs() < 1e-7).all()
     assert ((moved_current - (boost >> current(boost << core.Direction))).svdvals().max(axis=-1) < 1e-7).all()
     assert ((moved_stress_form(observer, -observer.dual()) - stress_form(t, time)).abs() < 1e-7).all()

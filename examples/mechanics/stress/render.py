@@ -128,7 +128,7 @@ def mohr_axes(ax, stresses: core.Scalar) -> None:
     (`[3] Scalar+`)."""
     ordered = np.sort(stresses.to_array())
     # Place the outer two labels just outside the outer circle and the middle label below its marker.
-    for stress, label, shift, align in zip(ordered, ["\u03c3\u2081", "\u03c3\u2082", "\u03c3\u2083"], (-5, 0, 5),
+    for stress, label, shift, align in zip(ordered, ["$\\sigma_1$", "$\\sigma_2$", "$\\sigma_3$"], (-5, 0, 5),
                                            ("right", "center", "left")):
         ax.annotate(label, (stress, 0), xytext=(shift / 2, -2), textcoords="offset points", ha=align, va="top",
                     color="#1e293b")
@@ -136,8 +136,8 @@ def mohr_axes(ax, stresses: core.Scalar) -> None:
     span = 1.3 * radius
     ax.set_xlim(centre - span, centre + span)
     ax.set_ylim(-span, span)
-    ax.text(centre + 0.95 * span, 0.04, "\u03c3", ha="right", va="bottom", color="#64748b")
-    ax.text(0.04, 0.95 * span, "\u03c4", ha="left", va="top", color="#64748b")
+    ax.text(centre + 0.95 * span, 0.04, "$\\sigma$", ha="right", va="bottom", color="#64748b")
+    ax.text(0.04, 0.95 * span, "$\\tau$", ha="left", va="top", color="#64748b")
     ax.set_aspect("equal")
     ax.set_axis_off()
 

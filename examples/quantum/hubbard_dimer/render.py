@@ -20,9 +20,9 @@ if TYPE_CHECKING:
 
 colours = ("#7d3c98", "#2e86c1", "#c0392b")
 configuration_labels = (
-    "L\u2191 L\u2193", "L\u2191 R\u2191",
-    "L\u2191 R\u2193", "L\u2193 R\u2191",
-    "L\u2193 R\u2193", "R\u2191 R\u2193",
+    r"$L\uparrow\,L\downarrow$", r"$L\uparrow\,R\uparrow$",
+    r"$L\uparrow\,R\downarrow$", r"$L\downarrow\,R\uparrow$",
+    r"$L\downarrow\,R\downarrow$", r"$R\uparrow\,R\downarrow$",
 )
 
 
@@ -47,15 +47,15 @@ def spectrum_figure(repulsion: np.ndarray, hopping: float, energies: core.Scalar
     # Zero energy marks the level where the three triplets remain independent of repulsion.
     levels.axhline(0, color="black", linewidth=charts.FRAME_WIDTH, zorder=0)
     levels.set(xlim=(ratios[0], ratios[-1]), xticks=[], yticks=[],
-               xlabel="repulsion / hopping", ylabel="energy / hopping")
+               xlabel=r"repulsion / hopping, $U/t$", ylabel=r"energy / hopping, $E/t$")
     levels.spines[["top", "right"]].set_visible(False)
     levels.legend((ground_line, triplet_lines[0], charge_lines[0]),
                   ("singlet ground state", "three triplets", "two excited singlets"), loc="upper left", frameon=False)
 
     gap.plot(ratios, exchange_gap / hopping, color=colours[0], label="from the singlet block")
-    gap.plot(strong_repulsion / hopping, perturbative / hopping, "--", color="0.5", label="strong-repulsion limit")
+    gap.plot(strong_repulsion / hopping, perturbative / hopping, "--", color="0.5", label=r"$4t^2/U$")
     gap.set(xlim=(ratios[0], ratios[-1]), ylim=(0, exchange_gap[0] / hopping * 1.05), xticks=[], yticks=[],
-            xlabel="repulsion / hopping", ylabel="singlet-triplet gap / hopping")
+            xlabel=r"repulsion / hopping, $U/t$", ylabel=r"singlet-triplet gap / hopping, $J/t$")
     gap.spines[["top", "right"]].set_visible(False)
     gap.legend(loc="upper right", frameon=False)
     return figure
@@ -69,7 +69,7 @@ def ground_states_figure(names: tuple[str, ...], repulsion_ratios: np.ndarray, p
     ax.invert_yaxis()
     ax.set(xticks=np.arange(len(configuration_labels)) + 0.5, yticks=np.arange(len(names)) + 0.5)
     ax.set_xticklabels(configuration_labels)
-    ax.set_yticklabels([f"{name}\nrepulsion {ratio:g}" for name, ratio in zip(names, repulsion_ratios)])
+    ax.set_yticklabels([f"{name}\n$U/t = {ratio:g}$" for name, ratio in zip(names, repulsion_ratios)])
     ax.set_xlabel("electron configuration")
     ax.tick_params(length=0)
     bar = figure.colorbar(heatmap, ax=ax, shrink=0.85, pad=0.02, ticks=[0, 0.25, 0.5])
@@ -88,7 +88,7 @@ def exchange_figure(phase: np.ndarray, probabilities: core.Scalar, spin_only: np
         approximation, = ax.plot(phase / np.pi, spin_only, "--", color="0.5")
         charge, = ax.plot(phase / np.pi, case[:, 0] + case[:, 5], color=colours[2])
         ax.set(xlim=(phase[0] / np.pi, phase[-1] / np.pi), ylim=(0, 1.05), xticks=[], yticks=[0, 0.5, 1])
-        styled_axes(ax, "exchange phase / half-turns", "")
+        styled_axes(ax, r"exchange phase, $J\tau/(\pi\hbar)$", "")
     axes[0].set_ylabel("probability")
     figure.legend((swapped, approximation, charge),
                   ("spins swapped", "spin-only prediction", "both electrons on one site"),
@@ -101,9 +101,9 @@ def transfer_figure(asymmetries: np.ndarray, charge_differences: core.Scalar, na
     """Ground-state occupation difference rises toward two electrons as site asymmetry outweighs repulsion."""
     figure, ax = charts.subplots(440, 280, layout="constrained")
     for curve, name, ratio, colour in zip(charge_differences.to_array(), names, repulsion_ratios, colours):
-        ax.plot(asymmetries, curve, color=colour, label=f"{name}, repulsion {ratio:g}")
+        ax.plot(asymmetries, curve, color=colour, label=f"{name}, $U/t = {ratio:g}$")
     ax.set(xlim=(asymmetries[0], asymmetries[-1]), ylim=(0, 2.05), xticks=repulsion_ratios, yticks=[0, 1, 2])
-    styled_axes(ax, "site asymmetry / hopping", "occupation difference")
+    styled_axes(ax, r"site asymmetry / hopping, $\Delta v/t$", r"occupation difference, $n_L - n_R$")
     ax.legend(frameon=False, loc="lower right")
     return figure
 

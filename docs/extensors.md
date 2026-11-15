@@ -449,7 +449,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
-<p align="center"><img src="../plots/piezoelectric.gif" alt="A clamped strip of two bonded piezoelectric layers bending up and down as the voltage across its electrodes swings, one layer stretching while the other shortens" width="525" /></p>
+<p align="center"><img src="../plots/piezoelectric.gif" alt="A clamped strip of two bonded piezoelectric layers bent up and down at its free tip, strained near its root while a voltage builds along its floating electrode" width="525" /></p>
 
 ```python
 stretches = (directions & Point) * (Plane & directions.dual())          # [2] Scalar+ <- (Point-, Plane+)

@@ -38,11 +38,19 @@ if TYPE_CHECKING:
     from numga import Algebra
     from numga.backend.context import Context
 
-# Latest named figures go to `NUMGA_PLOTS` when shared across checkouts, to `<repo>/plots/latest`
-# inside a repository checkout, or to `./plots` when running from an installed copy such as Colab.
+# Latest named figures go to `NUMGA_PLOTS` when explicitly set, to the workspace's shared `../plots`
+# when running inside a multi-checkout workspace, to `<repo>/plots/latest` inside a standalone
+# repository checkout, or to `./plots` when running from an installed copy such as Colab.
 ROOT = Path(__file__).resolve().parents[1]
-PLOT_DIR = Path(os.environ.get("NUMGA_PLOTS", ROOT / "plots" / "latest" if (ROOT / "pyproject.toml").exists() else Path.cwd() / "plots"))
-PLOT_DIR.mkdir(parents=True, exist_ok=True)
+_SHARED_PLOTS = ROOT.parent / "plots"
+PLOT_DIR = Path(
+    os.environ.get(
+        "NUMGA_PLOTS",
+        (_SHARED_PLOTS if _SHARED_PLOTS.is_dir() else ROOT / "plots" / "latest")
+        if (ROOT / "pyproject.toml").exists()
+        else Path.cwd() / "plots",
+    )
+)
 # Optional `NUMGA_PLOTS_DUMP` directories accumulate numbered copies of every saved figure during
 # development without overwriting earlier iterations.
 DUMP_DIRS = tuple(Path(folder) for folder in os.environ.get("NUMGA_PLOTS_DUMP", "").split(os.pathsep) if folder)

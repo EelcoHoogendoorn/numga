@@ -17,6 +17,7 @@ from numga.sparse import Sparse, SparseExtensor, spdiag
 from numga.topology import Topology
 
 # The projective plane for spatial placement, joined with degenerate directions for volume, mass, entropy and salt.
+plane = Algebra("x+y+")
 space = Algebra("x+y+w0")
 quantities = Algebra("v0m0s0n0")
 ga = space * quantities
@@ -26,8 +27,8 @@ Antiscalar = ga.gatype.antiscalar()                                           # 
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # Spatial coordinate planes and drives coupling spatial gradients to material quantities.
-Upright = Plane.derive.within("x y")                                          # Vector+
-Drive = ga.gatype.bivector().derive.touching("x y", quantities)               # Bivector+
+Upright = Plane.derive.within(plane)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(plane, quantities)               # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 # Horizontal and vertical spatial directions and their conjugate coordinate planes.
 length = mv.x.dual()                                                          # [] Point-

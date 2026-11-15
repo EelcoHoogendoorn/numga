@@ -96,7 +96,7 @@ def main() -> None:
                 "hubbard_dimer_ground_states")
     save_figure(render.exchange_figure(phase, probabilities, spin_only), "hubbard_dimer_exchange")
 
-    dial_rows = [f"{name}\nrepulsion {ratio:g}" for name, ratio in zip(names, repulsions / hopping)]
+    dial_rows = [f"{name}\n$U/t = {ratio:g}$" for name, ratio in zip(names, repulsions / hopping)]
     dial_history = []
 
     def dial_stream() -> Iterator[tuple[core.Pair, core.Pair]]:

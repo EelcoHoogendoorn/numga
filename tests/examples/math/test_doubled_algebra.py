@@ -87,7 +87,7 @@ def test_split_algebra_recovers_arbitrary_maps_across_dimensions(n_dims: int):
     context = NumpyContext(ga)
     mv = context.multivector
     Full = ga.gatype.full()
-    State = Full.derive.within(" ".join(positive_names))
+    State = Full.derive.within(Algebra("".join(name + "+" for name in positive_names)))
     positive = [getattr(mv, name) for name in positive_names]
     negative = [getattr(mv, name) for name in negative_names]
     creators = [(first + second) / 2 for first, second in zip(positive, negative)]

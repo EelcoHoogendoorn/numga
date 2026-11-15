@@ -131,7 +131,7 @@ def draw_conservation(times: np.ndarray, inviscid_energy: core.Scalar, viscous_e
     history.plot(times, energy_vis / energy_inv[0], color=energy_colour)
     history.plot(times, enstrophy_vis / enstrophy_inv[0], color=enstrophy_colour)
     history.set(xlim=(times[0], times[-1]), ylim=(0, 1.08), xticks=[0, times[-1]], yticks=[0, 1],
-                xlabel="time", ylabel="relative energy, enstrophy")
+                xlabel="time", ylabel=r"relative $E(t),\, Z(t)$")
     plain_axes(history)
 
     spectrum.plot(mode_indices, np.cumsum(initial_modes), color="0.65", linestyle="--")

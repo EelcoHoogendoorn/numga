@@ -1,18 +1,12 @@
 """Tests for half-wave transmission, nilpotence, and reflection equivariance of black polarization sandwiches."""
 
+import numpy as np
+
 from numga import stack
 from examples.optics.black_sandwich import core, render, scenarios
 
 
 round_off = 1e-12
-
-
-def _max_entry(value) -> core.Scalar:
-    """Largest absolute basis coefficient of a `Field+` or `OpticalMap` extensor."""
-    mv = core.mv
-    basis_fields = stack((mv.xy, mv.xz, mv.yz, mv.xt, mv.yt, mv.zt))           # [6] Field+
-    evaluated = value(basis_fields[(slice(None),) + (None,) * value.ndim]) if value.arity else value
-    return (evaluated[..., None] & basis_fields.dual()).abs().max()
 
 
 def test_half_wave_transmission_and_nilpotence():
@@ -29,11 +23,11 @@ def test_half_wave_transmission_and_nilpotence():
     dyad = core.field_along(output_axis) * (core.Field & entrance_sweep)       # [] Field+ <- Field+
     strength = plates(core.field_along(input_axis)) & exit_sweep               # [5] Scalar+
 
-    assert bool(_max_entry(plates(plates) - core.Field) < round_off)
+    np.testing.assert_allclose((plates(plates) - core.Field).kernel, 0, atol=round_off)
     assert ((passed - expected).abs() < round_off).all()
-    assert bool(_max_entry(sandwiches - strength * dyad) < round_off)
-    assert bool(_max_entry(sandwiches(sandwiches)) < round_off)
-    assert bool(_max_entry(fields[:, 4:]) < round_off)
+    np.testing.assert_allclose((sandwiches - strength * dyad).kernel, 0, atol=round_off)
+    np.testing.assert_allclose(sandwiches(sandwiches).kernel, 0, atol=round_off)
+    np.testing.assert_allclose(fields[:, 4:].kernel, 0, atol=round_off)
     assert ((passed.max() - 1).abs() < round_off).all()
 
     frame = next(render.sandwich_animation(input_axis, output_axis, states[:1]))
@@ -58,6 +52,6 @@ def test_reflecting_components_reflects_optical_map():
     incident = core.field_along(moved_input)                                   # [] Field+
     moved_fields = core.stack_stage_fields(moved_entrance, moved_plates, moved_exit, incident)  # [5, 7] Field+
 
-    assert bool(_max_entry(rebuilt - moved) < round_off)
-    assert bool(_max_entry(moved_fields - (mirror >> fields)) < round_off)
-    assert bool(_max_entry(rebuilt(rebuilt)) < round_off)
+    np.testing.assert_allclose((rebuilt - moved).kernel, 0, atol=round_off)
+    np.testing.assert_allclose((moved_fields - (mirror >> fields)).kernel, 0, atol=round_off)
+    np.testing.assert_allclose(rebuilt(rebuilt).kernel, 0, atol=round_off)

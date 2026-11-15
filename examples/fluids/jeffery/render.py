@@ -81,8 +81,8 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
                                  gloss=solids.gloss)
         ax = figure.add_axes((body_index / n_bodies, 0, 1 / n_bodies, 1))
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
-        labels(ax, view, solids.origin + solids.axes.dual() * label_distance, ["z", "x", "y"], ha="center",
-               va="center", color=label_colour, fontstyle="italic")
+        labels(ax, view, solids.origin + solids.axes.dual() * label_distance, ["$z$", "$x$", "$y$"], ha="center",
+               va="center", color=label_colour)
     return figure
 
 

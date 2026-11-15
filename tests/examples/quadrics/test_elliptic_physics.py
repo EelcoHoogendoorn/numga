@@ -33,9 +33,9 @@ def test_overlap_margin_sign():
     second_body = S2.ellipsoid_quadric(np.tan(np.radians([25.0, 25.0]))).inverse()
     second = S2.world_quadrics(turns, second_body)
     margin, _ = S2.quadric_overlap(first, second)
-    assert bool(margin[0] > 0.005)
-    assert bool(margin[1].abs() < 2e-3)
-    assert bool(margin[2] < -0.005)
+    assert margin[0] > 0.005
+    assert margin[1].abs() < 2e-3
+    assert margin[2] < -0.005
 
 
 def test_ellipse_inertia_has_an_intermediate_axis():

@@ -189,16 +189,16 @@ def main() -> None:
 
 
 def pinned() -> None:
-    """Writes the gallery animation of the voltage-driven piezoelectric bimorph."""
+    """The gallery animation of the open-circuit piezoelectric bimorph bending sensor."""
     from examples.electromagnetism.piezoelectric import render
     from examples.util.animation import pin_animation
 
     topology, vertices, areas, gradients, poling, top_electrode, tip_distribution, material, blocks = device()
-    actuator = actuation(topology, gradients, top_electrode, tip_distribution, blocks)
+    sensor = sensing(topology, gradients, top_electrode, tip_distribution, blocks)
     pin_animation(
         render.animate(
-            topology, vertices, areas, displacement_scale, applied_voltage, strain_scale,
-            core.load_cycle(*actuator, n_frames),
+            topology, vertices, areas, displacement_scale, sensor_voltage_scale, strain_scale,
+            core.load_cycle(*sensor, n_frames),
         ),
         "piezoelectric",
         frame_duration_ms,

@@ -66,7 +66,7 @@ def compile_sparse_bind(
     for coordinate, coefficient in np.ndenumerate(kernel.values):
         if not coefficient:
             continue
-        coefficient = int(coefficient)
+        coefficient = float(coefficient)
         rows = []
         for binding in plan.bindings:
             required_row = coordinate[binding.axis + 1]
@@ -80,7 +80,7 @@ def compile_sparse_bind(
             rows.append(row)
         else:
             groups[tuple(coordinate[dimension] for dimension in retained)].append(
-                (dtype.type(float(coefficient)), tuple(rows))
+                (dtype.type(coefficient), tuple(rows))
             )
     terms_by_output = tuple(groups.items())
 

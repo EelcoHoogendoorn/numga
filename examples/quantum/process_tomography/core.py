@@ -44,13 +44,13 @@ def noisy_gate(
 ) -> Channel:
     """Independent phase noise, relaxation toward the north pole, and a coherent turn form a gate channel (`[...] Point- <- Point-`)."""
     # Phase flip replaces the state with its half turn about the z axis with probability phase_flip.
-    dephasing = Point + phase_flip * ((mv.xy >> Point) - Point)              # [...] Point- <- Point-
+    dephasing = (1 - phase_flip) * Point + phase_flip * (mv.xy >> Point)     # [...] Point- <- Point-
     # Relaxation sends decayed weight to the north pole, read off by pairing with the plane at infinity.
     decay = north * (mv.w & Point)                                           # [] Point- <- Point-
     # A half turn about the z axis reverses the transverse spin components while fixing the axis.
     transverse = (Point - (mv.xy >> Point)) / 2                              # [] Point- <- Point-
     # Unobserved decay retains transverse coherence amplitude sqrt(1 - loss) rather than classical 1 - loss.
-    damping = Point + loss * (decay - Point) + (np.sqrt(1 - loss) - (1 - loss)) * transverse  # [...] Point- <- Point-
+    damping = (1 - loss) * Point + loss * decay + (np.sqrt(1 - loss) - (1 - loss)) * transverse  # [...] Point- <- Point-
     rotations = (rotation_plane * (-angles / 2)).exp()                       # [...] Rotor+
     return rotations >> damping(dephasing)                                   # [...] Point- <- Point-
 

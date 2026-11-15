@@ -111,7 +111,7 @@ def test_a_field_difference_keeps_up_down_and_freezes_the_swap():
     sine_part = stack([state[1] for state in states], axis=1)
     probabilities = core.probabilities(cosine_part) + core.probabilities(sine_part)
     assert ((probabilities.sum(axis=-1) - 1).abs() < round_off_tolerance).all()
-    assert bool((probabilities[0, :, 3] > 0.99).any())
+    assert (probabilities[0, :, 3] > 0.99).any()
     assert (probabilities[-1, :, 3] < 0.05).all()
 
 
@@ -120,9 +120,9 @@ def test_strong_repulsion_holds_one_electron_per_site_until_the_asymmetry_outwei
     asymmetry = np.array([0.0, 0.5, 2.0]) * strong
     charge_differences = scenarios.charge_transfer(scenarios.repulsions, asymmetry)
     assert (charge_differences[:, 0].abs() < round_off_tolerance).all()
-    assert bool(charge_differences[0, 1] > 1.9)
-    assert bool(charge_differences[-1, 1] < 0.1)
-    assert bool(charge_differences[-1, 2] > 1.9)
+    assert charge_differences[0, 1] > 1.9
+    assert charge_differences[-1, 1] < 0.1
+    assert charge_differences[-1, 2] > 1.9
 
 
 def test_the_scenes_draw_at_a_few_samples():

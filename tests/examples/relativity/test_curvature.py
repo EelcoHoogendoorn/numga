@@ -140,9 +140,9 @@ def test_strain_map_matches_integrated_ring_and_reconstructs_curvature() -> None
         component_errors = (basis_slices & (displacement - predicted)[..., None]).abs()
         max_errors.append(component_errors.max())
 
-    assert bool(max_errors[1] < max_errors[0] / 10)
-    assert bool(max_errors[1] < 1e-8)
-    assert bool((predicted.antinorm().max() > 4e-5))
+    assert max_errors[1] < max_errors[0] / 10
+    assert max_errors[1] < 1e-8
+    assert (predicted.antinorm().max() > 4e-5)
 
     second_weights = 0.5 * second_derivatives[:, None] * scenarios.polarization_weights
     second_strain = second_weights[..., 0] * plus_strain + second_weights[..., 1] * cross_strain

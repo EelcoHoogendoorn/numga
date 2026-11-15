@@ -33,7 +33,7 @@ dissipated_colour, conducted_colour = np.array(to_rgb("#6b7280")), np.array(to_r
 entropy_colour, residual_colour = np.array(to_rgb("#15803d")), np.array(to_rgb("#2b2f33"))
 temperature_map = colormaps["RdBu_r"]
 # Odd number of evenly spaced temperature bands between ceiling and floor so the well-mixed interior sits in the white band.
-n_bands = 7
+n_bands = 15
 # Layer image width in pixels, margin in layer depths, stroke widths in pixels, and streamline contour spacing.
 n_pixels, margin = 320, 0.04
 wall_width, edge_width, stream_width = 2.5, 1.0, 1.0
@@ -127,7 +127,7 @@ def draw_budget(times: np.ndarray, kinetic: Extensor, potential: Extensor, dissi
     unaccounted.semilogy(times, np.abs(residual.to_array()), "o", color=residual_colour,
                          markersize=points(residual_dot), markeredgewidth=0)
     unaccounted.set_ylim(*residual_range)
-    unaccounted.set_yticks(residual_marks, [f"1e{int(np.log10(mark))}" for mark in residual_marks])
+    unaccounted.set_yticks(residual_marks, [f"$10^{{{np.log10(mark):.0f}}}$" for mark in residual_marks])
     unaccounted.minorticks_off()
     unaccounted.set_ylabel("residual")
     entropy.plot(times, produced.to_array(), color=entropy_colour)

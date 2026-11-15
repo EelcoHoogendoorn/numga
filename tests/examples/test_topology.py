@@ -7,13 +7,13 @@ import pytest
 
 from numga import NumpyContext, stack
 
-from numga.algebras import VGA3D
+from numga.algebras import VGA2D, VGA3D
 from examples.util import shapes
 from numga.topology import Topology, reverse_orientation
 
 mv = NumpyContext(VGA3D).multivector
 # The planes that read a shape's coordinates: of x and of y for a disk, all three for a surface in space.
-Upright = VGA3D.gatype.from_blades("x y")
+Upright = VGA3D.gatype.vector().derive.within(VGA2D)
 Vector = VGA3D.gatype.vector()
 
 

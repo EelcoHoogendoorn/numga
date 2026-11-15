@@ -26,7 +26,7 @@ period, n_along, n_across = 4.0, 96, 25
 dt, n_steps, n_stride, n_unshown = 5e-4, 300, 2, 80
 disturbance, seed = 1e-2, 1
 frame_duration_ms = 40
-n_animation_colours = 24
+n_animation_colours = 48
 
 
 def layer(n_along: int, n_across: int, period: float) -> tuple[Topology, Topology, Sparse, Sparse,

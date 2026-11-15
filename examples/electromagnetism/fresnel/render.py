@@ -123,14 +123,14 @@ def surface_panel(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage
     """Axis labels beyond the three arrow tips annotate the rendered wavevector-space image on `ax`."""
     panel_image = show(ax, picture, view)
     label_places = solids.origin + label_distance * solids.normal_direction(solids.axes)  # [3] Point-
-    labels(ax, view, label_places, ["kx", "ky", "kz"], ha="center", va="center", color=axis_colour)
+    labels(ax, view, label_places, ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center", color=axis_colour)
     return panel_image
 
 
 def section_axes(ax: Axes) -> None:
     """Equal-aspect limits and endpoint labels frame the xz meridian section panel without tick scales."""
-    ax.text(view_limit, 0, "kx", ha="right", va="bottom", color=axis_colour)
-    ax.text(0, view_limit, "kz", ha="left", va="top", color=axis_colour)
+    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", color=axis_colour)
+    ax.text(0, view_limit, "$k_z$", ha="left", va="top", color=axis_colour)
     ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
     ax.set_axis_off()

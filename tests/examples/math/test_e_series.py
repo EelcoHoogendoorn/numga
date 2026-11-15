@@ -22,16 +22,16 @@ def test_nested_root_systems_and_mirror_covariance():
         outer_roots = outer[1].reshape((-1,))                                 # [...] Plane+
         distances = (inner_roots[:, None] - outer_roots[None, :]).scalar_norm_squared()
         assert (distances.min(axis=-1) < tolerance).all()
-        assert bool(frobenius_squared(outer_span(inner_span) - inner_span) < tolerance)
-        assert bool(frobenius_squared(inner_span(outer_span) - inner_span) < tolerance)
+        assert frobenius_squared(outer_span(inner_span) - inner_span) < tolerance
+        assert frobenius_squared(inner_span(outer_span) - inner_span) < tolerance
 
     for n_rank, n_steps, case, span in zip(scenarios.ranks, scenarios.periods, cases, spans):
         action, roots, _, _, _ = case
         reflected_action, reflected_roots = core.root_system(mirror >> core.simple_roots()[:n_rank], n_steps)
         reflected_span = (reflected_roots * (reflected_roots | Plane)).sum(axis=(0, 1)) / (2 * n_steps)
         assert ((reflected_roots - (mirror >> roots)).scalar_norm_squared() < tolerance).all()
-        assert bool(frobenius_squared(reflected_action - (mirror >> action(mirror << Plane))) < tolerance)
-        assert bool(frobenius_squared(reflected_span - (mirror >> span(mirror << Plane))) < tolerance)
+        assert frobenius_squared(reflected_action - (mirror >> action(mirror << Plane))) < tolerance
+        assert frobenius_squared(reflected_span - (mirror >> span(mirror << Plane))) < tolerance
 
 
 def test_the_diagram_and_the_nested_roots_draw():

@@ -85,7 +85,7 @@ def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer
     values = heights(patches, volume)
     bars = ax.bar(np.arange(len(values)), values, color=(*axis_colours, edge_colour), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":")
-    ax.set(xticks=np.arange(len(values)), xticklabels=["face x", "face y", "face z", "volume"], yticks=[1],
+    ax.set(xticks=np.arange(len(values)), xticklabels=["face $x$", "face $y$", "face $z$", "volume"], yticks=[1],
            ylim=(0, 1.35))
     ax.tick_params(axis="x", length=0)
     ax.spines[["top", "right"]].set_visible(False)

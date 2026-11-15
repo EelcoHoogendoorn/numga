@@ -17,7 +17,7 @@ def test_settled_covariance_zeroes_the_growth():
         dynamics = core.Twist.commutator(rate) - scenarios.relaxation_gain * core.Twist
         limit = core.steady_covariance(dynamics, noise)
         growth = dynamics(limit) + limit(dynamics.adjugate()) + noise
-        assert bool((frame[:, None] & growth(frame[None, :])).abs().max() < 1e-10)
+        assert (frame[:, None] & growth(frame[None, :])).abs().max() < 1e-10
 
 
 def test_one_step_of_the_fleets_draws():

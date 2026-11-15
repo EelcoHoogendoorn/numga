@@ -51,7 +51,7 @@ def test_pulse_steps_one_frame_and_draws():
     frame_state = next(states)
     frame = next(
         render.cavity_animation(
-            topology, vertices, powder_triangles, thermometer, barometer, scenarios.pulse_rise, 1.0, [frame_state]
+            topology, vertices, powder_triangles, thermometer, barometer, scenarios.pulse_rise, 1.0, render.n_bands, [frame_state]
         )
     )
     assert frame.ndim == 3 and frame.shape[-1] == 3

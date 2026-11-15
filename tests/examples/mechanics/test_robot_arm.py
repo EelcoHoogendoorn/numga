@@ -11,7 +11,7 @@ def test_statics_and_homing():
     """Rest-pose statics matches the reference joint torques and homing converges onto the loop start."""
     velocity, joint_torques = scenarios.statics()
     assert (core.mv.w & velocity).abs() < 1e-8
-    np.testing.assert_allclose(joint_torques.to_array(), [-2.0, -2.1374, -1.1393], atol=0.01)
+    np.testing.assert_allclose(joint_torques.to_array(), [2.0, 2.1374, 1.1393], atol=0.01)
     error, _ = scenarios.homing()
     assert error < 1e-6
 

@@ -28,11 +28,11 @@ def test_one_step_runs_and_draws():
         1,
         scenarios.seed,
     ))
-    assert bool(((states[-1].norm().batch() - 1).abs() < 1e-10).all())
+    assert ((states[-1].norm().batch() - 1).abs() < 1e-10).all()
     frame_energies = stack([core.energy(topology, carriers, applied_fields[0], state) for state in states]) / V   # [n_frames] Scalar+
     frame_charges = stack([core.charges(topology, state).sites.sum() for state in states])   # [n_frames] Scalar+
-    assert bool(frame_energies.isfinite().all())
-    assert bool(((frame_charges * np.pi).sin().abs() < 1e-7).all())
+    assert frame_energies.isfinite().all()
+    assert ((frame_charges * np.pi).sin().abs() < 1e-7).all()
     frame_changes = stack([(states[1] - states[0]).scalar_norm_squared().sites.mean().square_root()])   # [1] Scalar+
 
     next(render.spin_frames(topology, vertices, bonds, periods, states))

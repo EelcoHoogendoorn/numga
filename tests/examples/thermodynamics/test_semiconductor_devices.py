@@ -31,9 +31,9 @@ def test_diode():
     transport_s, recomb_s, absorb_s = diode.entropy_production(
         topology, volumes, gradient, semiconductor, states[-1], zero_generation, scenarios.intrinsic,
         scenarios.mobilities, scenarios.rate_constant, scenarios.gap, scenarios.sun)
-    assert bool((transport_s.batch() >= -1e-12).all())
-    assert bool((recomb_s.batch() >= -1e-12).all())
-    assert bool((absorb_s.batch().abs() < 1e-12).all())
+    assert (transport_s.batch() >= -1e-12).all()
+    assert (recomb_s.batch() >= -1e-12).all()
+    assert (absorb_s.batch().abs() < 1e-12).all()
     next(render.sweep_animation(vertices, bands_of, densities_of, scenarios.intrinsic, terminal_of,
                               scenarios.energy_window, (scenarios.reverse_bias, scenarios.forward_bias),
                               scenarios.current_window, scenarios.volt, render.dark_colour, [], states[1:]))

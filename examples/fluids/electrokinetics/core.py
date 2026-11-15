@@ -19,6 +19,7 @@ from numga.topology import Topology
 from examples.fluids.electrokinetics.numerical import coupled_solution
 
 # Planar projective spacetime for channel geometry and electrodynamics, joined with volume as a transported quantity.
+plane = Algebra("x+y+")
 spacetime = Algebra("x+y+t-w0")
 quantities = Algebra("v0")
 ga = spacetime * quantities
@@ -27,9 +28,9 @@ Scalar = ga.gatype.scalar()                                                   # 
 Antiscalar = ga.gatype.antiscalar()                                           # Antiscalar-
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
-Upright = Plane.derive.within("x y")                                          # Vector+
-Drive = ga.gatype.bivector().derive.touching("x y", "t v")                    # Bivector+
-Rotation = ga.gatype.bivector().derive.within("x y")                          # Bivector+
+Upright = Plane.derive.within(plane)                                          # Vector+
+Drive = ga.gatype.bivector().derive.touching(plane, Algebra("t-v0"))          # Bivector+
+Rotation = ga.gatype.bivector().derive.within(plane)                          # Bivector+
 Flux = ga.gatype.antibivector()                                               # Antibivector-
 origin = mv.w.dual()                                                          # [] Point-
 axis = mv.x.dual()                                                            # [] Point-

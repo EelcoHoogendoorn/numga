@@ -105,8 +105,6 @@ def cavity_figure(topology: Topology, vertices: core.Point, powder_triangles: np
 
 # Odd band count keeps a neutral central band around zero perturbation.
 n_bands = 9
-band_spacing = 2 / (n_bands - 1)
-band_middles = np.linspace(-1, 1, n_bands)
 
 
 def cavity_animation(
@@ -117,21 +115,24 @@ def cavity_animation(
     barometer: core.Potential,
     temperature_scale: float,
     pressure_scale: float,
+    n_bands: int | None,
     states: Iterable[core.State],
 ) -> Iterator[np.ndarray]:
-    """Yields stacked RGB frames pairing each cavity state (`State-[V]`) against `thermometer` above and `barometer` below in quantized colour bands."""
+    """Yields stacked RGB frames pairing each cavity state (`State-[V]`) against `thermometer` above and `barometer` below, quantized into `n_bands` colour bands or shaded continuously when `n_bands` is `None`."""
     camera = cavity_camera(vertices)
     points = vertices.batch()
     overlays = [powder_border(vertices, topology, powder_triangles, camera), wall_strokes(vertices, topology, camera)]
     gap = np.full((gap_pixels, camera.shape[1], 3), 255, dtype=np.uint8)
     panels = ((thermometer, temperature_scale, temperature_map), (barometer, pressure_scale, pressure_map))
+    spacing = 0.0 if n_bands is None else 2 / (n_bands - 1)
+    middles = None if n_bands is None else np.linspace(-1, 1, n_bands)
     for state in states:
         batch_state = state.batch()
         pictures = []
         for plane, scale, shades in panels:
             shares = np.clip((plane & batch_state).to_array() / scale, -1, 1)
-            bands = contours.Bands(-1 - band_spacing / 2, band_spacing, shades(0.5 + band_middles / 2))
-            base = contours.picture(points, topology, shares, shades(0.5 + shares / 2)[:, :3], camera, bands=(bands,))
+            bands = () if middles is None else (contours.Bands(-1 - spacing / 2, spacing, shades(0.5 + middles / 2)),)
+            base = contours.picture(points, topology, shares, shades(0.5 + shares / 2)[:, :3], camera, bands=bands)
             pictures.append(white_composite(drawing.composited([base] + overlays)))
         yield np.concatenate([pictures[0], gap, pictures[1]])
 

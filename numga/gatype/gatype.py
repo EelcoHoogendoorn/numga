@@ -82,6 +82,8 @@ class GAType:
     coupled field site counts define the static type of an extensor."""
 
     __slots__ = ("_subspaces", "_orientations", "_traits", "_fields", "_algebra", "_hash", "__dict__")
+    # Disable NumPy ufunc coercion so array * gatype uses GAType.__rmul__ instead of building an object array.
+    __array_ufunc__ = None
 
     def __init__(
         self,
@@ -508,17 +510,25 @@ class GAType:
         return getattr(self._identity(), name)
 
     # A nullary type in linear arithmetic is its identity map, promoted as any other operand is.
-    def __add__(self, other: object) -> Extensor:
-        return self._identity() + other
+    def __add__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
+            return NotImplemented
+        return self._identity().__add__(other)
 
-    def __radd__(self, other: object) -> Extensor:
-        return other + self._identity()
+    def __radd__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
+            return NotImplemented
+        return self._identity().__radd__(other)
 
-    def __sub__(self, other: object) -> Extensor:
-        return self._identity() - other
+    def __sub__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
+            return NotImplemented
+        return self._identity().__sub__(other)
 
-    def __rsub__(self, other: object) -> Extensor:
-        return other - self._identity()
+    def __rsub__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
+            return NotImplemented
+        return self._identity().__rsub__(other)
 
     def __neg__(self) -> Extensor:
         return -self._identity()
@@ -526,23 +536,25 @@ class GAType:
     def __invert__(self) -> Extensor:
         return ~self._identity()
 
-    def __truediv__(self, other: object) -> Extensor:
-        return self._identity() / other
-
-    # A type is its identity map; a number scales that map.
-    def __mul__(self, other: object) -> Extensor | NotImplementedType:
-        if isinstance(other, Number):
-            return self._identity() * other
-        if not numga.expression.is_expression_operand(other):
+    def __truediv__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
             return NotImplemented
-        return numga.expression.geometric_product(self, other)
+        return self._identity().__truediv__(other)
+
+    # A type is its identity map; numbers and backend arrays scale that map.
+    def __mul__(self, other: object) -> Extensor | NotImplementedType:
+        if numga.expression.is_expression_operand(other):
+            return numga.expression.geometric_product(self, other)
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
+            return NotImplemented
+        return self._identity().__mul__(other)
 
     def __rmul__(self, other: object) -> Extensor | NotImplementedType:
-        if isinstance(other, Number):
-            return self._identity() * other
-        if not numga.expression.is_expression_operand(other):
+        if numga.expression.is_expression_operand(other):
+            return numga.expression.geometric_product(other, self)
+        if numga.extensor.operands.kind(other) is numga.extensor.operands.Kind.FOREIGN:
             return NotImplemented
-        return numga.expression.geometric_product(other, self)
+        return self._identity().__rmul__(other)
 
     def dual(self) -> Extensor:
         """Right-complement duality maps elements of this nullary space to its oppositely oriented

@@ -19,11 +19,11 @@ def test_covariance_stays_symmetric():
         step = ((mv.xy * turn - mv.wx) * 0.05).exp()
         estimate, sigma = estimate * step, (step << sigma(step >> core.Line)) + noise
         skew = sigma.adjugate() - sigma
-        assert bool((frame[:, None] & skew(frame[None, :])).abs().max() < 1e-13)
+        assert (frame[:, None] & skew(frame[None, :])).abs().max() < 1e-13
     reading = ((mv.xy * 0.2 - mv.wx) * 0.5).exp()
     estimate, sigma = core.filter_update(estimate, sigma, reading, core.body_covariance(0.3, 0.1))
     skew = sigma.adjugate() - sigma
-    assert bool((frame[:, None] & skew(frame[None, :])).abs().max() < 1e-13)
+    assert (frame[:, None] & skew(frame[None, :])).abs().max() < 1e-13
 
 
 def test_one_reading_draws():

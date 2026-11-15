@@ -8,11 +8,11 @@ import numpy as np
 
 from examples.quantum.skyrmions import core
 from examples.util import shapes
-from numga import stack
+from numga import Algebra, stack
 from numga.topology import Topology
 
 mv = core.mv
-Upright = core.ga.gatype.from_blades("x y")                                   # Vector+
+Upright = core.ga.gatype.vector().derive.within(Algebra("x+y+"))              # Vector+
 n_sites = 48
 twist_angle = 0.55
 damping, time_step, n_substeps = 0.5, 0.2, 12

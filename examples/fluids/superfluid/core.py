@@ -24,7 +24,7 @@ Scalar = ga.gatype.scalar()                                                   # 
 Point = ga.gatype.antivector()                                                # Antivector-
 Plane = ga.gatype.vector()                                                    # Vector+
 # Spatial coordinate planes, extensive mass-entropy states, and their conjugate thermodynamic potentials.
-Upright = Plane.derive.within("x y")                                          # Vector+
+Upright = Plane.derive.within(Algebra("x+y+"))                                # Vector+
 State = Plane.derive.within(quantities).derive.dual                           # Antivector-
 Potential = Plane.derive.within(quantities)                                   # Vector+
 # Reference origin at unit projective weight, unit material quantities, and their joint complement for spatial areas.

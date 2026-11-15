@@ -19,7 +19,7 @@ ctx: Context
 mv = ctx.multivector
 Point = ga.gatype.antivector()                      # Point-
 # Coordinate planes through the origin; the plane w reads a point's weight.
-Upright = ga.gatype.from_blades("x y z")            # Plane+
+Upright = ga.gatype.vector().derive.within(Algebra("x+y+z+"))  # Plane+
 Bivector = ga.gatype.bivector()                     # Bivector+
 Motor = ga.gatype.rotor()                           # Motor+
 

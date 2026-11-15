@@ -184,7 +184,7 @@ def advection_comparison_figure(topology: core.Topology, vertices: core.Point,
     trace_ax.plot(times, flux_vals[:, 1] / flux_vals[0, 1], color=teal_colour, linestyle="--")
     trace_ax.set(xlim=(times[0], times[-1]), ylim=(0.0, 1.08),
                  xticks=[0.0, round(float(times[-1]), 2)], yticks=[0.0, 1.0],
-                 xlabel="time", ylabel="relative energy and flux")
+                 xlabel="time", ylabel=r"relative $E_B(t),\, \Phi(t)$")
     quantity_axes(trace_ax)
 
     points = vertices.batch()                                                   # [V] Point-

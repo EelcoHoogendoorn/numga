@@ -82,7 +82,7 @@ def named(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
 
 def screen_axes(axes: plt.Axes, limit: float) -> None:
     """Frames the transverse beam plane to `[-limit, limit]` along `y - x` and `z`."""
-    named(axes, np.array([[-limit, limit], [-limit, limit]]), "y - x", "z")
+    named(axes, np.array([[-limit, limit], [-limit, limit]]), "$y - x$", "$z$")
 
 
 def screens(axes: plt.Axes) -> tuple[Camera, Camera]:

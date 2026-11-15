@@ -75,7 +75,7 @@ def bell_bounds(ax: plt.Axes, angles: np.ndarray) -> None:
     ax.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=charts.FRAME_WIDTH)
     ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 3.0))
     plain_axes(ax, "exchange angle", "largest Bell combination")
-    ax.set(yticks=[2.0, 2 * np.sqrt(2)], yticklabels=["2", "2\u221a2"])
+    ax.set(yticks=[2.0, 2 * np.sqrt(2)], yticklabels=["2", r"$2\sqrt{2}$"])
 
 
 def ball(ax: plt.Axes) -> solids.View:

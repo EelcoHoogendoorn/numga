@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.relativity.twistors import core, render, scenarios
+from numga import Algebra
 from numga.topology import Topology
 
 
@@ -47,7 +48,7 @@ def test_flow_and_field_lines_follow_robinson_and_hopfion_directions():
     times = sample_times[:, None, None, None]
     electric_events = electric + core.robinson_direction(electric) * times
     magnetic_events = magnetic + core.robinson_direction(magnetic) * times
-    temporal = core.Bivector.derive.containing("t")
+    temporal = core.Bivector.derive.touching(Algebra("t-"))
     electric_field = core.hopfion_field(electric_events).cast(temporal)[..., 1:-1]
     magnetic_field = (core.spacetime_pseudoscalar * core.hopfion_field(magnetic_events)).cast(temporal)[..., 1:-1]
     electric_steps = electric_events[..., 2:] - electric_events[..., :-2]

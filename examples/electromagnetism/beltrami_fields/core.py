@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import Algebra, NumpyContext
 from numga.algebras import STA as ga
 from numga.sparse import spdiag
 from numga.topology import Topology
@@ -18,9 +18,9 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()                                 # Scalar+
 Plane = ga.gatype.vector()                                  # Vector+
-SpatialPlane = Plane.derive.within("x y z")                 # Vector+
+SpatialPlane = Plane.derive.within(Algebra("x+y+z+"))       # Vector+
 # Static magnetic fields lie in the spatial bivector planes of the cavity rest frame.
-Field = ga.gatype.bivector().derive.within("x y z")         # Bivector+
+Field = ga.gatype.bivector().derive.within(Algebra("x+y+z+"))  # Bivector+
 Point = ga.gatype.antivector()                              # Antivector-
 Volume = ga.gatype.antitrivector()                          # Antitrivector-
 Antiscalar = ga.gatype.antiscalar()                         # Antiscalar-

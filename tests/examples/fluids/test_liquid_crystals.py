@@ -28,5 +28,5 @@ def test_one_step_runs_and_draws():
                                      core.with_defects(topology, vertices, turned_states[-1:], mv.x.dual())))
     dense_frame = next(render.animate(topology, vertices, render.dense_camera,
                                       core.with_defects(topology, vertices, driven_states[-1:], mv.x.dual())))
-    assert bool(energy.isfinite().all())
+    assert energy.isfinite().all()
     assert turn_frame.shape[2] == 3 and dense_frame.shape[2] == 3

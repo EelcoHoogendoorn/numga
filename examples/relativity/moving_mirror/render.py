@@ -257,8 +257,8 @@ def light_cone_figure(
         aspect="equal",
         xticks=[0.0, 0.5, 1.0],
         yticks=[0.0, round(duration, 2)],
-        xlabel="space x",
-        ylabel="time t",
+        xlabel="space $x$",
+        ylabel="time $t$",
     )
     plain_axes(wake_ax)
     camera = offset_panel(wake_ax, mv.x, mv.t)
@@ -350,8 +350,8 @@ def doppler_figure(
             round(float(row_times[after_row]), 2),
             round(duration, 2),
         ],
-        xlabel="space x",
-        ylabel="time t",
+        xlabel="space $x$",
+        ylabel="time $t$",
     )
     plain_axes(world_ax)
     camera = offset_panel(world_ax, mv.x, mv.t)
@@ -389,8 +389,8 @@ def doppler_figure(
         ylim=(-max_amp * 1.08, max_amp * 1.08),
         xticks=[0.0, round(float(x_after[-1]), 2), 1.0],
         yticks=[-1.0, 0.0, 1.0, round(float(after_profile.max()), 2)],
-        xlabel="space x",
-        ylabel="normalized wave rate",
+        xlabel="space $x$",
+        ylabel=r"wave rate $\partial_t\phi\,/\,r_0$",
     )
     plain_axes(wave_ax)
 
@@ -411,8 +411,8 @@ def doppler_figure(
         ylim=(0.0, final_ratio * 1.12),
         xticks=[0.0, round(duration, 2)],
         yticks=[0.0, 1.0, final_ratio],
-        xlabel="time t",
-        ylabel="relative wave energy",
+        xlabel="time $t$",
+        ylabel=r"relative wave energy $\mathcal{E}(t) / \mathcal{E}_0$",
     )
     plain_axes(energy_ax)
     return figure
@@ -449,8 +449,8 @@ def cavity_animation(
             aspect="equal",
             xticks=[0.0, 1.0],
             yticks=[0.0, round(duration, 2)],
-            xlabel="space x",
-            ylabel="time t",
+            xlabel="space $x$",
+            ylabel="time $t$",
         )
         plain_axes(world_ax)
         camera = offset_panel(world_ax, mv.x, mv.t)
@@ -472,8 +472,8 @@ def cavity_animation(
             ylim=(-y_limit, y_limit),
             xticks=[0.0, round(float(places[-1, -1]), 2), 1.0],
             yticks=[-2.0, -1.0, 0.0, 1.0, 2.0],
-            xlabel="space x",
-            ylabel="normalized wave rate",
+            xlabel="space $x$",
+            ylabel=r"wave rate $\partial_t\phi\,/\,r_0$",
         )
         plain_axes(cavity_ax)
         figure.canvas.draw()

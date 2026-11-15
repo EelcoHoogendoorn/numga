@@ -32,7 +32,7 @@ def test_light_cones_recover_future_reception_event(phase_degrees):
     candidates = core.cone_intersections(cones[:4])                               # [2] Event-
     assert ((cones[:4](candidates[:, None]) & candidates[:, None]).abs() < 1e-11).all()
     located = core.causal_reception(candidates, emitted[:4])                      # [] Event-
-    assert bool(_max_event_error(located - receiver) < 1e-11)
+    assert _max_event_error(located - receiver) < 1e-11
     assert ((core.mv.t & (located - emitted)) > 0).all()
 
 
@@ -55,7 +55,7 @@ def test_light_cones_and_intersections_follow_poincare_transform():
 
     candidates = core.cone_intersections(rebuilt[:4])
     nearest = core.causal_reception(candidates, moved_emissions[:4])
-    assert bool(_max_event_error(nearest - moved_receiver) < 1e-11)
+    assert _max_event_error(nearest - moved_receiver) < 1e-11
 
     moved_clock = transform >> core.mv.t
     assert (((moved_clock & (nearest - moved_emissions)) - (core.mv.t & (receiver - emitted))).abs() < 1e-11).all()
@@ -74,13 +74,13 @@ def test_noiseless_fit_recovers_position_and_clock_error(phase_degrees, receptio
     initial = receiver + core.mv.y.dual() * 0.02 + core.mv.z.dual() * 0.01 + core.time * clock_offset
     estimate, information, covariance = core.fitted_reception(emitted, initial, realistic_sigma, 5)
 
-    assert bool(_max_event_error(estimate - receiver) < 1e-12)
+    assert _max_event_error(estimate - receiver) < 1e-12
     recovered_clock_offset = clock_reading - (core.mv.t & estimate)
-    assert bool((recovered_clock_offset - clock_offset).abs() < 1e-12)
+    assert (recovered_clock_offset - clock_offset).abs() < 1e-12
     assert ((core.mv.t & (estimate - emitted)) > 0).all()
 
     same_estimate, _, larger_covariance = core.fitted_reception(emitted, initial, realistic_sigma * 2, 5)
-    assert bool(_max_event_error(same_estimate - estimate) < 1e-12)
+    assert _max_event_error(same_estimate - estimate) < 1e-12
     readout_probes = stack((core.mv.x, core.mv.y, core.mv.z, core.mv.t))          # [4] Readout+
     cov_entries = readout_probes[:, None] & covariance(readout_probes)            # [4, 4] Scalar+
     larger_entries = readout_probes[:, None] & larger_covariance(readout_probes)  # [4, 4] Scalar+

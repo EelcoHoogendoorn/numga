@@ -59,7 +59,7 @@ def statics() -> tuple[Point, Scalar]:
     """Rest-pose joint rates and a tip-link load produce the tip velocity (`[] Point-`) and static joint torques (`[3] Scalar+`)."""
     axes, tip_home, rest = arm()                                               # [3] Twist+, [] Point-, [3] Twist+
     rates = axes * joint_rates                                                 # [3] Twist+
-    forque = mv.point(load_point) & mv.direction(load_force)                   # [] Forque-
+    forque = mv.direction(load_force) & mv.point(load_point)                   # [] Forque-
     return core.mechanics(rest, axes, rates, tip_home, forque)
 
 
@@ -102,10 +102,11 @@ def main() -> None:
     assert (pose - (rest[0] * 0.5).exp() * (rest[1] * 0.5).exp() * (rest[2] * 0.5).exp()).scalar_norm_squared() < 1e-10
     assert ((mv.w & (pose >> tip_home)) - 1).abs() < 1e-8
     rates = axes * joint_rates
-    forque = mv.point(load_point) & mv.direction(load_force)
+    forque = mv.direction(load_force) & mv.point(load_point)
     velocity, joint_torques = statics()
     assert (mv.w & velocity).abs() < 1e-8
     assert ((joint_torques * joint_rates).sum() - ((frames >> rates).sum(axis=0) & forque)).abs() < 1e-8
+    assert ((joint_torques * joint_rates).sum() - (frames >> rates).sum(axis=0).commutator(mv.point(load_point)).dot(mv.direction(load_force))).abs() < 1e-8
     targets = stack([step_target for _, step_target, _ in tracked_states])
     tracked_tips = stack([step_tip for _, _, step_tip in tracked_states])
     assert len(tracked_states) == n_frames

@@ -85,10 +85,10 @@ def equilibrium_figure(dispersion: core.Field, spins: core.Spin) -> Figure:
     axes[0].set(ylim=(0, 1.04))
     axes[1].plot(energies, coherence[:, 0], color=pair_colour)
     axes[1].set(ylim=(0, 0.54))
-    for axis, up in zip(axes, ("occupation per electron state", "pair coherence in yz")):
+    for axis, up in zip(axes, ("occupation per electron state", r"pair coherence in yz, $s_{yz}$")):
         axis.set(xlim=(energies[0], energies[-1]))
         axis.axvline(0, color="0.85", linewidth=charts.FRAME_WIDTH, zorder=0)
-        plain_axes(axis, "energy from chemical potential", up)
+        plain_axes(axis, r"energy from chemical potential, $\xi$", up)
     return figure
 
 
@@ -155,13 +155,13 @@ def quench_animation(
             amplitudes = [first_amplitude]
 
             image = show(axis, arrow_picture(first_coherence), view)
-            label_points = energy_start + solids.axes.dual() * (reaches + [0.16, 0.1, 0.1])  # [3] Point-
-            labels(axis, view, label_points, ["energy", "yz", "zx"], ha="center", va="center", color=axis_colour)
+            label_points = energy_start + solids.axes.dual() * (reaches + [0.12, 0.1, 0.1])  # [3] Point-
+            labels(axis, view, label_points, [r"$\xi$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center", color=axis_colour)
             gap_line, = curve.plot(times[:1], amplitudes, color=pair_colour)
             gap_tip, = curve.plot([times[0]], [first_amplitude], "o", color=pair_colour)
             # Frame the vertical axis slightly above the initial post-quench gap before it drops.
             curve.set(xlim=(times[0], times[-1]), ylim=(0, first_amplitude * 1.12))
-            plain_axes(curve, "time", "gap amplitude")
+            plain_axes(curve, "time", r"$|\Delta|$")
             yield capture(figure)
 
             for index, (spins, gap) in enumerate(state_stream, start=1):
@@ -186,7 +186,7 @@ def gap_figure(times: np.ndarray, gaps: core.Field, equilibrium_gap: core.Field)
     axis.axhline(equilibrium, color=ink_colour, linestyle="--", label="final ground-state gap")
     axis.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.05))
     axis.legend(frameon=False, ncol=2, loc="lower center")
-    plain_axes(axis, "time", "gap amplitude")
+    plain_axes(axis, "time", r"$|\Delta|$")
     return figure
 
 
@@ -207,5 +207,5 @@ def response_figure(
         axis.plot(times, values, color=colour, linestyle="--", label=name)
     axis.set(xlim=(times[0], times[-1]))
     axis.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1))
-    plain_axes(axis, "time", "gap change in yz")
+    plain_axes(axis, "time", r"$\delta\Delta_{yz}$")
     return figure

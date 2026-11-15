@@ -61,13 +61,13 @@ def formation_figure(chemical_potentials: np.ndarray, energies: core.Scalar,
     spectrum.axvline(2, color="0.65", linestyle=":", linewidth=charts.FRAME_WIDTH)
     # Read off: the threshold at twice the hopping, and zero energy.
     spectrum.set(xlim=(ratios[0], ratios[-1]), ylim=(0, None), xticks=[2], yticks=[0],
-                 xlabel="chemical potential inside, μ/t", ylabel="excitation energy, E/t")
+                 xlabel=r"chemical potential inside, $\mu/t$", ylabel=r"excitation energy, $E/t$")
     plain_axes(spectrum)
     # One row per chemical potential, the outside value on top, half a sample beyond the first and last.
     half_row = (ratios[0] - ratios[-1]) / (len(ratios) - 1) / 2
     weight_image(modes, weights, (-0.5, weights.shape[-1] - 0.5, ratios[-1] - half_row, ratios[0] + half_row), 0.55)
     modes.axhline(2, color="white", linestyle=":", linewidth=charts.FRAME_WIDTH, alpha=0.6)
-    modes.set(xticks=[], yticks=[2], xlabel="site", ylabel="μ/t")
+    modes.set(xticks=[], yticks=[2], xlabel="site", ylabel=r"$\mu/t$")
     return figure
 
 
@@ -163,7 +163,7 @@ def overlap_animation(separations: np.ndarray, splitting: core.Scalar, potential
         marker = spectrum.scatter([], [], color=ink_colour, edgecolors="white", s=charts.points(2 * charts.MARKER_PX) ** 2,
                                   linewidths=charts.FRAME_WIDTH, zorder=3)
         # The ends of the separations swept; the energy's decades show the exponential.
-        spectrum.set(xlabel="gate separation (sites)", ylabel="lowest excitation, E/t",
+        spectrum.set(xlabel="gate separation (sites)", ylabel=r"lowest excitation, $E/t$",
                      xticks=[separations.min(), separations.max()])
         plain_axes(spectrum)
         # A two-row pcolormesh shaded between its vertices fills the panel with the gate profile.

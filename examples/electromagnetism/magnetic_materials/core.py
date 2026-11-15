@@ -14,7 +14,7 @@ from numga.topology import Topology
 ga = Algebra("x+y+z+t-w0")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                   # Scalar+
-Upright = ga.gatype.from_blades("x y")                        # Vector+
+Upright = ga.gatype.vector().derive.within(Algebra("x+y+"))   # Vector+
 Point = ga.gatype.antivector()                                # Antivector-
 Current = ga.gatype.antivector()                              # Antivector-
 Field = ga.gatype.bivector()                                  # Bivector+

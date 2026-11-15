@@ -5,7 +5,6 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
 from examples.quadrics.quadrics import render, scenarios
 from examples.quadrics.quadrics.core import mv, support_plane
 
@@ -22,10 +21,9 @@ def test_support_planes_are_tangent_and_face_their_normal():
     tangents = support_plane(dual, normals)                                        # [4] Plane+
     contacts = dual(tangents)                                                      # [4] Point-
     recovered = dual.solve(contacts)                                               # [4] Plane+
-    basis_points = stack((mv.x, mv.y, mv.z, mv.w)).dual()                          # [4] Point-
     assert ((tangents & contacts).abs() < 1e-12).all()
     assert (((tangents | unit_normals) - 1.0).abs() < 1e-12).all()
-    assert (((recovered[:, None] - tangents[:, None]) & basis_points).abs() < 1e-12).all()
+    np.testing.assert_allclose((recovered - tangents).kernel, 0, atol=1e-12)
 
 
 def test_the_scenes_draw():

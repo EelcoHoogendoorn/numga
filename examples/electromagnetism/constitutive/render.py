@@ -189,7 +189,7 @@ def dispersion_panel(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, ex
         for speed in marks:
             ax.axvline(speed, color=line.get_color(), linestyle=":", alpha=0.8)
 
-    zero_axes(ax, "speed along z", "residual")
+    zero_axes(ax, "speed along $z$", "residual")
 
 
 def polarizations_panel(ax: plt.Axes, modes: Modes) -> None:
@@ -208,7 +208,7 @@ def polarizations_panel(ax: plt.Axes, modes: Modes) -> None:
     # Pair the field bivectors directly against the swept x-t and y-t planes.
     plane = offset_panel(ax, *core.swept_planes[:2])
     overlay(ax, [
-        origin_cross(ax, plane, "x", "y"),
+        origin_cross(ax, plane, "$x$", "$y$"),
         simplices.strokes(stack((-units, units), axis=-1).reshape(-1), pairs, colours, charts.LINE_PX, plane,
                           dashes=polarization_dots, cap=simplices.Cap.ROUND, opacity=polarization_opacity),
         simplices.strokes(stack((0 * units, units), axis=-1).reshape(-1), pairs, colours, polarization_width, plane,
@@ -238,8 +238,8 @@ def fresnel_surface_panel(
     for heading in np.arange(4) * np.pi / 2:
         ax.plot([heading, heading], [0, radius], color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     ax.set_rmax(radius)
-    ax.text(0, radius, "z", ha="left", va="top", color=label_colour)
-    ax.text(np.pi / 2, radius, "x", ha="right", va="bottom", color=label_colour)
+    ax.text(0, radius, "$z$", ha="left", va="top", color=label_colour)
+    ax.text(np.pi / 2, radius, "$x$", ha="right", va="bottom", color=label_colour)
 
 
 def fresnel_drag_panel(

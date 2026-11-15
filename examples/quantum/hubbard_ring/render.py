@@ -37,7 +37,7 @@ def levels_figure(ratios: np.ndarray, excitations: core.Scalar, heisenberg_level
         ax.axhline(level, color="0.5", linestyle="--")
     ax.set(xlim=(ratios[0], ratios[-1]), ylim=(0, heisenberg_levels[-1] + 0.6), xticks=[],
            yticks=np.arange(heisenberg_levels[-1] + 1),
-           xlabel="repulsion / hopping", ylabel="excitation / exchange")
+           xlabel=r"repulsion / hopping, $U/t$", ylabel=r"excitation, $\Delta E\,U/4t^2$")
     ax.spines[["top", "right"]].set_visible(False)
     return figure
 
@@ -48,7 +48,7 @@ def ring_frames(ratios: np.ndarray, occupations: Iterable[core.Scalar]) -> Itera
     n_cases = len(ratios)
     n_bars = 8
     bar_colours = np.tile(np.stack((to_rgb(up_colour), to_rgb(down_colour))), (4, 1))
-    labels = [f"repulsion / hopping = {ratio:g}" for ratio in ratios]
+    labels = [f"$U/t = {ratio:g}$" for ratio in ratios]
     with charts.style():
         figure = plt.figure(figsize=(ring_pixels * n_cases / charts.DPI, (ring_pixels + label_pixels) / charts.DPI))
         rim_turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rim_samples, endpoint=False) / 2)).exp()   # [n_rim_samples] Rotor+

@@ -19,12 +19,12 @@ def test_analytic_unrestrained_and_coupled_frequencies() -> None:
     # A 2-by-1 plate of unit mass has polar inertia 5/12, with vertical springs of constant 6 at +/- 0.8 from centre.
     expected_squared = mv.scalar([[0.0], [12.0], [12.0 * 0.64 / (5.0 / 12.0)]])  # [3] Scalar+
     computed_squared = (2 * np.pi * frequencies).squared()                       # [3] Scalar+
-    assert bool(((computed_squared - expected_squared).abs() < 1e-10).all())
+    assert ((computed_squared - expected_squared).abs() < 1e-10).all()
 
     _, _, coupled_anchors, coupled_attachments, coupled_constants = scenarios.coupled_suspension()
     coupled_stiffness = core.spring_stiffness(coupled_anchors, coupled_attachments, coupled_constants)  # [] Forque- <- Twist+
     coupled_frequencies, _ = core.normal_modes(coupled_stiffness, inertia)       # [3] Scalar+, Twist+
-    assert bool((coupled_frequencies > 0).all())
+    assert (coupled_frequencies > 0).all()
 
 
 def test_mass_orthogonality_and_modal_balance() -> None:
@@ -38,8 +38,8 @@ def test_mass_orthogonality_and_modal_balance() -> None:
     elastic_pairings = mode_twists[:, None] & stiffness(mode_twists[None, :])    # [3, 3] Scalar+
     identity = mv.scalar(np.eye(3)[..., None])                                   # [3, 3] Scalar+
     diagonal_rates = mv.scalar(np.eye(3)[..., None]) * (2 * np.pi * frequencies).squared()  # [3, 3] Scalar+
-    assert bool(((mass_pairings - identity).abs() < 1e-10).all())
-    assert bool(((elastic_pairings - diagonal_rates).abs() < 1e-10).all())
+    assert ((mass_pairings - identity).abs() < 1e-10).all()
+    assert ((elastic_pairings - diagonal_rates).abs() < 1e-10).all()
 
 
 def test_euclidean_invariance_under_world_motor() -> None:
@@ -56,7 +56,7 @@ def test_euclidean_invariance_under_world_motor() -> None:
     moved_inertia = core.body_inertia(core.quadrature_points(moved_corners), masses)  # [] Forque- <- Twist+
     moved_stiffness = core.spring_stiffness(moved_anchors, moved_attachments, spring_constants)  # [] Forque- <- Twist+
     after, _ = core.normal_modes(moved_stiffness, moved_inertia)                 # [3] Scalar+, Twist+
-    assert bool(((after - before).abs() < 1e-9).all())
+    assert ((after - before).abs() < 1e-9).all()
 
 
 def test_mode_oscillation_and_views_render() -> None:

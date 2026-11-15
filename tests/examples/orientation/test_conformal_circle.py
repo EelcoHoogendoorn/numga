@@ -54,7 +54,7 @@ def test_circulation_and_glide_preserve_circle_with_different_motion():
 
     initial_chords = chord_squares(grid[-1])                                    # [7] Scalar+
     assert ((chord_squares(rotated_rim) - initial_chords).abs() < 1e-12).all()
-    assert bool((chord_squares(glided_rim[-1]) - initial_chords).abs().max() > 0.2)
+    assert (chord_squares(glided_rim[-1]) - initial_chords).abs().max() > 0.2
 
     frame = next(render.circle_motions_animation(scenarios.fixed_points, [pairs[0]]))
     assert frame.ndim == 3 and frame.shape[2] == 3

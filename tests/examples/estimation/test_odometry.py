@@ -17,7 +17,7 @@ def test_spatial_lap_reaches_optimum():
     space = instantiate(scenarios.core_module, steps.algebra)
     *_, poses, uncertainty = scenarios.closed_lap_solution(steps, scenarios.n_full_steps, 0)
     dead_gradient, optimum_gradient = scenarios.endpoint_gradients(steps, poses, 0)
-    assert bool((uncertainty(optimum_gradient) & optimum_gradient).max() < 1e-12 * (uncertainty(dead_gradient) & dead_gradient).max())
+    assert (uncertainty(optimum_gradient) & optimum_gradient).max() < 1e-12 * (uncertainty(dead_gradient) & dead_gradient).max()
     assert space.n_twist_modes == 6
 
 

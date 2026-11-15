@@ -78,7 +78,7 @@ def test_folds_do_not_pull_buried_layers_through_stationary_paper():
                     - where(first_proj.min(axis=1) > second_proj.min(axis=1), first_proj.min(axis=1), second_proj.min(axis=1))
                 )
                 if (overlap > 1e-8).all():
-                    assert bool((heights[turning_face] - heights[stationary_face]) * np.sign(peak) >= -1e-10)
+                    assert (heights[turning_face] - heights[stationary_face]) * np.sign(peak) >= -1e-10
         points, counts, offsets, sheet = core.folded_state(
             split_points, split_counts, split_offsets, sheet, crease ^ sheet, turning, end,
         )

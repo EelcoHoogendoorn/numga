@@ -87,7 +87,7 @@ def test_free_dynamics_preserves_momentum_with_bounded_energy(disk):
 def test_concentric_disk_has_oriented_faces_in_plane_and_space(algebra):
     mv = NumpyContext(algebra).multivector
     topology, coordinates = concentric_disk(np.array([0.6, 1.0]), 5)
-    vertices = mv(algebra.gatype.from_blades("x y"), coordinates).dual().field()
+    vertices = mv(algebra.gatype.vector().derive.within(VGA2D), coordinates).dual().field()
     corners = topology.incidence[2, 0] * vertices
     patches = (corners[1] - corners[0]) & (corners[2] - corners[0])
     assert ((mv.xy & patches) > 0).all()

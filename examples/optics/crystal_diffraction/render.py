@@ -61,8 +61,8 @@ def panel_grid(
 def atom_camera(ax: Axes, positions: Extensor) -> Camera:
     """Labels the x and y axes on `ax` and configures an offset camera reading atom positions
     against the x and y planes."""
-    ax.text(position_limit, 0, "x", ha="right", va="bottom", color="#94a3b8")
-    ax.text(0, position_limit, " y", ha="left", va="top", color="#94a3b8")
+    ax.text(position_limit, 0, "$x$", ha="right", va="bottom", color="#94a3b8")
+    ax.text(0, position_limit, " $y$", ha="left", va="top", color="#94a3b8")
     ax.set(xlim=(-position_limit, position_limit), ylim=(-position_limit, position_limit))
     ax.set_axis_off()
     mv = positions.context.multivector
