@@ -21,7 +21,7 @@ records those shared-argument groups on the plan. `bind_subspaces` and `TypeRule
 propagate certified output-support restrictions (narrowing `execution_gatype` and `output_indices`
 before contraction) together with algebraic traits onto the resulting `GAType`. Binding plans,
 lossless coordinate conversions, and repeated-argument trait propagation are detailed in
-`docs/internals.md` (section 5) and `docs/tutorial/extensors/02-binding.md`.
+`docs/internals.md` and `docs/tutorial/extensors/02-binding.md`.
 """
 
 from __future__ import annotations

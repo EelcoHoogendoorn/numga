@@ -22,7 +22,7 @@ across included inputs.
 Kernel-level hooks (`prepare_kernel`, `prepare_scalar`, `functional_set`, `functional_add`, and
 matrix or pencil solvers) isolate array-namespace differences behind a uniform functional interface
 so `Extensor` methods and `numga.extensions` remain backend-agnostic. Stages, contexts, exact
-materialization, and cross-algebra inclusion are described in `docs/internals.md` (section 4).
+materialization, and cross-algebra inclusion are described in `docs/internals.md`.
 """
 
 from __future__ import annotations

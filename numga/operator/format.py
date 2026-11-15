@@ -8,7 +8,7 @@ function over plain indexable sequences.
 Signed basis layouts (`SubSpace.signs`) appear explicitly in `formula` and `coefficient_table`
 headers so negated basis blades (`-zx` versus `xz`) read directly from the labels, whereas
 `python_code` indexes raw positional slots `a0[0]` matching the extensor's underlying kernel array.
-Formula and Python code views of exact tables are illustrated in `docs/internals.md` (section 2).
+Formula and Python code views of exact tables are illustrated in `docs/internals.md`.
 """
 
 from __future__ import annotations

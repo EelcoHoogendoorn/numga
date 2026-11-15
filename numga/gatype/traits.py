@@ -20,7 +20,7 @@ retains only maximal representatives so equivalent fact sets share one canonical
 `normalize_explicit_traits` strips facts already guaranteed universally by the blade support
 (`structurally_implied_traits`), such as scalars and vectors always being blades and versors.
 Trusted trait assertions, equality groups, and propagation through binding plans are described in
-`docs/internals.md` (section 5).
+`docs/internals.md`.
 """
 
 from __future__ import annotations

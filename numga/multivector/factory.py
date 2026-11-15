@@ -19,8 +19,7 @@ Attribute lookups not matching a named type constructor parse as exterior basis 
 dictionary so repeated `mv.xy` accesses incur no parsing or allocation overhead. Direct calls
 `mv(gatype, coefficients)` require an explicit `arity == 0` `GAType` and reject bare `SubSpace` or
 string layouts with `UnorientedSubspace` so orientation is never guessed. Orientation choices at
-construction and trusted rotor traits are discussed in `docs/orientation.md` and `docs/internals.md`
-(section 5).
+construction and trusted rotor traits are discussed in `docs/orientation.md` and `docs/internals.md`.
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ operator meets a concrete array `Extensor`, `binding_context` selects the array 
 materializes the exact kernel into backend storage rather than executing in `ExactContext`; mutating
 batch updates (`functional_set`, `functional_add`) are rejected because exact extensors have no
 batch dimensions. Exact context semantics and cached table materialization are described in
-`docs/internals.md` (section 4).
+`docs/internals.md`.
 """
 
 from __future__ import annotations

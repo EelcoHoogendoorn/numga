@@ -30,7 +30,7 @@ ternary operator over `(versor, passenger, versor)`, symmetrizes the two versor 
 integer halving, and applies the passenger's grade-involution and intrinsic reflection sign raised
 to the versor's grade parity, rejecting mixed-parity versor types whose reflection count is
 indeterminate. Sign, product, dual, and norm conventions are set out in `docs/conventions.md`, and
-exact table construction in `docs/internals.md` (sections 2 and 4).
+exact table construction in `docs/internals.md`.
 """
 
 from __future__ import annotations

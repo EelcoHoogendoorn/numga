@@ -15,7 +15,7 @@ matrices apply to an operand's output axis immediately before contraction. Binar
 matrix-vector contractions dispatch directly to `xp.matmul`, while general arities compile an
 ellipsis `einsum` expression (`optimize=True` on traced and GPU backends, direct path-free evaluation
 on `numpy` where path planning dominates small blade kernels). Kernel layout and dense contraction
-strings are described in `docs/internals.md` (sections 3 and 6).
+strings are described in `docs/internals.md`.
 """
 
 from __future__ import annotations

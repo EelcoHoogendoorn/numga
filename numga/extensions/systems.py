@@ -20,8 +20,8 @@ blade coefficient coordinates independently of the Clifford metric. Three-argume
 `form.lstsq(rhs, metric)` diagonalizes a symmetric `form` against a positive-definite `metric`
 form, selecting the minimum-`metric(x, x)` solution and applying `rcond` to generalized eigenvalues
 so mode truncation is invariant to basis choice and units. Pairings, adjoints, adjugates, and
-solving on maps and forms are developed in `docs/frameworks.md`, `docs/common_practice.md`, and
-`docs/tutorial/extensors/07-solving.md` through `10-the-adjugate.md`.
+solving on maps and forms are developed in `articles/frameworks.md`, `articles/common_practice.md`,
+and `docs/tutorial/extensors/07-solving.md` through `10-the-adjugate.md`.
 """
 
 from __future__ import annotations

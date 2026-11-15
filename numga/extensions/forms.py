@@ -19,7 +19,7 @@ blades carry zero metric weight. On such a partner, `eigh` and `eigvalsh` elimin
 by a Schur complement that makes `form` stationary along the unmeasured subspace for each mode (for
 instance, pairing each principal rotation axis with its natural screw pitch or centre), leaving a
 positive-definite generalized eigenproblem over the measured blades alone. Form eigenproblems and
-relative determinants are developed in `docs/conventions.md`, `docs/frameworks.md`, and
+relative determinants are developed in `docs/conventions.md`, `articles/frameworks.md`, and
 `docs/tutorial/extensors/11-eigenvalues-and-singular-values.md`.
 """
 

@@ -8,7 +8,7 @@ Generalized eigenvalue routines (`generalized_eig`, `generalized_eigh`, `general
 `generalized_eigvalsh`) override the base Cholesky and linear-solve reductions on `Context` by
 broadcasting `scipy.linalg` QZ and Hermitian pencil solvers across leading batch axes, supporting
 singular metric pencils directly. Eager NumPy table evaluation and singular-metric QZ pencils are
-discussed in `docs/internals.md` (sections 1, 4, and 6).
+discussed in `docs/internals.md`.
 """
 
 from __future__ import annotations

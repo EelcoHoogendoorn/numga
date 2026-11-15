@@ -12,8 +12,7 @@ When an exact `SymbolicKernel` target evaluates on a concrete context in `"spars
 `compile_sparse_bind` caches sparse index-and-sign plans per symbolic kernel; dense execution
 specializes target materialization, output-blade slicing, and exact-operand lowering at compile
 time, dispatching unary maps through `binding_steps` and higher-arity maps through `ordered_binding`.
-Compiled call closures and dense versus sparse execution are described in `docs/internals.md`
-(section 6).
+Compiled call closures and dense versus sparse execution are described in `docs/internals.md`.
 """
 
 from __future__ import annotations

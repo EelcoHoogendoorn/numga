@@ -17,7 +17,7 @@ existing `SubSpace` while preserving the surviving masks' order and signs, where
 and `complement` build new supports through `algebra.subspace.from_masks` in the algebra's default
 layout. `SubSpace` itself holds no flyweight pool so direct construction obeys the same structural
 equality contract as `SubSpaceFactory` interning. Signed canonical blade layouts and their role in
-structural kernel axes are described in `docs/internals.md` (section 3).
+structural kernel axes are described in `docs/internals.md`.
 """
 
 from __future__ import annotations

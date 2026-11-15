@@ -10,7 +10,7 @@ or Hermitian inner product on blade coefficients independently of the Clifford m
 `eigh` place the mode index on the trailing batch axis (`[..., modes]`), and `svd` returns the
 reduced triple `(left_vectors, singular_values, right_vectors)` with right singular vectors returned
 as input-space extensors satisfying `operator(v_i) == s_i * u_i` rather than conjugate-transposed
-matrix rows. Spectral conventions for maps and forms are compared in `docs/frameworks.md` and
+matrix rows. Spectral conventions for maps and forms are compared in `articles/frameworks.md` and
 `docs/tutorial/extensors/11-eigenvalues-and-singular-values.md`.
 """
 

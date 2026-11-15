@@ -16,7 +16,7 @@ tensors, avoiding repeated host-to-device uploads across calls. Out-of-place ind
 (`functional_set`, `functional_add`) clone the underlying tensor, flattening multi-dimensional
 indices into `index_add_` so repeated scatter indices accumulate identically to `np.add.at` and
 `jax.Array.at[].add`. PyTorch namespace translation and device caching are summarized in
-`docs/internals.md` (section 4).
+`docs/internals.md`.
 """
 
 from __future__ import annotations

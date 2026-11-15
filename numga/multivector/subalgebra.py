@@ -14,7 +14,7 @@ signed index gather per axis with no floating-point arithmetic beyond sign flips
 computes and caches this axis-by-axis gather plan once per `(source_gatype, target_gatype_factory)`
 pair, preserving certified traits on extrinsic nullary values whose geometric products are
 preserved by generator inclusion. Subalgebra inclusion across contexts is also summarized in
-`docs/internals.md` (section 4).
+`docs/internals.md`.
 """
 
 from __future__ import annotations

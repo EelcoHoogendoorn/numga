@@ -16,7 +16,7 @@ The terminology and projective-duality correspondence follow Leo Dorst, "Project
 complementary orientations in geometric algebras", Mathematical Methods in the Applied Sciences 47
 (2024), where intrinsic elements carry Gunn's complementarity bit. In exterior calculus (Schouten,
 Tonti, Bossavit), `intrinsic` and `extrinsic` correspond to inner and outer orientation. The
-geometric motivation and propagation rules in `numga` are developed in `docs/why_orientation.md`
+geometric motivation and propagation rules in `numga` are developed in `articles/orientation.md`
 and `docs/orientation.md`.
 """
 

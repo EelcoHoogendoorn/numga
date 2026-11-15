@@ -12,7 +12,7 @@ exactness where linear algebra permits. `halved` uses floor division whenever ev
 (as in symmetrized basis products and commutators), `inverse` accepts a rounded matrix inverse only
 when integer multiplication recovers the identity exactly, and `materialize` caches read-only host
 arrays per target dtype without ever caching traced JAX or PyTorch arrays. Exact table storage,
-cached materialization, and integer inverses are described in `docs/internals.md` (section 4).
+cached materialization, and integer inverses are described in `docs/internals.md`.
 """
 
 from __future__ import annotations

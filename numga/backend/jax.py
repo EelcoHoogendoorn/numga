@@ -16,7 +16,7 @@ and orientation as a trailing linear input axis (`S <- (I..., T)`). A scalar fun
 differentiates to the linear form `Scalar <- T` rather than an element of `T`, higher derivatives
 nest into multilinear forms such as `Scalar <- (T, T)`, and each call selects reverse pullbacks or
 forward pushforwards from the ratio of output to coupled input degrees of freedom. Tracing constant
-tables under `jit` is illustrated in `docs/internals.md` (sections 2 and 4), and differentiating
+tables under `jit` is illustrated in `docs/internals.md`, and differentiating
 functions of fields in `docs/fields.md` ("Derivatives with respect to a field").
 """
 

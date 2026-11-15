@@ -16,7 +16,7 @@ through a contraction-free broadcast `einsum` into a preallocated output array, 
 accelerator namespaces (`jax.numpy`, `TorchNamespace`) evaluate reshaped elementwise products and
 `stack` every output component in one expression so compilers such as XLA fuse independent blade
 polynomials without sequential buffer updates. Trade-offs between dense contraction and unrolled
-sparse execution are measured in `docs/internals.md` (section 6).
+sparse execution are measured in `docs/internals.md`.
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ declarative patterns or a predicate's positional parameters. Methods that accept
 operands, such as `eigh(form)` versus generalized `eigh(form, metric)` or `lstsq(operator, rhs)`
 versus `lstsq(form, rhs, metric)`, declare `overloads` up front and route each call length to its
 own independent `ExtensionMethod` table. Dispatch and specialization across types are described in
-`docs/internals.md` (section 7), with orientation constraints in `docs/orientation.md`.
+`docs/internals.md`, with orientation constraints in `docs/orientation.md`.
 """
 
 from __future__ import annotations
