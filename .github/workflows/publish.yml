@@ -33,7 +33,7 @@ jobs:
           assert "site-packages" in str(pathlib.Path(numga.__file__).resolve())
           ga = numga.Algebra("x+y+z+w0")
           mv = numga.NumpyContext(ga).multivector
-          assert (mv.x ^ mv.y) == mv.xy
+          assert float(((mv.x ^ mv.y) & mv.xy.dual()).to_array()) == 1.0
           ')
       - uses: actions/upload-artifact@v4
         with:

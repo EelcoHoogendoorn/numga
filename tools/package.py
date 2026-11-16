@@ -12,6 +12,7 @@ link-resolved `README.md` and a `numga`-only `pyproject.toml`, then build and ve
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import re
 import shutil
@@ -22,10 +23,22 @@ from pathlib import Path
 
 from setuptools import build_meta
 
-import numga
-
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "EelcoHoogendoorn/numga"
+
+
+def read_package_version() -> str:
+    """Reads `__version__` statically from `numga/__init__.py` so packaging needs no runtime dependencies."""
+    tree = ast.parse((ROOT / "numga" / "__init__.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            return node.value.value
+    raise RuntimeError("Could not find __version__ string literal in numga/__init__.py.")
 
 
 def resolve_readme_links(readme: str, ref: str) -> str:
@@ -93,8 +106,11 @@ def build_distributions(outdir: Path, tag: str | None = None) -> tuple[Path, Pat
     """Stages a clean `numga`-only tree, builds wheel and sdist into `outdir`, and verifies both archives."""
     pyproject_source = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     version = tomllib.loads(pyproject_source)["project"]["version"]
-    if numga.__version__ != version:
-        raise RuntimeError(f"Version mismatch: pyproject.toml has {version!r} while numga.__version__ is {numga.__version__!r}.")
+    package_version = read_package_version()
+    if package_version != version:
+        raise RuntimeError(
+            f"Version mismatch: pyproject.toml has {version!r} while numga.__version__ is {package_version!r}."
+        )
     if tag is not None:
         expected_version = tag.removeprefix("v")
         if expected_version != version:
