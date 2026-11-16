@@ -1,6 +1,6 @@
 # Simplicial topologies
 
-`Topology` represents an oriented simplicial complex from integer vertex connectivity alone. In both concept and implementation it is independent of geometric algebra, importing none of `numga`'s algebraic layers and holding no coordinates, metric or signature. It lives in `numga` because its plain-number `Sparse` incidences, boundaries and exterior derivatives ([Fields and field maps](fields.md#sparse-storage)) compose directly with fields of multivectors and extensors. Joins, regressive quotients and `.adjugate()` then turn pure simplex connectivity into simplex gradients, surface connections and material pullbacks across any algebra and signature ([Discrete differential geometric algebra](../articles/ddga.md)).
+A simplicial topology describes how vertices join into edges, triangles, tetrahedra and higher-dimensional simplices, recording which simplices bound which and with what relative orientation. In both concept and implementation it is independent of geometric algebra, holding integer connectivity alone with no coordinates, metric or signature. It sits inside numga because its sparse incidence, boundary and exterior-derivative maps ([Fields and field maps](fields.md#sparse-storage)) compose directly with fields of multivectors and extensors, turning simplex connectivity into simplex gradients, surface connections and material pullbacks across any algebra ([Discrete differential geometric algebra](../articles/ddga.md)).
 
 ```python
 import numpy as np
@@ -29,7 +29,7 @@ print((V, E, F))
 
 ## Incidences and the simplex gradient
 
-`incidence[n, m]` gathers the `m`-simplices of each `n`-simplex, and `off[n, m]` gathers the vertices of each `n`-simplex that lie off each of its `m`-simplices. Above dimension one, facet `i` omits corner `i`, so corner values from `incidence[-1, 0]` align with the opposite facets from `off[-1, 0]` along the leading local axis:
+On each simplex, incidence maps select either its sub-simplices (`incidence[n, m]`) or the vertices that lie opposite each sub-simplex (`off[n, m]`). Above dimension one, facet `i` omits corner `i`, so corner values gathered by `incidence[-1, 0]` align along their leading local axis with the opposite facets gathered by `off[-1, 0]`:
 
 ```python
 corners = sheet.incidence[-1, 0] * points                                # [3] Point-[F]
@@ -54,7 +54,7 @@ In a projective algebra, `gradients[i] & corners[j]` equals `1` when `i == j` an
 
 ## Boundaries, exterior derivatives and pullbacks
 
-`boundary[k + 1, k]` weights each facet of a `(k + 1)`-simplex by its induced boundary sign (`-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding and `-1` against it, and `+1` on outward tetrahedron faces). Summing over the local facets gives the discrete exterior derivative `d[k] = boundary[k + 1, k].sum(axis=0)`:
+Each `(k + 1)`-simplex induces `+1` and `-1` orientations on its facets (`-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding and `-1` against it, and `+1` on outward tetrahedron faces). Those signed facet incidences live on `boundary[k + 1, k]`, and summing across the local facets gives the discrete exterior derivative `d[k] = boundary[k + 1, k].sum(axis=0)`:
 
 ```python
 d0, d1 = sheet.d
@@ -89,7 +89,7 @@ out[1] = 5
 
 ## The combinatorial dual
 
-`sheet.dual` reverses the simplex grading by codimension: each top simplex becomes a dual vertex, each facet becomes a dual edge (`dual.incidence[1, 0]`), each codimension-two ridge becomes a dual face, and each primal vertex becomes a dual cell. Because dual elements above edges are general polytopes with variable face counts rather than simplices, `DualTopology` carries coboundary operators directly as the adjugates of the complementary primal coboundaries (`dual.d[k] == sheet.d[n_dim - 1 - k].adjugate()`):
+Every simplicial complex has a combinatorial dual (`sheet.dual`) that reverses simplex grading by codimension. Each top simplex becomes a dual vertex, each facet becomes a dual edge (`dual.incidence[1, 0]`), each codimension-two ridge becomes a dual face, and each primal vertex becomes a dual cell. Because dual elements above edges are general polytopes with variable face counts rather than simplices, `DualTopology` carries coboundary operators directly as the adjugates of the complementary primal coboundaries (`dual.d[k] == sheet.d[n_dim - 1 - k].adjugate()`):
 
 ```python
 dual = sheet.dual

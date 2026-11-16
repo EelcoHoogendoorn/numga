@@ -1,6 +1,6 @@
 # WebGPU shaders and rendering
 
-`numga.wgsl` compiles shader source written with `numga` types and operators into standard `WGSL` and runs it on WebGPU via `wgpu`. Built on top of it, `numga.render` draws geometric objects directly in the scene's own algebra without unpacking coordinates in notebooks or core modules.
+Shaders and scene renderers in numga compute with geometric objects in their own algebra all the way to the pixel buffer, so notebooks and core modules never unpack coordinates to draw. A shader dialect (`numga.wgsl`) compiles multivector and extensor expressions into WebGPU shaders, and a rendering layer built on it (`numga.render`) pairs scene elements directly against camera planes to draw 2D marks and 3D solids and surfaces.
 
 ```python
 import numpy as np
@@ -53,7 +53,7 @@ Calling `shader(shape, ...)` packs `Extensor` uniforms and input storage arrays,
 
 ## Cameras pair in the scene's own algebra
 
-In the examples, values cross into `render.py` in their own algebra, at their own grade and orientation. A `Camera` declares the planes (`across`, `up`, `toward`) and affine weight (`weight`, `unit`) that read scene elements through the regressive product `&` with the extrinsic factor placed first: `(across & point) / (weight & point + unit)`.
+In the examples, values cross into `render.py` in their own algebra, at their own grade and orientation. A `Camera` declares the planes (`across`, `up`, `toward`) and affine weight (`weight`, `unit`) that read scene elements through the regressive product `&` with the extrinsic factor placed first, evaluating `(across & point) / (weight & point + unit)`.
 
 Because `&` uses no metric, the same shaders draw projective points (`weight=mv.w, unit=0.0`), vector offsets (`weight=0 * mv.x, unit=1.0`), spin bivectors (`across=mv.yz, up=mv.zx`), or states in an algebra extended with null thermodynamic directions (`x+ y+ w0 i0 h0`), without converting elements into points or unpacking coordinates first. Callers name `weight` explicitly because metric signature alone does not distinguish the projective plane `w` from a null extensive quantity such as entropy.
 
