@@ -11,7 +11,7 @@ scalar = extrinsic & intrinsic                # [] Scalar+
 scalar = a & duality(a)                       # [] Scalar+
 ```
 
-The first form pairs two quantities of opposite orientation ([Why orientation](orientation.md)): an extrinsic element (`+`), oriented in the space around it like the sides of a plane or a turn about a line, and an intrinsic element (`-`), oriented within itself like a weight at a point or a direction along a line. The regressive product `&` pairs an extrinsic quantity with an intrinsic one of complementary grade, k and n − k in a space of n dimensions. A plane tests a point this way, `plane & point`, a wavevector reads the phase a wave gains across a displacement, `wavevector & displacement`, and a motion takes power from a force, `rate & forque`.
+The first form pairs two quantities of opposite orientation ([Why orientation](orientation.md)): an extrinsic element (`+`), oriented in the space around it like the sides of a plane or a turn about a line, and an intrinsic element (`-`), oriented within itself like a weight at a point or a direction along a line. [The regressive product](regressive_product.md) `&` pairs an extrinsic quantity with an intrinsic one of complementary grade, k and n − k in a space of n dimensions. A plane tests a point this way, `plane & point`, a wavevector reads the phase a wave gains across a displacement, `wavevector & displacement`, and a motion takes power from a force, `rate & forque`.
 
 The second form is the quadratic case, in which a quantity is paired with its own image under a map. The term ***duality map*** here means a [linear extensor](multiple_lenses.md) from one kind of element to the complementary kind, intrinsic to extrinsic or the reverse; `duality` takes `a` into its complementary space so the two can pair. Placing the extrinsic factor first writes this as `a & duality(a)` when `a` is extrinsic and `duality(a) & a` when `a` is intrinsic. A body's inertia takes a rate of motion to a momentum, and `rate & inertia(rate)` is twice the kinetic energy. A medium's susceptibility takes a field to the response it induces, and `field & susceptibility(field)` pairs the two. A quadric surface takes an intrinsic point to an extrinsic plane, and `quadric(point) & point` tests whether the point lies on the surface. Each is again an extrinsic quantity paired with an intrinsic one.
 
@@ -100,8 +100,9 @@ Within geometric algebra, projective geometric algebra made this complementary s
 
 ## Companion documents
 
-- [Why orientation](orientation.md): the mirror test and how intrinsic and extrinsic orientations arise from joins and meets.
 - [Extensors through multiple lenses](multiple_lenses.md): multilinear maps between multivector spaces, constructed from geometric-algebra products.
+- [Why orientation](orientation.md): the mirror test and how intrinsic and extrinsic orientations arise from joins and meets.
+- [The regressive product](regressive_product.md): the regressive product from its metric-free volume definition to geometric joins, partial contractions and linear maps.
 - [Extensors, linear algebra, tensors and forms](frameworks.md): how linear algebra, tensors, exterior forms and specialized algebras sit inside geometric algebra and extensors.
 - [Extensors and common practice](common_practice.md): comparisons with conventional matrix and tensor formulations in applied problems.
 - [Discrete differential geometric algebra](ddga.md): calculus and material pullbacks on a simplicial topology from the simplex gradient.
