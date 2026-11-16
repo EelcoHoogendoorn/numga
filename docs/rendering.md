@@ -65,20 +65,22 @@ Rendering separates into two layers. Marks (`quadrics`, `simplices`, `contours`,
 from numga.render import Camera, composited, quadrics, simplices
 from numga.topology import Topology
 
+blue, copper, slate, sand = np.array([
+    [0.15, 0.48, 0.78], [0.78, 0.32, 0.16], [0.24, 0.30, 0.38], [0.86, 0.78, 0.64],
+])
 camera = Camera(
     across=mv.x, up=mv.y, toward=0 * mv.x, weight=mv.w, unit=0.0,
-    middle=np.array([0.0, 0.0]), half=np.array([1.3, 1.0]), pixels=240,
+    middle=np.zeros(2), half=np.array([1.3, 1.0]), pixels=240,
 )
 ellipse = 0.7 * mv.x * (mv.x & Point) + 1.6 * mv.y * (mv.y & Point) - mv.w * (mv.w & Point)
 turns = (mv.xy * np.linspace(0, np.pi, 5, endpoint=False)).exp()         # [5] Motor+
 pentagon = turns >> mv.point([0.92, 0.0])                                # [5] Point-
-loop = Topology.loops([5])
 
 rgba = composited([
-    quadrics.regions(ellipse[None, None], np.array([[0.15, 0.48, 0.78]]), camera, opacity=0.20),
-    quadrics.curves(ellipse[None], 2.0, np.array([[0.15, 0.48, 0.78]]), camera),
-    simplices.strokes(pentagon, loop, np.array([0.82, 0.36, 0.14]), 2.2, camera),
-    simplices.markers(pentagon, np.array([0.16, 0.22, 0.30]), 4.0, camera),
+    quadrics.regions(ellipse[None, None], blue[None], camera, opacity=0.20),
+    quadrics.curves(ellipse[None], 2.0, blue[None], camera),
+    simplices.strokes(pentagon, Topology.loops([5]), copper, 2.2, camera),
+    simplices.markers(pentagon, slate, 4.0, camera),
 ])
 print(rgba.shape)
 ```
@@ -100,32 +102,28 @@ from numga.render import meshes, solids
 from numga.render.scene import Scene
 
 sm = solids.mv
-sheet = Topology.grid(3, 3).loop_subdivided(np.zeros(9, dtype=bool), n_steps=3)
-control = sm.point([
-    [-1, -1, -0.35], [0, -1, 0.25], [1, -1, -0.35],
-    [-1,  0,  0.25], [0,  0, 0.00], [1,  0,  0.25],
-    [-1,  1, -0.35], [0,  1, 0.25], [1,  1, -0.35],
-]).field()                                                               # Point-[9]
-surface_points = (sheet.subdivision * control).batch()                   # [289] Point-
+torus = Topology.torus(32, 16)
+major = (sm.xy * np.linspace(0, np.pi, 32, endpoint=False)).exp()        # [32] Motor+
+minor = (sm.xz * np.linspace(0, np.pi, 16, endpoint=False)).exp()        # [16] Motor+
+ring = (sm.xw * 0.35).exp() >> (minor >> sm.point([0.24, 0, 0]))         # [16] Point-
+surface_points = (major[:, None] >> ring).reshape(-1)                    # [512] Point-
 
-ends = sm.point([[-0.85, 0.0, 0.42], [0.85, 0.0, 0.42]])                 # [2] Point-
-rod = solids.rods(ends[0], ends[1], 0.045)[None]                         # [1, 3] Plane+ <- Point-
-balls = solids.ball(ends, 0.13)[:, None]                                 # [2, 1] Plane+ <- Point-
+ends = sm.point([[0, -0.55, -0.48], [0, 0.55, 0.48]])                    # [2] Point-
+rod = solids.rods(ends[0], ends[1], 0.055)[None]                         # [1, 3] Plane+ <- Point-
+balls = solids.ball(ends, 0.14)[:, None]                                 # [2, 1] Plane+ <- Point-
 
-view = solids.view([surface_points, ends], reach=0.2, elevation=np.radians(28),
-                   azimuth=np.radians(34), margin=0.12, pixels=260)
-surface = meshes.samples(surface_points, sheet.elements[2], np.array([0.86, 0.78, 0.64]),
-                         meshes.smooth(surface_points, sheet), view, np.zeros(1), meshes.plain, gloss=0.25)
-scene = Scene(view, np.ones(3), [(rod, np.array([0.28, 0.34, 0.42])), (balls, np.array([0.78, 0.32, 0.16]))],
-              [(surface, 1.0)], inks=[], translucent=[])
+view = solids.view([surface_points, ends], reach=0.18, elevation=0.5, azimuth=0.55, margin=0.10, pixels=260)
+surface = meshes.samples(surface_points, torus.elements[2], sand,
+                         meshes.smooth(surface_points, torus), view, np.zeros(1), meshes.plain, gloss=0.28)
+scene = Scene(view, np.ones(3), [(rod, slate), (balls, copper)], [(surface, 1.0)], inks=[], translucent=[])
 rgb = scene.draw([], [], [], [])
 print(rgb.shape)
 ```
 
 ```text
-(170, 260, 3)
+(198, 260, 3)
 ```
 
-<p align="center"><img src="../plots/rendering_3d.png" alt="A smooth Loop-subdivided saddle surface shaded beneath a slate cylindrical rod capped by two copper spheres" width="260" /></p>
+<p align="center"><img src="../plots/rendering_3d.png" alt="A smooth triangulated torus swept by PGA3D motors with a ray-traced slate rod capped by copper spheres threaded through its hole" width="260" /></p>
 
 `meshes.smooth` sums the joined tangent planes (`a & b & c`) of incident triangles around each vertex so lighting operates directly on intrinsic `Patch-` planes paired against the camera's screen frame, sharing identical key-lamp, sky-ground fill, headlight and specular shading across analytic quadrics and triangulated surfaces.
