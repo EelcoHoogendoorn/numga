@@ -1,90 +1,68 @@
 # Simplicial topologies
 
-A simplicial topology describes how vertices join into edges, triangles, tetrahedra and higher-dimensional simplices, recording which simplices bound which and with what relative orientation. In both concept and implementation it is independent of geometric algebra, holding integer connectivity alone with no coordinates, metric or signature. It sits inside numga because its sparse incidence, boundary and exterior-derivative maps ([Fields and field maps](fields.md#sparse-storage)) compose directly with fields of multivectors and extensors, turning simplex connectivity into simplex gradients, surface connections and material pullbacks across any algebra ([Discrete differential geometric algebra](../articles/ddga.md)).
+A simplicial topology describes how vertices join into edges, triangles, tetrahedra and higher-dimensional simplices, recording which simplices bound which and with what relative orientation. In both concept and implementation it is independent of geometric algebra, holding integer connectivity alone with no coordinates, metric or signature. It sits inside numga because its sparse incidence, boundary and exterior-derivative maps compose directly with typed fields of multivectors and extensors ([Fields and field maps](fields.md#sparse-storage)), turning simplex connectivity into simplex gradients, surface connections and material pullbacks ([Discrete differential geometric algebra](../articles/ddga.md)) as well as GPU curve and surface draws ([WebGPU shaders and rendering](rendering.md)).
 
 ```python
 import numpy as np
 
-from numga import NumpyContext, stack
-from numga.algebras import PGA2D
-from numga.sparse import spdiag
 from numga.topology import Topology
-
-mv = NumpyContext(PGA2D).multivector
-Scalar, Plane, Point = PGA2D.gatype.scalar(), PGA2D.gatype.vector(), PGA2D.gatype.antivector()
 
 # A 3-by-3 grid of vertices triangulated into eight coherently oriented triangles.
 sheet = Topology.grid(3, 3)
 V, E, F = sheet.n_elements
-rows, cols = np.divmod(np.arange(V), 3)
-points = mv.point(np.column_stack([cols, rows]).astype(float)).field()   # Point-[V]
-print((V, E, F))
+print((V, E, F), sheet.elements[2][0].tolist())
 ```
 
 ```text
-(9, 16, 8)
+(9, 16, 8) [0, 1, 4]
 ```
 
-`sheet.elements[k]` holds the sorted vertex table of each `k`-simplex (`k = 0, ..., sheet.n_dim`), while `sheet.elements[-1]` retains the caller's vertex order on top simplices to fix their orientation. Every lower simplex is deduplicated in increasing vertex order with induced `+1` and `-1` facet signs. Negative dimension indices count down from `n_dim`, so `[-1, 0]` addresses top simplices against vertices in any dimension.
+`sheet.elements[k]` holds the vertex table of each `k`-simplex (`k = 0, ..., sheet.n_dim`). Top simplices (`sheet.elements[-1]`) retain the caller's vertex order to fix their orientation, while every lower simplex is deduplicated in increasing vertex order with induced `+1` and `-1` facet signs. Negative dimension indices count down from `n_dim`, so `[-1, 0]` addresses top simplices against vertices in any dimension.
 
-## Incidences and the simplex gradient
+## Sub-simplex incidences
 
-On each simplex, incidence maps select either its sub-simplices (`incidence[n, m]`) or the vertices that lie opposite each sub-simplex (`off[n, m]`). Above dimension one, facet `i` omits corner `i`, so corner values gathered by `incidence[-1, 0]` align along their leading local axis with the opposite facets gathered by `off[-1, 0]`:
+On each simplex, plain-number `Sparse` maps select either its sub-simplices (`incidence[n, m]`) or the vertices that lie opposite each sub-simplex (`off[n, m]`). Calling a `Sparse` map on a NumPy array gathers values along its columns and sums into its rows, while multiplying two `Sparse` maps (`S * T`) composes them. Above dimension one, facet `i` omits corner `i`, so corner values gathered by `incidence[-1, 0]` align column for column with the opposite-facet vertices gathered by `off[-1, 0]`:
 
 ```python
-corners = sheet.incidence[-1, 0] * points                                # [3] Point-[F]
-tails, heads = sheet.off[-1, 0] * points                                 # [3] Point-[F], [3] Point-[F]
-# Joining the vertices opposite each corner and dividing by the triangle's join gives its simplex gradient.
-sides = tails & heads                                                    # [3] Antibivector-[F]
-gradients = sides / (sides & corners)                                    # [3] Plane+[F]
-
-# Assembling the three corner maps takes vertex potentials to one plane per triangle.
-gradient = (spdiag(gradients * Scalar) * sheet.incidence[-1, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[F <- V]
-potential = (2 * mv.x + 3 * mv.y + mv.w) & points                        # Scalar+[V]
-print(gradient(potential).batch()[0].formula())
+labels = np.arange(float(V))
+corners = sheet.incidence[-1, 0](labels)                                 # [3, F]
+opposite = sheet.off[-1, 0](labels)                                      # [2, 3, F]
+print(corners[:, 0].astype(int).tolist())
+print(opposite[:, :, 0].astype(int).tolist())
 ```
 
 ```text
-out[x] = 2
-out[y] = 3
-out[w] = 1
+[0, 1, 4]
+[[1, 0, 0], [4, 4, 1]]
 ```
 
-In a projective algebra, `gradients[i] & corners[j]` equals `1` when `i == j` and `0` on the opposite facet, so `gradient(potential)` recovers both the spatial slope (`2 * mv.x + 3 * mv.y`) and the value at the origin (`1 * mv.w`) on every triangle. `on[n, m]` reads each sub-simplex's vertices in its stored global order, while `oriented[n, m]` weights each incidence by `+1` or `-1` according to whether the local sub-simplex agrees with that stored orientation.
+On triangle `0` (`[0, 1, 4]`), corner `0` stands opposite edge `[1, 4]`, corner `1` opposite `[0, 4]`, and corner `4` opposite `[0, 1]`. Two companion maps track global simplex storage. `on[n, m]` reads each sub-simplex's vertices in increasing global index order, and `oriented[n, m]` weights each incidence by `+1` or `-1` according to whether the local sub-simplex agrees with its stored orientation in `elements[m]`.
 
-## Boundaries, exterior derivatives and pullbacks
+## Boundaries, exterior derivatives and subsets
 
-Each `(k + 1)`-simplex induces `+1` and `-1` orientations on its facets (`-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding and `-1` against it, and `+1` on outward tetrahedron faces). Those signed facet incidences live on `boundary[k + 1, k]`, and summing across the local facets gives the discrete exterior derivative `d[k] = boundary[k + 1, k].sum(axis=0)`:
+Each `(k + 1)`-simplex induces `+1` and `-1` orientations on its facets (`-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding and `-1` against it, and `+1` on outward tetrahedron faces). Those signed facet incidences live on `boundary[k + 1, k]`, and summing across the local facets gives the discrete exterior derivative `d[k] = boundary[k + 1, k].sum(axis=0)`, which satisfies `d[k + 1] * d[k] == 0` because every shared ridge cancels around the boundary of a boundary:
 
 ```python
 d0, d1 = sheet.d
-print(np.allclose((d1 * d0).cells, 0))
+edge_jumps = d0(labels)                                                  # [E]
+print(np.allclose((d1 * d0).cells, 0), float(np.abs(d1(edge_jumps)).max()))
 ```
 
 ```text
-True
+True 0.0
 ```
 
-`exterior[k]` and `interior[k]` partition `k`-simplices into those on the topological border and those strictly inside, and `reading(indices, k)` builds a `Sparse` selection map whose `.adjugate()` scatters values on the subset back to the full complex. Pulling a per-simplex material map back through `gradient.adjugate()` assembles a coupled vertex operator directly:
+Simplices on the topological border and those strictly inside are listed in `exterior[k]` and `interior[k]`. Passing an index array to `reading(indices, k)` builds a `Sparse` restriction map to that subset, and its `.adjugate()` scatters subset values back onto the full complex:
 
 ```python
-areas = (corners[0] & corners[1] & corners[2]).norm() / 2                # Scalar+[F]
-directions = stack((mv.x.dual(), mv.y.dual()))                           # [2] Point-
-material = areas * (directions * (Plane & directions)).sum(axis=0)       # (Point- <- Plane+)[F]
-laplacian = gradient.adjugate()(material(gradient))                      # (Antipseudoscalar- <- Scalar+)[V <- V]
-
-# Clamp the border vertices to 2x + 3y and solve for the single interior vertex at (1, 1).
-free = sheet.reading(sheet.interior[0], 0)
-fixed = sheet.reading(sheet.exterior[0], 0)
-rim = (2 * mv.x + 3 * mv.y) & (fixed * points)                           # Scalar+[V_rim]
-rhs = -(free * laplacian(fixed.adjugate() * rim))                        # Antipseudoscalar-[V_free]
-interior_value = (free * laplacian * free.adjugate()).solve(rhs)         # Scalar+[V_free]
-solution = fixed.adjugate() * rim + free.adjugate() * interior_value     # Scalar+[V]
-print(solution.batch()[4].formula())
+free = sheet.reading(sheet.interior[0], 0)                               # [V_free <- V]
+print(free(labels).astype(int).tolist())
+print(free.adjugate()(np.array([99.0])).astype(int).tolist())
 ```
 
 ```text
-out[1] = 5
+[4]
+[0, 0, 0, 0, 99, 0, 0, 0, 0]
 ```
 
 ## The combinatorial dual
@@ -94,17 +72,16 @@ Every simplicial complex has a combinatorial dual (`sheet.dual`) that reverses s
 ```python
 dual = sheet.dual
 print(dual.n_elements)
-# `dual.d[0]` takes differences between adjacent triangles across shared edges; `dual.d[1]` sums edge fluxes out of each vertex's dual cell.
-flux = mv.scalar(np.ones((E, 1))).field()                                # Scalar+[E]
-print((dual.d[1] * flux).sites.sum().formula())
+# `dual.d[0]` takes differences across shared edges; `dual.d[1]` sums edge fluxes out of each vertex's dual cell.
+print(float(dual.d[1](np.ones(E)).sum()))
 ```
 
 ```text
 (8, 16, 9)
-out[1] = 0
+0.0
 ```
 
-Every interior edge enters one endpoint's dual cell with `+1` and the other's with `-1`, while each border edge has both endpoints on the complex, so the total net flux summed across all dual cells vanishes identically.
+Every edge enters its tail's dual cell with `-1` and its head's dual cell with `+1`, so the net flux summed across all dual cells vanishes identically.
 
 ## Constructions, queries and subdivision
 
@@ -136,4 +113,35 @@ True True True 0
 (157, 444, 288) (157, 13)
 ```
 
-Because `refined.subdivision` is a plain-number `Sparse` map from the 13 coarse vertices to the 157 refined vertices, `refined.subdivision * coarse_points` refines control points in `PGA3D`, `VGA3D` or any joined algebra without coordinate unpacking.
+## Fields on a topology
+
+When a `Sparse` map meets an `Extensor` field ([Fields and field maps](fields.md)), its plain-number weights promote to extrinsic scalars of that field's algebra and act through whichever product an expression writes (`*`, `^`, `|`, `&`). Placing projective points on `sheet` turns `incidence[-1, 0]` and `off[-1, 0]` directly into each triangle's simplex gradients and assembled gradient operator:
+
+```python
+from numga import NumpyContext
+from numga.algebras import PGA2D
+from numga.sparse import spdiag
+
+mv = NumpyContext(PGA2D).multivector
+Scalar, Plane = PGA2D.gatype.scalar(), PGA2D.gatype.vector()
+
+rows, cols = np.divmod(np.arange(V), 3)
+points = mv.point(np.column_stack([cols, rows]).astype(float)).field()   # Point-[V]
+triangle_corners = sheet.incidence[-1, 0] * points                       # [3] Point-[F]
+tails, heads = sheet.off[-1, 0] * points                                 # [3] Point-[F], [3] Point-[F]
+
+sides = tails & heads                                                    # [3] Antibivector-[F]
+gradients = sides / (sides & triangle_corners)                           # [3] Plane+[F]
+gradient = (spdiag(gradients * Scalar) * sheet.incidence[-1, 0]).sum(axis=0)  # (Plane+ <- Scalar+)[F <- V]
+
+potential = (2 * mv.x + 3 * mv.y + mv.w) & points                        # Scalar+[V]
+print(gradient(potential).batch()[0].formula())
+```
+
+```text
+out[x] = 2
+out[y] = 3
+out[w] = 1
+```
+
+Pulling a per-simplex material map back through `gradient.adjugate()` (`gradient.adjugate()(material(gradient))`) then assembles coupled operators across any dimension and signature, as developed in [Discrete differential geometric algebra](../articles/ddga.md).
