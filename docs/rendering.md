@@ -1,6 +1,6 @@
-# WebGPU shaders and rendering
+rate # WebGPU shaders and rendering
 
-Shaders and scene renderers in numga compute with geometric objects in their own algebra all the way to the pixel buffer, so notebooks and core modules never unpack coordinates to draw. A shader dialect (`numga.wgsl`) compiles multivector and extensor expressions into WebGPU shaders, and a rendering layer built on it (`numga.render`) pairs scene elements directly against camera planes to draw 2D marks and 3D solids and surfaces.
+Shaders and scene renderers in numga compute with geometric objects in their own algebra all the way to the pixel buffer, so notebooks and core modules never unpack coordinates to draw. This document describes how multivector and extensor expressions compile into WebGPU shaders, how cameras read scene elements directly in their own algebra, and how the examples assemble 2D marks and 3D solids and surfaces.
 
 ```python
 import numpy as np
