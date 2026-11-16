@@ -1,59 +1,50 @@
 # The regressive product
 
-This document sets out the regressive product in geometric algebra and the role it can play across geometry, calculus and physics. Traditionally treated in projective geometry as a way to join points or intersect subspaces, the operation is developed here as a general metric-free pairing across orientations. It can evaluate complementary quantities into invariant scalars, contract fields without a metric, build closed-form discrete gradients, and construct linear maps and their transposes.
+This document sets out a broader perspective on the regressive product in geometric algebra and the role it can play across geometry, calculus and physics. The product itself is the standard regressive product of Grassmann and projective geometric algebra, where it is traditionally used to join points or intersect subspaces. Once elements carry [orientation](orientation.md), that same product also pairs complementary quantities into scalars, contracts fields, forms discrete gradients on simplices, and builds linear maps and their metric-free duals.
 
-What sets the regressive product `&` apart from products built out of the geometric product is that it compares the outer product of two elements against the space's [oriented](orientation.md) unit volume, `a ^ b == (a & b) * antiscalar`, rather than consulting a metric. Because the spanned volume `a ^ b` and the unit volume `antiscalar` reverse together in a mirror and share one top-dimensional space even when basis directions have zero length, their ratio `a & b` stays unchanged under reflections and works across every metric signature. When quantities are modelled with orientation and paired by [complementarity](complementarity.md) across a wide range of disciplines, `&` becomes the most frequently used product in the algebra, as [the count across the `numga` examples](#appendix-operations-across-the-numga-examples) illustrates.
+Like the outer product `^`, the regressive product `&` uses no metric. Where `^` builds elements up in grade, `&` pairs elements against the space's unit volume, yielding invariant scalars at complementary grades, joining points and directions, and contracting fields partially even when basis directions square to zero. In models that give their quantities orientations and pair them by [complementarity](complementarity.md), `&` becomes the product used most often, as [the count across the `numga` examples](#appendix-operations-across-the-numga-examples) shows.
 
-## Measuring by volume across orientations
+## Complementary grades and the unit volume
 
-A plane in space divides what lies in front of it from what lies behind it, carrying a sense in the surrounding space. A weighted point carries its sense within itself, through its weight, so a mirror containing the point leaves it unchanged while swapping the sides of an oblique plane. The terms ***intrinsic orientation*** and ***extrinsic orientation*** here mean a sense carried within an element itself (`-`) and a sense carried in the space around it (`+`), as introduced in [*Projective Duality Encodes Complementary Orientations in Geometric Algebras*](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf).
+A plane in space divides what lies in front of it from what lies behind it, so its sign chooses a side in the space around it. A weighted point holds its sign in its weight, within the point itself. A mirror that contains the point leaves it as it is, while swapping the sides of an oblique plane. The terms ***extrinsic orientation*** and ***intrinsic orientation*** here mean an orientation in the space around an element (`+`) and an orientation within the element itself (`-`), following [[1]](#references).
 
-In projective three-space, an extrinsic plane sits one grade above scalars and an intrinsic point sits one grade below the four-dimensional top space, so their outer product `plane ^ point` fills a four-volume. Comparing that volume against `antiscalar`, the space's intrinsic unit volume, defines their regressive product:
+In projective three-space, an extrinsic plane has grade one and an intrinsic point has grade three, one below the four-dimensional top space, so `plane ^ point` fills a four-volume. Both `plane ^ point` and `antiscalar`, the space's intrinsic unit volume, live in that one-dimensional top space, so the first is a scalar multiple of the second, and that scalar is their regressive product:
 
 ```python
 offset = plane & point                   # [] Scalar+
 plane ^ point == offset * antiscalar     # [] Antiscalar-
 ```
 
-Reflecting the scene in a mirror reverses the handedness of `plane ^ point` and reverses the unit volume `antiscalar` along with it, leaving their scalar ratio `offset` untouched. None of the products derived from the geometric product alone (`*`, `^`, `|`, `commutator`) refers to the unit volume, so none of them pairs an extrinsic quantity with an intrinsic one into a mirror-even scalar.
+Both `plane ^ point` and `antiscalar` have the same intrinsic top-grade type. Under an orientation-aware reflection `>>`, both transform by the same rule and stay unchanged, so their scalar ratio `offset` stays unchanged in a mirror. Neither the outer product nor the metric contractions refer to the unit volume, and none of them pairs an extrinsic element with an intrinsic one into a mirror-even scalar.
 
-Because `antiscalar` multiplies `offset` on the right, the definition compares two volumes directly without dividing by `antiscalar` and without asking how long any axis is. In projective space (`x+ y+ z+ w0`), Galilean spacetime and thermodynamic state spaces, null basis vectors make `antiscalar` square to zero so it has no inverse, yet `plane ^ point` remains a clean scalar multiple of `antiscalar`. Writing the extrinsic factor first keeps the same positive sign on matching basis pairs in even and odd ambient dimensions alike.
+Because `antiscalar` multiplies `offset` on the right rather than dividing `plane ^ point`, this relation needs no inverse of `antiscalar` and no lengths along the axes. In projective space (`x+ y+ z+ w0`), Galilean spacetime and thermodynamic state spaces, null basis vectors make `antiscalar` square to zero, yet `plane ^ point` is still a multiple of `antiscalar`. Putting the extrinsic factor first gives matching basis pairs a positive sign in even and odd dimensions alike.
 
-Replacing a single plane by a stack of equally spaced parallel wavefronts (`wavevector`) turns that geometric offset into wave phase. For an atomic `displacement` step between two points, `wavevector & displacement` counts how many wavefronts the step crosses without using a metric, so stretching the crystal and pulling its wavefront planes back preserves every interference peak ([crystal diffraction](../examples/optics/crystal_diffraction/crystal_diffraction.ipynb)).
+A plane wave advances its phase from crest to crest, and the phase gained across a step counts how many wavefronts that step crosses. A model can represent the wavevector as the extrinsic hyperplane of its wavefronts and an atomic step as an intrinsic displacement between points, as in the [crystal diffraction](../examples/optics/crystal_diffraction/crystal_diffraction.ipynb) example. Their pairing `wavevector & displacement` then gives the phase directly.
 
-## Joining points into lines, surfaces and volumes
+## Joins of points and directions
 
-While the outer product `^` cuts space down by intersecting hyperplanes, the regressive product `&` builds geometry up from points, as developed in plane-based projective geometric algebra ([*A Guided Tour to the Plane-Based Geometric Algebra PGA*](https://bivector.net/PGA4CS.pdf), Ch. 3; [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459), §6). Joining two points `a` and `b` in projective three-space spans the directed line from `a` to `b`, joining a third point `c` spans the oriented plane of their triangle, and joining a fourth point `d` closes the tetrahedron into its signed volume:
+While the outer product `^` cuts space down by intersecting hyperplanes, the regressive product `&` builds geometry up from points, as in plane-based projective geometric algebra [[2, Ch. 3]](#references), [[3, §6]](#references). Two points join into the line from the first to the second, a third point joins with that line into the plane of their triangle, and in three-space a fourth point closes the tetrahedron into its signed volume:
 
 ```python
 edge = a & b                             # [] Antibivector-
-winding = a & b & c                      # [] Vector-
+winding = a & b & c                      # [] Antitrivector-
 volume = a & b & c & d                   # [] Scalar-
 ```
 
-Every join in that chain stays intrinsic (`-`). The line `edge` is oriented along itself from `a` to `b`, the triangle plane `winding` is oriented by its corners going round within the surface rather than by a chosen positive side in the space outside, and `volume` reverses sign when the tetrahedron is reflected in a mirror ([surface normals](../examples/orientation/normals/normals.ipynb)). Dividing two elements of the same grade and orientation forms the rigid motion between them directly: in [a pose from a point, a line and a plane](../examples/geometry/three_point_pose/three_point_pose.ipynb), matching a marker point `a`, a joined edge `a & b` and a joined marker plane `a & b & c` in turn recovers a rigid pose as the product of three motor square roots `(target / source).square_root()`.
+Each join in that chain stays intrinsic. The line is oriented along itself from one point to the next, the triangle's plane is oriented by the order of its corners round the triangle rather than by a positive side outside it, and in three-space `a & b & c & d` is an intrinsic scalar that changes sign in a mirror, as the [surface normals](../examples/orientation/normals/normals.ipynb) example shows.
 
-Dividing a simplex's facing facet join by its full volume join turns those same geometric spans into discrete differentiation ([Discrete differential geometric algebra](ddga.md)). On a tetrahedron with unit-weight corners `a`, `b`, `c` and `d`, joining the three corners opposite `a` builds `facet`, and dividing by `facet & a` yields the ***simplex gradient*** at `a` ([Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb)):
-
-```python
-facet = b & c & d                        # [] Vector-
-gradient_a = facet / (facet & a)         # [] Vector+
-```
-
-Because both numerator and denominator are intrinsic, their ratio is an extrinsic hyperplane (`Vector+`) that reads `1` at `a` and `0` at `b`, `c` and `d`, so pairing `gradient_a` with any edge step returns the difference of corner values along that edge without a metric or a matrix inverse.
-
-Joins `&` and meets `^` also compose in a single expression whenever spanned elements are cut by planes. Joining a `light` source with a scene `point` builds the sight `ray` between them, and wedging that ray with a `ground` plane meets them at the `shadow` point where the ray strikes the ground ([scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb), [perspective projection](../examples/geometry/projection/projection.ipynb)):
+Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in the [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example:
 
 ```python
 ray = light & point                      # [] Antibivector-
 shadow = ray ^ ground                    # [] Antivector-
 ```
 
-Replacing the second point in a join by an ideal `direction` (a point of weight zero) spans the line through `point` along `direction` (`point & direction`), and joining two directions sweeps one along the other into an oriented area or worldsheet patch (`direction & time`).
+Points of weight zero represent directions, and they join the same way: `point & direction` is the line through a point along a direction, and `direction & time` is the patch swept out along time.
 
 ## Partial pairing and the determinant
 
-When two elements have more than enough grade to fill the space, `&` pairs part of one against the other and leaves the remainder. Two planes `u` and `v` meet in an extrinsic line `u ^ v`. Supplying a single intrinsic point `p` tests each plane against `p` in turn and leaves one plane behind:
+When the grades of two elements add up to more than the dimension of the space, `&` pairs part of one with the other and leaves what remains. Two planes meet in an extrinsic line `u ^ v`. Paired with one intrinsic point, that line tests each plane at the point in turn and leaves a single plane:
 
 ```python
 pencil = (u ^ v) & p                     # [] Vector+
@@ -61,9 +52,9 @@ pencil == (u & p) * v - (v & p) * u      # [] Vector+
 pencil & p == 0                          # [] Scalar+
 ```
 
-Because `pencil` is a linear combination of `u` and `v`, it contains their meeting line `u ^ v`. Pairing `pencil` with `p` a second time gives `(u ^ v) & (p & p) == 0` because any point joined with itself vanishes (`p & p == 0`), confirming that `pencil` is the unique plane through the line `u ^ v` and the point `p`.
+Because `pencil` is a combination of the two planes, it passes through their meeting line `u ^ v`. Any point joined with itself is zero (`p & p == 0`), so `(u ^ v) & (p & p) == 0`, which means the point lies on `pencil` as well.
 
-Supplying a second point `q` and requiring `&` to be associative shows why partial pairing and the point join of the previous section are two sides of one product:
+A second point ties this partial pairing to the point join of the previous section through associativity:
 
 ```python
 line = p & q                                              # [] Antibivector-
@@ -71,34 +62,43 @@ line = p & q                                              # [] Antibivector-
 (u ^ v) & line == (u & p) * (v & q) - (v & p) * (u & q)   # [] Scalar+
 ```
 
-Associativity identifies the joined line `p & q` as the intrinsic element whose pairing with any pair of planes `u ^ v` is the two-by-two determinant of their readings on `p` and `q`, and induction gives the `k`-by-`k` determinant for `k` wedged planes paired with `k` joined points in every dimension. Scalar pairing, metric-free contraction and the geometric join are therefore one associative operation across grades, over which every normalized versor transformation distributes (`versor >> (a & b) == (versor >> a) & (versor >> b)`), projective translations included.
+By associativity, `p & q` is the intrinsic line whose pairing with any two wedged planes `u ^ v` equals the two-by-two determinant of their values at the two points, and repeating the step gives the `k`-by-`k` determinant for `k` planes and `k` points in any dimension. Scalar pairing, partial contraction and the point join are one associative operation, and reflections and rigid motions distribute over it (`versor >> (a & b) == (versor >> a) & (versor >> b)`).
 
-## Building linear maps and transposes without a metric
+## The simplex gradient
 
-Pairing `Bivector`, the space of bivectors, with a fixed patch `swept_plane` constructs a linear scalar form on bivectors, and multiplying an output element by that form constructs a rank-one linear map without coordinates, a basis transpose or an inner product ([Extensors through multiple lenses](multiple_lenses.md)):
-
-```python
-swept_plane = direction & time                       # [] Antibivector-
-readout = Bivector & swept_plane                     # [] Scalar+ <- Bivector+
-dielectric = swept_plane * readout                   # [] Antibivector- <- Bivector+
-```
-
-Summing such dyads over a crystal's axes builds its dielectric response, just as joining each mass point with its velocity over the space of rates sums into a body's inertia.
-
-Reading a linear map `f` backwards across `&` defines its metric-free adjugate `f.adjugate()`, so that applying `f` on the right pairs to the same scalar as applying `f.adjugate()` on the left:
+On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). The term ***simplex gradient*** here means the hyperplane at a corner of a simplex that pairs to `1` with that corner and to `0` with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds the simplex gradient in closed form, as in the [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example:
 
 ```python
-b & f(a) == f.adjugate()(b) & a                      # [] Scalar+
-operator = gradient.adjugate()(material(gradient))   # (Antiscalar- <- Scalar+)[vertices <- vertices]
+facet = b & c & d                        # [] Antitrivector-
+gradient_a = facet / (facet & a)         # [] Vector+
 ```
 
-Pulling a material map back through the closed-form simplex gradient assembles discrete Laplacians, stiffnesses and wave operators in one expression ([Discrete differential geometric algebra](ddga.md)), while pushing pose covariance forward onto points takes `shift(covariance(shift.adjugate()))`. Symmetry `material == material.adjugate()` expresses elastic reciprocity and thermodynamic Maxwell relations ([Geometry and quantities](thermodynamics.md)), and differentiating a quadratic form `(a & map(a)) / 2` stays directly in `&` through `(map + map.adjugate()) / 2`, without converting to a metric scalar product.
+Because numerator and denominator are both intrinsic, their quotient `gradient_a` is an extrinsic hyperplane. Its pairing with the displacement `b - a` along any edge of the tetrahedron gives the difference between the values at the edge's two ends.
 
-## Physics from joins, pairings and contractions
+## Linear maps and the adjugate
 
-With those geometric and linear-map constructions in hand, physical observables and conservation laws take the exact forms already built above, isolating lengths, angles and material properties inside linear maps between complementary spaces.
+Naming the space of an argument by its type builds a linear map directly from a product ([Extensors through multiple lenses](multiple_lenses.md)). For a fixed intrinsic patch, `Bivector & swept_plane` reads a scalar from any bivector, and multiplying an output element by that readout gives a rank-one map:
 
-With each quantity's space, grade and orientation chosen from how it is built and transforms ([representations](complementarity.md#appendix-representations)), a mass at `point` moving with `velocity` sweeps out the point–direction join `momentum = point & velocity`, sitting two grades below the top space in any dimension. A body's rotational `rate` is a plane of rotation at grade 2, like `u ^ v` above, so pairing `rate` with `momentum` is the complementary bivector–line pairing across any dimension, as simulated in [the tennis racket theorem](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb):
+```python
+swept_plane = direction & time           # [] Antibivector-
+readout = Bivector & swept_plane         # [] Scalar+ <- Bivector+
+dielectric = swept_plane * readout       # [] Antibivector- <- Bivector+
+```
+
+A crystal's dielectric response is a sum of such maps over its axes.
+
+Reading a linear map backwards across `&` defines its adjugate `f.adjugate()`, the map for which applying `f` on the right gives the same scalar as applying `f.adjugate()` on the left:
+
+```python
+b & f(a) == f.adjugate()(b) & a          # [] Scalar+
+cone = camera.adjugate()(conic(camera))  # [] Vector+ <- Antivector-
+```
+
+A pinhole `camera` projects three-space onto an image plane, collapsing depth, so it has no inverse. Its adjugate is still defined and maps image lines back to planes through the pinhole, so `camera.adjugate()(conic(camera))` pulls an image conic back into a sight cone in space, as in the [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. A map equal to its own adjugate (`material == material.adjugate()`) is symmetric across the pairing: differentiating `(a & map(a)) / 2` with respect to `a` gives `((map + map.adjugate()) / 2)(a)`, which reduces to `map(a)` when `map` equals its adjugate.
+
+## Mechanics and electrodynamics
+
+A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in the [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples:
 
 ```python
 velocity = point.commutator(rate)        # [] Antivector-
@@ -106,9 +106,9 @@ momentum = point & velocity              # [] Antibivector-
 energy = (rate & momentum) / 2           # [] Scalar+
 ```
 
-In three-dimensional Euclidean space (`x+ y+ z+`), `rate` has grade 2 while `momentum` has grade 1, so the metric inner product `rate | momentum` produces a vector rather than a scalar. Because grade 2 from the plane end and grade `n - 2` from the point end always fill the `n`-dimensional volume together, `(rate & momentum) / 2` gives the kinetic energy uniformly in two, three and four dimensions and stays positive in a mirror.
+In three dimensions (`x+ y+ z+`), the rate has grade two while the momentum has grade one, so their inner product `rate | momentum` is a vector rather than a scalar. Because grade two and grade `n - 2` always add to `n`, `(rate & momentum) / 2` has the same form in the plane, in space and in four dimensions, and stays positive in a mirror.
 
-In spacetime (`x+ y+ z+ t-`), electrodynamics follows the same pattern of swept patches and partial pairings. Joining a spatial wire step `direction` with an observer's `time` vector sweeps out the worldsheet patch `direction & time`, and pairing the electromagnetic `field` bivector with that patch reads the voltage per unit length along `direction`. Contracting that `field` bivector with an electric four-`current` antivector is the partial pairing `(u ^ v) & p` above, yielding the Lorentz four-force covector with no Minkowski metric involved:
+In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time vector forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. Pairing the field partially with the four-current has the form `(u ^ v) & p` from earlier and gives the Lorentz four-force:
 
 ```python
 voltage_slope = field & (direction & time)   # [] Scalar+
@@ -116,40 +116,44 @@ lorentz = -(field & current)                 # [] Vector+
 lorentz & current == 0                       # [] Scalar+
 ```
 
-Pairing `lorentz` with a spatial step gives the electric and magnetic force along it, pairing with `-time` gives the Joule heating rate, and electromagnetic work–energy balance (`lorentz & current == -(field & (current & current)) == 0`) is the same identity `pencil & p == 0` that placed `p` on the plane `(u ^ v) & p`. The spacetime metric or crystal permittivity enters once, in the constitutive map `excitation = medium(field)` that forms the Lagrangian density `(field & excitation) / 2` ([constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb)), while parity-violating interactions join two intrinsic quantities directly (`spin & direction` in [the Wu experiment](../examples/orientation/wu_experiment/wu_experiment.ipynb)) into a handed volume ratio (`Scalar-`) like the tetrahedron volume `a & b & c & d`.
+Paired with a spatial displacement, `lorentz` gives the mechanical work done on the charges; paired with `-time`, it gives the electrical power transferred to matter, which becomes Joule heating in a resistive conductor. Because `current & current == 0`, pairing `lorentz` with `current` gives `-(field & (current & current)) == 0`, the same identity `pencil & p == 0` that placed the point on `(u ^ v) & p`. For a moving charge, that identity equates the electrical power delivered by the field with the spatial work done along its motion before any spacetime metric or medium enters; those enter separately in `excitation = medium(field)`, as in the [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example.
 
-Across these examples, every ordinary scalar observable takes one of two forms:
+Across these models, a mirror-even scalar reading takes one of two forms:
 
 ```python
 linear_reading = extrinsic & intrinsic       # [] Scalar+
 quadratic_reading = a & duality(a)           # [] Scalar+
 ```
 
-A linear reading pairs an extrinsic measurement or drive directly with an intrinsic state or flux, while a quadratic energy, Lagrangian or dissipation pairs `a` with its image under a map `duality` into its oppositely oriented complement, such as `rate & inertia(rate)` or `field & medium(field)`. Because `&` uses no metric, keeps one sign across dimensions, stays unchanged in a mirror, and transfers linear maps through `.adjugate()`, [Complementarity](complementarity.md) develops those two forms as a unifying principle across mechanics, elasticity, optics, electrodynamics, estimation, quantum measurement and [thermodynamics](thermodynamics.md), extending unchanged to convex state spaces (`effect & state`) and null state spaces (`drive & mobility(drive)`) where no inner product exists.
+The first pairs an extrinsic measurement or drive with an intrinsic state or flux. The term ***duality map*** here means a linear map from one orientation to its complement, such as an inertia or a medium response, so the second form `a & duality(a)` again pairs an extrinsic element with an intrinsic one. [Complementarity](complementarity.md) develops those two forms across mechanics, elasticity, optics, electrodynamics, estimation, quantum measurement and thermodynamics.
 
 ## Conclusion
 
-Comparing `a ^ b` against the space's intrinsic unit volume `antiscalar` gives geometric algebra a single metric-free operation across orientations. Because `a ^ b` and `antiscalar` reverse together in a mirror and need no metric inverse, `a & b` pairs extrinsic planes with intrinsic points into mirror-even scalars, joins points and directions into lines, surfaces, volumes and closed-form simplex gradients, and contracts plane meets partially against points by associativity.
+At complementary grades, the regressive product compares `a ^ b` with the space's intrinsic unit volume `antiscalar`. Because both share the same intrinsic top-grade transformation under `>>` and `antiscalar` is never divided by, `a & b` gives a mirror-even scalar without a metric even when basis directions square to zero. By associativity, the same operation joins points into lines, surfaces, volumes and simplex gradients, and contracts wedged planes partially against points.
 
-Every physical role of `&` follows directly from those geometric constructions: `point & velocity` paired with `rate` gives kinetic energy across dimensions where equal-grade inner products fail, `field & (direction & time)` and `-(field & current)` read voltages and Lorentz forces with work–energy balance `-(field & (current & current)) == 0` matching `((u ^ v) & p) & p == 0`, and `plane & point` reads probabilities and thermodynamic dissipation where no metric exists. Together with rank-one dyads and the metric-free adjugate built on the same pairing, `&` carries the incidence, kinematic and conservation structure of geometry and physics, leaving metrics and media to enter explicitly through duality maps.
+With elements typed by orientation, that single operation serves geometry and physics alike. The plane `(u ^ v) & p` through a line and a point has the same algebraic form as the Lorentz force `-(field & current)`, and the point lying on that plane is the same identity `p & p == 0` that ties electrical power to mechanical work on a current. Simplex gradients, rank-one maps and `.adjugate()` follow from `&` in the same way, leaving metrics and material constants inside the duality maps where a model needs them.
 
 ## Related work
 
-Grassmann's exterior algebra introduced both the progressive wedge product and the regressive product, and Grassmann–Cayley and projective geometric algebras developed the regressive product for joining points and intersecting subspaces; [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (§6) compares pseudoscalar dualization $I^{-1}(IY \wedge IX)$, the shuffle product and Poincaré duality when the metric is degenerate. In exterior calculus, [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (§§1–2, Eq. 1.5) defines the graded interior contraction $i_v(\omega \wedge \eta) = i_v\omega \wedge \eta + (-1)^p \omega \wedge i_v\eta$, the evaluation bracket $\langle \cdot, \cdot \rangle$ and the dual multivector join $\vee$ across separate vector and form spaces, alongside untwisted and twisted differential forms for outer and inner orientation, while [*Finite element exterior calculus: from Hodge theory to numerical stability*](https://arxiv.org/pdf/0906.4325) (§§1.3 and 5) and [*Discrete Exterior Calculus*](https://arxiv.org/pdf/math/0508341) (§6, Definition 6.1) separate discrete coboundary forms from dual-cell Hodge stars on simplicial complexes. Within a single oriented geometric algebra, `&` carries the duality bracket at complementary grades, the interior contraction on `+ & -` above complementary grades, and the intrinsic join on `- & -`.
+Grassmann's exterior algebra introduced both the progressive wedge product and the regressive product, and Grassmann–Cayley and projective geometric algebras developed the regressive product for joining points and intersecting subspaces. On degenerate metrics, alternative definitions including pseudoscalar dualization $I^{-1}(IY \wedge IX)$, the shuffle product and Poincaré duality are compared in [[3, §6]](#references).
 
-In projective rigid-body mechanics, where a null basis vector makes the inner product vanish on translations, [*May the Forque Be with You: Dynamics in PGA*](https://bivector.net/PGAdyn.pdf) (§§2.6–2.9, pp. 47–55, citing Gunn's thesis) expresses point–plane contact ($A_i \vee f < 0$), kinetic energy ($T = \frac{1}{2} B_b \vee I_b[B_b]$), power ($\Pi = B \vee F$) and hinge constraints ($L \vee F_L = 0$) in an unoriented projective algebra, while preferring the outer-product form $T I = \frac{1}{2} B_b \wedge I_b[B_b]$ and rewriting $L = \frac{1}{2} B \vee I[B]$ as a reciprocal-pseudoscalar scalar product $\langle \frac{1}{2} B I_r I[B] \rangle$ to differentiate Lagrangians. Outside projective mechanics, physics in geometric algebra has worked primarily in nondegenerate Euclidean and Minkowski signatures where an invertible metric is available, writing pairings and contractions such as the Lorentz force density $J \cdot F$ with the metric inner product in [*Spacetime Physics with Geometric Algebra*](https://davidhestenes.net/geocalc/pdf/SpacetimePhysics.pdf) (§VII.C, Eq. 169), whereas premetric exterior calculus in [*Recent developments in premetric classical electrodynamics*](https://arxiv.org/pdf/physics/0610221) (§3, Eq. 8) writes the covectorial Lorentz force density from the untwisted 2-form $F$ and twisted 3-form $J$ through an auxiliary frame $e_\alpha$ in $f_\alpha = (e_\alpha \rfloor F) \wedge J$.
+In exterior calculus, the graded interior contraction $i_v(\omega \wedge \eta) = i_v\omega \wedge \eta + (-1)^p \omega \wedge i_v\eta$, the evaluation bracket $\langle \cdot, \cdot \rangle$ and the dual multivector join $\vee$ are defined on separate vector and form spaces alongside untwisted and twisted differential forms for outer and inner orientation [[4, §§1–2]](#references). On simplicial complexes, finite element exterior calculus [[5, §§1.3, 5]](#references) and discrete exterior calculus [[6, §6]](#references) likewise separate discrete coboundary forms from dual-cell Hodge stars. Within a single oriented geometric algebra, `&` carries the evaluation bracket at complementary grades, the interior contraction when an extrinsic element is paired partially with an intrinsic one, and the point join on intrinsic elements.
 
-## Further reading
+In projective rigid-body mechanics, where a null basis vector makes the inner product vanish on translations, point–plane contact ($A_i \vee f < 0$), kinetic energy ($T = \frac{1}{2} B_b \vee I_b[B_b]$), power ($\Pi = B \vee F$) and hinge constraints ($L \vee F_L = 0$) have been written with the regressive product in an unoriented projective algebra, alongside outer-product forms such as $T I = \frac{1}{2} B_b \wedge I_b[B_b]$ and reciprocal-pseudoscalar scalar products $\langle \frac{1}{2} B I_r I[B] \rangle$ for differentiating Lagrangians [[7, §§2.6–2.9]](#references).
 
-* [Why orientation](orientation.md): why geometric constructions and physical observables require intrinsic and extrinsic orientation.
-* [Extensors through multiple lenses](multiple_lenses.md): how multilinear maps and rank-one dyads arise from partial products and transform under linear maps.
-* [Complementarity](complementarity.md): how `extrinsic & intrinsic` and `a & duality(a)` unify dual pairs across fourteen branches of geometry, mechanics and physics.
-* [Discrete differential geometric algebra](ddga.md): calculus and physics on simplicial topologies built from the closed-form simplex gradient.
-* [Orientation in numga](../docs/orientation.md) and [Conventions](../docs/conventions.md): the defining identities and static orientation rules in `numga`.
+Outside projective mechanics, physics in geometric algebra has mostly worked in nondegenerate Euclidean and Minkowski metrics, writing contractions such as the Lorentz force density $J \cdot F$ with the metric inner product [[8, §VII.C]](#references). Premetric electrodynamics in exterior calculus instead writes the Lorentz force density from the untwisted 2-form $F$ and twisted 3-form $J$ using an auxiliary frame $e_\alpha$ as $f_\alpha = (e_\alpha \rfloor F) \wedge J$ and treats the force law and field energy–momentum balance separately [[9, §§3, 5]](#references).
+
+## Companion documents
+
+* [Why orientation](orientation.md): why geometric constructions and positive physical energies require intrinsic and extrinsic orientation.
+* [Extensors through multiple lenses](multiple_lenses.md): how multilinear maps and rank-one dyads arise from algebraic products and transform under motions.
+* [Complementarity](complementarity.md): how `extrinsic & intrinsic` and `a & duality(a)` unify dual pairs across geometry, mechanics, estimation and physics.
+* [Discrete differential geometric algebra](ddga.md): calculus and physics on simplicial topologies built from the simplex gradient.
+* [Geometry and quantities](thermodynamics.md): equilibrium and transport thermodynamics in algebras extended with null directions for extensive quantities.
 
 ## Appendix: operations across the `numga` examples
 
-Across the 202 `numga` examples, each row counts uses of one geometric algebra operation and the number of examples in which it appears; scalar scaling, sparse topology couplings and rank-one dyads (`value * scalar_form`) are excluded from the bare geometric product:
+Across the 202 `numga` examples, each row below counts uses of one geometric algebra operation and the number of examples in which it appears. Scalar multiplication, sparse topology operators and rank-one dyads are excluded from the bare geometric product:
 
 | Operation | Uses | Examples |
 | --- | ---: | ---: |
@@ -161,3 +165,15 @@ Across the 202 `numga` examples, each row counts uses of one geometric algebra o
 | Inner product | 199 | 68 |
 | Scalar product | 63 | 29 |
 | Metric dot product | 31 | 14 |
+
+## References
+
+1. [*Projective Duality Encodes Complementary Orientations in Geometric Algebras*](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf) (Leo Dorst, *Mathematical Methods in the Applied Sciences*, 2024).
+2. [*A Guided Tour to the Plane-Based Geometric Algebra PGA*](https://bivector.net/PGA4CS.pdf) (Leo Dorst and Steven De Keninck, 2022).
+3. [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022).
+4. [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (Alain Bossavit, 2002).
+5. [*Finite element exterior calculus: from Hodge theory to numerical stability*](https://arxiv.org/pdf/0906.4325) (Douglas N. Arnold, Richard S. Falk and Ragnar Winther, *Bulletin of the American Mathematical Society*, 2010).
+6. [*Discrete Exterior Calculus*](https://arxiv.org/pdf/math/0508341) (Mathieu Desbrun, Anil N. Hirani, Melvin Leok and Jerrold E. Marsden, 2005).
+7. [*May the Forque Be with You: Dynamics in PGA*](https://bivector.net/PGAdyn.pdf) (Leo Dorst and Steven De Keninck, 2022).
+8. [*Spacetime Physics with Geometric Algebra*](https://davidhestenes.net/geocalc/pdf/SpacetimePhysics.pdf) (David Hestenes, *American Journal of Physics*, 2003).
+9. [*Recent developments in premetric classical electrodynamics*](https://arxiv.org/pdf/physics/0610221) (Friedrich W. Hehl, Yakov Itin and Yuri N. Obukhov, 2006).
