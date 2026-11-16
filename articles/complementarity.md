@@ -89,6 +89,7 @@ Each discipline that works outside that setting has built its own formalism for 
 | [Electrodynamics](#electrodynamics-and-crystal-optics) | Faraday 2-form and excitation | `field & excitation` |
 | [Spin and chiral media](#spin-precession-and-chiral-media) | Magnetic field and spin moment | `field & spin` |
 | [Gravitational waves](#gravitational-waves-and-spacetime-curvature) | Metric strain and arm separation | `strain(arm) & arm` |
+| [Symplectic geometry](#state-changes-and-conjugate-potentials) | Conjugate potentials and state variations | `potential & change` |
 | [Information geometry](#uncertainty-principal-components-and-gradient-descent) | Readout differential and covariance | `readout & covariance(readout)` |
 | [Thermodynamics](#thermodynamics-and-heat-transport) | Intensive affinities and state variations | `entropy_gradient & mobility(entropy_gradient)` |
 | [Quantum measurements](#quantum-states-and-measurements) | POVM effects and density operators | `effect & state` |
@@ -126,6 +127,7 @@ This appendix applies the ansatz to a range of domains in geometry, mechanics an
   - [Spin precession and chiral media](#spin-precession-and-chiral-media)
   - [Gravitational waves and spacetime curvature](#gravitational-waves-and-spacetime-curvature)
 - State spaces
+  - [State changes and conjugate potentials](#state-changes-and-conjugate-potentials)
   - [Uncertainty, principal components and gradient descent](#uncertainty-principal-components-and-gradient-descent)
   - [Thermodynamics and heat transport](#thermodynamics-and-heat-transport)
   - [Quantum states and measurements](#quantum-states-and-measurements)
@@ -312,6 +314,26 @@ In tensor notation, geodesic deviation reads as $\ddot{\xi}^i = -R^i{}_{0j0}\xi^
 
 ### State spaces
 
+#### State changes and conjugate potentials
+
+In [the rubber band](../examples/thermodynamics/rubber_band/rubber_band.ipynb) and [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb), an equilibrium state combines intrinsic quantities such as spatial position or volume with entropy, while its conjugate potential combines minus the mechanical force or pressure with the temperature. Pairing the potential with a state variation reads the first-order change of stored energy (`potential & change`), summed across vertices when the state is a field on a topology. Allowing states and potentials to vary independently doubles the space, and on two variations `(state_a, potential_a)` and `(state_b, potential_b)` the cross-pairing `potential_b & state_a` splits into an alternating and a symmetric bilinear form:
+
+```python
+work = potential & change                                            # [] Scalar+
+omega = (potential_b & state_a) - (potential_a & state_b)            # [] Scalar+
+symmetric = ((potential_b & state_a) + (potential_a & state_b)) / 2  # [] Scalar+
+potential_a, potential_b = material(state_a), material(state_b)      # [] Vector+, [] Vector+
+curvature = material(state_a) & state_b                              # [] Scalar+
+```
+
+The alternating part `omega` is the canonical symplectic two-form on the combined state–potential space, while `symmetric` is a split-signature bilinear form with equally many positive and negative directions.[^symmetric-affine] Both are nondegenerate because every nonzero variation pairs nontrivially with a complementary one, `omega` is closed because its coefficients are constant in affine state and potential coordinates, and neither form uses a metric on the state space, including along the null entropy direction.
+
+An energy law selects one potential for each state, and its derivative is the full thermodynamic response `material` (coupling spatial deformation and entropy in the rubber band), which satisfies `material == material.adjugate()` as the second derivative of one energy. Along the constitutive graph where potential variations follow `material(state)`, that symmetry makes the two cross-pairings equal. The alternating form `omega` therefore vanishes on this half-dimensional graph, making it a Lagrangian submanifold and giving the Maxwell relation between stretch heating and thermal tension, while `symmetric` restricts to the energy Hessian `curvature`, which is positive semidefinite for a convex energy up to neutral motions such as rigid translations of the band.
+
+In the exterior-calculus notation of symplectic geometry, cotangent coordinates $(x^i, \xi_i)$ on $T^*X$ carry the tautological Liouville one-form $\alpha = \sum_i \xi_i\,\mathrm{d}x^i$ and the canonical symplectic two-form $\omega = -\mathrm{d}\alpha = \sum_i \mathrm{d}x_i \wedge \mathrm{d}\xi_i$, which evaluates on linear tangent–cotangent pairs as $\Omega_0(u \oplus \alpha, v \oplus \beta) = \beta(u) - \alpha(v)$ in [*Lectures on Symplectic Geometry*](https://people.math.ethz.ch/~acannas/Papers/lsg.pdf) (Homework 1 and §§2.2–2.3). The graph of a one-form $\mu$ on $X$ has half the dimension of $T^*X$ and is a Lagrangian submanifold ($i^*\omega = 0$) if and only if $\mathrm{d}\mu = 0$ (§3.2), which holds whenever $\mu = \mathrm{d}U$ is the differential of an internal energy $U$, while the symmetric cross-form $\frac{1}{2}\sum_i (\mathrm{d}x^i \odot \mathrm{d}\xi_i)$ pulls back on that graph to the Hessian $\frac{\partial^2 U}{\partial x^i \partial x^j}\,\mathrm{d}x^i \odot \mathrm{d}x^j$.
+
+[^symmetric-affine]: Extending `symmetric` off the critical points onto a general curved state manifold requires a choice of connection to compare potentials at nearby states, whereas the canonical symplectic two-form is defined without a connection.
+
 #### Uncertainty, principal components and gradient descent
 
 In estimation and statistical optics, a covariance is a duality map from a linear readout to the state variation associated with it, while a precision map (or, in a parametric statistical model, the Fisher information) maps a state variation back to a readout, whichever side of the orientation the variation has. For a point, variations are intrinsic and linear readouts are planes, as they are for the polarization coherency on a screen across a light beam; for a rigid pose, a motor perturbation is an extrinsic twist and its linear readout is an intrinsic line, and pushing the pose covariance forward through the linearized map `shift` from twists to point displacements gives the first-order position covariance in [the Kalman pose filter](../examples/estimation/kalman/kalman.ipynb), [Gaussian fitting](../examples/quadrics/gaussian/gaussian.ipynb), [odometry](../examples/estimation/odometry/odometry.ipynb), [station keeping](../examples/estimation/pose_diffusion/station_keeping.ipynb) and [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr.ipynb):
@@ -330,7 +352,7 @@ In the tensor notation of information geometry and state estimation, a Riemannia
 
 #### Thermodynamics and heat transport
 
-In a thermodynamic state space with null basis squares (`a0 b0` or `t0 v0`), extensive variables such as energy, entropy and volume have incommensurable units and no Euclidean inner product exists between them. State variations in those natural extensive coordinates are intrinsic and conjugate intensive differentials are extrinsic. An Onsager dissipative mobility maps the entropy differential to an energy-conserving heat transfer (`energy_gradient & transfer == 0`), while the entropy Hessian with respect to those extensive coordinates defines a Ruppeiner fluctuation metric in [entropy production](../examples/thermodynamics/entropy_production/entropy_production.ipynb), [critical fluctuations](../examples/thermodynamics/ruppeiner/ruppeiner.ipynb), [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb) and [damping as heating](../examples/thermodynamics/generic/generic.ipynb):
+In a thermodynamic state space with null basis squares (`a0 b0` or `t0 v0`), extensive variables such as energy, entropy and volume have incommensurable units and no Euclidean inner product exists between them. With extensive state variations intrinsic and conjugate intensive affinities extrinsic as in the equilibrium state–potential space above, an Onsager dissipative mobility maps the entropy differential to an energy-conserving heat transfer (`energy_gradient & transfer == 0`), while the entropy Hessian with respect to those extensive coordinates defines a Ruppeiner fluctuation metric in [entropy production](../examples/thermodynamics/entropy_production/entropy_production.ipynb), [critical fluctuations](../examples/thermodynamics/ruppeiner/ruppeiner.ipynb), [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb) and [damping as heating](../examples/thermodynamics/generic/generic.ipynb):
 
 ```python
 mobility = transfer * (Vector & transfer) * conductance * temp_a * temp_b  # [] Antivector- <- Vector+
