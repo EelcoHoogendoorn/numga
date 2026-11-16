@@ -6,6 +6,7 @@ authors:
   - given-names: Eelco
     family-names: Hoogendoorn
     email: hoogendoorn.eelco@gmail.com
+    orcid: "https://orcid.org/0009-0007-9884-7208"
 repository-code: "https://github.com/EelcoHoogendoorn/numga"
 url: "https://github.com/EelcoHoogendoorn/numga"
 license: MIT

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/EelcoHoogendoorn/numga/actions/workflows/ci.yml/badge.svg)](https://github.com/EelcoHoogendoorn/numga/actions/workflows/ci.yml)
 
-Geometric algebra with Extensors in NumPy, JAX and PyTorch.
+Geometric algebra with extensors in NumPy, JAX, PyTorch and WebGPU.
 
 Extensors generalize matrices and tensors from vectors to multivectors, and from the inner and tensor products to every product of geometric algebra.
 
@@ -32,24 +32,27 @@ values, modes = (Bivector & stiffness).eigh(Bivector & inertia)
 
 The full example: [vibration modes](examples/mechanics/modes/modes.ipynb) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/mechanics/modes/modes.ipynb)
 
-## Tutorials
+## Documentation
 
-* [Geometric algebra](docs/tutorial/geometric-algebra/00-introduction.md): a primer for readers new to geometric algebra.
-* [Extensors](docs/tutorial/extensors/00-introduction.md): a primer for readers new to extensors.
+* [Tutorials](docs/README.md#overview-and-tutorials): step-by-step primers on [geometric algebra](docs/tutorial/geometric-algebra/00-introduction.md) and [extensors](docs/tutorial/extensors/00-introduction.md).
+* [Guides and reference](docs/README.md#guides-and-reference): [extensor syntax](docs/extensor_syntax.md), [orientation](docs/orientation.md), [fields](docs/fields.md), [simplicial topologies](docs/topology.md), [WebGPU shaders and rendering](docs/rendering.md), [conventions](docs/conventions.md) and [internals](docs/internals.md).
+* [Examples](examples/README.md): over 200 runnable notebooks across geometry, estimation, surfaces, mechanics, fluids, optics, electromagnetism, relativity, quantum physics and thermodynamics.
 
 ## Articles
 
-[Conceptual articles](articles/README.md) on orientation, complementarity, discrete differential geometric algebra and coupled thermodynamics, and how extensors relate to linear algebra, tensors and forms.
+[Conceptual articles](articles/README.md) on extensors, orientation, the regressive product, complementarity, discrete differential geometric algebra and coupled thermodynamics, and how extensors relate to linear algebra, tensors and forms.
 
 ## Install and run
 
-Install directly from GitHub with Python 3.11+ and Git:
+Install from PyPI:
 
 ```sh
-python -m pip install "numga[examples] @ git+https://github.com/EelcoHoogendoorn/numga.git@main"
-python -m examples.mechanics.modes.scenarios
+pip install numga
 ```
 
-The core library depends only on NumPy; omit `[examples]` to install it. Use `[examples,jax]` or `[examples,torch]` to include those backends.
+To install `numga` with the `examples` package from GitHub and run an example:
 
-The API is under active development and may change. Replace `@main` with a commit hash to keep a particular version.
+```sh
+pip install "numga[examples] @ https://github.com/EelcoHoogendoorn/numga/archive/HEAD.tar.gz"
+python -m examples.mechanics.modes.scenarios
+```

@@ -132,6 +132,8 @@
 - [Gravitational waves below the Hopf circles](relativity/gravitational_waves/hopf_projection.ipynb) — A travelling quadrupole, the same all along the Hopf circles, stretches the sphere below them, rings triangles of atoms and bends a bundle of light.
 - [Kerr ray tracing in GTG](relativity/kerr/kerr.ipynb) — Gauge theory gravity transports light and polarization past a rotating black hole.
 - [Kerr ray tracing with a metric](relativity/kerr/kerr_metric.ipynb) — The metric and connection describe light and polarization in the same black-hole scene.
+- [Kerr metric and gauge fields side by side](relativity/kerr/kerr_comparison.ipynb) — Equatorial rays and polarized accretion-disk images compare the metric and gauge formulations directly.
+- [Kerr ray tracing on the GPU](relativity/kerr/kerr_gpu.ipynb) — A WebGPU shader traces camera rays and polarization backward past a rotating black hole and its accretion disk.
 - [LIGO antenna patterns](relativity/ligo/) — Detector arms respond differently to gravitational waves arriving from different directions and polarizations.
 - [Twistors and linked light](relativity/twistors/) — Twistors describe light rays and a twisting family of rays filling spacetime.
 - [Terrell rotation](relativity/terrell/) — Light travel times determine photographs of bodies passing a camera near the speed of light.

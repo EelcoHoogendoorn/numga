@@ -50,7 +50,7 @@ test = [
 [project.urls]
 Homepage = "https://github.com/EelcoHoogendoorn/numga"
 Repository = "https://github.com/EelcoHoogendoorn/numga"
-Documentation = "https://github.com/EelcoHoogendoorn/numga/blob/main/docs/extensors.md"
+Documentation = "https://github.com/EelcoHoogendoorn/numga/blob/main/docs/README.md"
 Issues = "https://github.com/EelcoHoogendoorn/numga/issues"
 
 [tool.setuptools.packages.find]
