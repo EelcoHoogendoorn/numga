@@ -111,7 +111,7 @@ Because `energy` is quadratic, a single Newton step recovers `springs.solve(pull
 
 ## Sparse storage
 
-Across a simplicial topology or a lattice, most site pairs do not interact directly: a bead couples to its neighbours and a vertex to its incident edges. `Sparse` stores plain-number couplings (such as incidence signs on a topology, transposed via `.adjugate()`), while `SparseExtensor` stores typed `Extensor` cells, each linking an input site (`columns[k]`) to an output site (`rows[k]`), and acts on the same fields as a dense field map:
+Across a simplicial topology or a lattice, most site pairs do not interact directly: a bead couples to its neighbours and a vertex to its incident edges. `Sparse` stores plain-number couplings (such as incidence signs on a simplicial `Topology`, [Simplicial topologies](topology.md), transposed via `.adjugate()`), while `SparseExtensor` stores typed `Extensor` cells, each linking an input site (`columns[k]`) to an output site (`rows[k]`), and acts on the same fields as a dense field map:
 
 ```python
 from numga.sparse import Sparse, SparseExtensor, spdiag

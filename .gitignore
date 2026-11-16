@@ -34,6 +34,8 @@ dist/
 !/plots/normal_orientation.png
 !/plots/odometry.gif
 !/plots/pairs_in_mirror.png
+!/plots/rendering_2d.png
+!/plots/rendering_3d.png
 !/plots/piezoelectric.gif
 !/plots/radiating_charge_fast.gif
 !/plots/rattleback.gif

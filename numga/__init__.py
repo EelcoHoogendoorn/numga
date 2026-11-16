@@ -6,8 +6,9 @@ load lazily on attribute access so importing `numga` requires only NumPy.
 
 Algebraic conventions and product rules are introduced in `docs/conventions.md`, extensor map and
 binding syntax in `docs/extensor_syntax.md`, intrinsic and extrinsic orientation in
-`docs/orientation.md`, discrete fields over sites in `docs/fields.md`, and type-dispatch and backend
-internals in `docs/internals.md`."""
+`docs/orientation.md`, discrete fields over sites in `docs/fields.md`, simplicial complexes in
+`docs/topology.md`, WebGPU shaders and rendering in `docs/rendering.md`, and type-dispatch and
+backend internals in `docs/internals.md`."""
 
 from __future__ import annotations
 
