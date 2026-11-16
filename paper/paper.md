@@ -10,12 +10,12 @@ tags:
   - physics simulation
 authors:
   - name: Eelco Hoogendoorn
-    orcid: 0000-0000-0000-0000
+    orcid: 0009-0007-9884-7208
     affiliation: 1
 affiliations:
   - name: Independent Researcher
     index: 1
-date: 15 November 2026
+date: 16 November 2026
 bibliography: paper.bib
 ---
 
