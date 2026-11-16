@@ -1,6 +1,8 @@
 # Fields and field maps
 
-A batch axis holds independent copies: a batch of rotors is many rotors, each acting on its own. A field is one object spread over sites, the vertices of a triangulated surface, the cameras of a rig, the atoms of a lattice, with an element of the same type at each site. Its sites belong to its type, so a map can couple them.
+This document introduces fields and coupled maps over sites in numga, in both dense and sparse storage.
+
+Where a batch axis holds independent copies that each act on their own, a field is one object spread across coupled sites such as the beads of a chain, the cameras of a rig or the vertices of a [simplicial topology](topology.md). Its sites belong to its type, so a map can couple them:
 
 ```python
 import numpy as np

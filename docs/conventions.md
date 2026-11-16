@@ -1,6 +1,6 @@
 # Conventions
 
-This page collects the identities that define numga's operations. The [geometric algebra](tutorial/geometric-algebra/00-introduction.md) and [extensor](tutorial/extensors/00-introduction.md) tutorials motivate them; [orientation](orientation.md) and [extensor syntax](extensor_syntax.md) give the full rules and interface.
+This document collects the identities that define numga's operations. The [geometric algebra](tutorial/geometric-algebra/00-introduction.md) and [extensor](tutorial/extensors/00-introduction.md) tutorials motivate them, while [orientation](orientation.md) and [extensor syntax](extensor_syntax.md) give the full rules and interface.
 
 ## Orientation
 

@@ -1,6 +1,8 @@
 # Internals
 
-Every algebraic operation in `numga`, a product of two multivectors as much as `Rotor >> Vector`, is built from types as an exact integer table before any numerical array arrives, and evaluated by contracting (or unrolling) that table on backend arrays. This document covers the `Extensor` representation, how exact tables and binding plans compile into backend calls, how contexts, fields and sparse maps execute, and how to add extension methods or custom `Extensor` subclasses. It pairs with [Extensors](extensors.md) and [Extensor syntax and methods](extensor_syntax.md).
+This document describes how numga represents types and extensors internally, compiles algebraic expressions into backend array calls, and dispatches methods across types and backends. It pairs with [Extensors](extensors.md) and [Extensor syntax and methods](extensor_syntax.md).
+
+Every algebraic operation is built from types as an exact integer table before any numerical array arrives, and evaluated by contracting or unrolling that table on NumPy, JAX or PyTorch arrays:
 
 ```python
 import numpy as np

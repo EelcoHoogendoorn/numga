@@ -1,6 +1,6 @@
 # Extensor syntax and methods
 
-`Extensor` represents multivectors, linear maps and multilinear maps in one value class:
+This document is the reference for building, calling and solving extensors in numga. Multivectors, linear maps and multilinear maps share a single representation, distinguished by how many input spaces they take:
 
 * **Arity 0**: multivectors and scalars (`Output`).
 * **Arity 1**: unary linear maps (`Output <- Input`).

@@ -1,6 +1,8 @@
 # Orientation in numga
 
-Every `GAType` carries an orientation, `Orientation.extrinsic` (`+` in type comments) or `Orientation.intrinsic` (`-`), on its output and on each input. Constructors assign it, operations propagate and check it statically, and `>>` uses it to reflect extrinsic and intrinsic elements with the appropriate sign. [Why orientation](../articles/orientation.md) motivates the two orientations from geometric and physical requirements, and [Conventions](conventions.md) states the defining identities.
+This document describes how intrinsic and extrinsic orientation are typed, propagated and checked in numga. [Why orientation](../articles/orientation.md) motivates the two orientations from geometric and physical requirements, and [Conventions](conventions.md) states the defining identities.
+
+Every algebraic type carries an extrinsic (`+`) or intrinsic (`-`) orientation on its output and on each input. Constructors assign it, operations propagate and check it statically, and reflections apply the sign each orientation requires:
 
 ```python
 from numga import Algebra, NumpyContext, Orientation
