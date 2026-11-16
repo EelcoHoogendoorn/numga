@@ -1,8 +1,8 @@
 # Simplicial topologies
 
-A simplicial topology describes how vertices join into edges, triangles, tetrahedra and higher-dimensional simplices, recording which simplices bound which and with what relative orientation. In both concept and implementation it is independent of geometric algebra, holding integer connectivity alone with no coordinates, metric or signature. It sits inside numga because its sparse maps compose directly with typed fields of multivectors and extensors ([Fields and field maps](fields.md#sparse-storage)), turning simplex connectivity into simplex gradients, surface connections and material pullbacks ([Discrete differential geometric algebra](../articles/ddga.md)) as well as GPU curve and surface draws ([WebGPU shaders and rendering](rendering.md)).
+This document introduces numga's topology module, which tracks how vertices connect into edges, triangles, tetrahedra and higher-dimensional simplices.
 
-This document covers how simplicial topologies are built and queried, how their incidence, boundary, exterior-derivative and dual operators act on plain arrays, and how those same maps attach to algebraic fields.
+Both the concept and its implementation are independent of geometric algebra. A topology stores only which vertices belong to each simplex, with no coordinates or metric, and its operators run on plain NumPy arrays on their own. It is included in numga because placing geometric objects on a topology lets that connectivity drive calculus on fields ([Fields and field maps](fields.md), [Discrete differential geometric algebra](../articles/ddga.md)) and GPU rendering ([WebGPU shaders and rendering](rendering.md)).
 
 ```python
 import numpy as np
