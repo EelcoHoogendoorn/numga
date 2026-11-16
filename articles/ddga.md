@@ -2,7 +2,7 @@
 
 This document describes what geometric algebra and extensors bring to a topology: values of every grade on its elements, and operators of any arity between them. The simplex gradient is defined by a discrete statement of the fundamental theorem of geometric calculus, and the calculus and the physics on a topology follow from it.
 
-Geometric algebra gives the values on a topology every grade, rotations and fields of spacetime among them, with every product between them. [Extensors](multiple_lenses.md) give the operators between those values any arity, assembled over the topology as matrices are. The two extend independently and combine freely, and the `numga` examples sit mostly away from the corner of scalars, vectors and matrices, as [the count of the `numga` examples by grade and arity](#appendix-the-numga-examples-by-grade-and-arity) shows.
+Geometric algebra gives the values on a topology every grade, rotations and fields of spacetime among them, with every product between them. [Extensors](multiple_lenses.md) give the operators between those values any arity, assembled over the topology as matrices are. The two extend independently and combine freely, and `numga` examples sit mostly away from the corner of scalars, vectors and matrices, as [a count of `numga` examples by grade and arity](#appendix-numga-examples-by-grade-and-arity) shows.
 
 ## The gradient of a simplex
 
@@ -48,9 +48,9 @@ The Laplacian of a potential is its gradient, weighed by a material, gathered ba
 laplacian = gradient.adjugate()(material(gradient))    # (Antiscalar- <- Scalar+)[vertices <- vertices]
 ```
 
-Here `gradient` takes a potential at the vertices to its simplex gradient on each simplex. The same line is the conductance of a triangulated disc in the [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example, the Laplace–Beltrami operator of a curved surface in the [eigen fluids](../examples/fluids/eigen_fluids/eigen_fluids.ipynb) example, and the wave operator of a Lorentzian spacetime in the [moving mirror](../examples/relativity/moving_mirror/moving_mirror.ipynb) example, with the signature in the material alone.
+Here `gradient` takes a potential at the vertices to its simplex gradient on each simplex. The same line is the conductance of a triangulated disc in a [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example, the Laplace–Beltrami operator of a curved surface in an [eigen fluids](../examples/fluids/eigen_fluids/eigen_fluids.ipynb) example, and the wave operator of a Lorentzian spacetime in a [moving mirror](../examples/relativity/moving_mirror/moving_mirror.ipynb) example, with the signature in the material alone.
 
-Every metric quantity enters through the material, so the topology and the simplex gradient are unchanged across Euclidean, Lorentzian and degenerate signatures. Because the dual is taken in the algebra on each simplex rather than across a circumcentric dual, an obtuse triangle's energy stays positive where a circumcentric Hodge star turns negative, and a minimal surface spanned by a wire follows from iterating the same harmonic solve on the free vertices, in the [minimal surfaces](../examples/surfaces/minimal_surfaces/minimal_surfaces.ipynb) example. Physics on the topology takes the same steps with other materials: an anisotropic conductivity, an elasticity, a spacetime's vacuum.
+Every metric quantity enters through the material, so the topology and the simplex gradient are unchanged across Euclidean, Lorentzian and degenerate signatures. Because the dual is taken in the algebra on each simplex rather than across a circumcentric dual, an obtuse triangle's energy stays positive where a circumcentric Hodge star turns negative, and a minimal surface spanned by a wire follows from iterating the same harmonic solve on the free vertices, in a [minimal surfaces](../examples/surfaces/minimal_surfaces/minimal_surfaces.ipynb) example. Physics on the topology takes the same steps with other materials: an anisotropic conductivity, an elasticity, a spacetime's vacuum.
 
 In discrete mechanics and finite elements, stiffness operators assemble as $A^{\mathsf T} C A$, the material $C$ pulled back through the difference or gradient matrix $A$ [[2]](#references). Discrete differential geometry writes the surface's Dirichlet energy and harmonic operator with cotangent weights, which bake the Euclidean metric into the edge weights, and minimizes surface area by iterating discrete harmonic maps [[3]](#references). Discrete exterior calculus constructs the codifferential and Laplacian from the coboundary $d$ and a diagonal Hodge star $\star$ built from the ratio of circumcentric dual to primal cell measures [[4]](#references).
 
@@ -58,13 +58,13 @@ In discrete mechanics and finite elements, stiffness operators assemble as $A^{\
 
 A value on the topology need not be a scalar or a vector. A rotation is a rotor, a field of spacetime a bivector, a rigid motion a motor, and each is an element of the algebra with every product the algebra has, so a field of them is held, transported and differentiated as a field of scalars is.
 
-A connection on a surface is one such field. It carries tangent directions from vertex to vertex along each edge, and the rotor that does so turns the normal at one end of the edge into the normal at the other: the square root of their product. The holonomy around a loop is the product of the rotors along it, and the Laplacian of tangent fields is a material pulled back through the difference those rotors carry, in the [connections](../examples/surfaces/connections/connections.ipynb) example:
+A connection on a surface is one such field. It carries tangent directions from vertex to vertex along each edge, and the rotor that does so turns the normal at one end of the edge into the normal at the other: the square root of their product. The holonomy around a loop is the product of the rotors along it, and the Laplacian of tangent fields is a material pulled back through the difference those rotors carry, in a [connections](../examples/surfaces/connections/connections.ipynb) example:
 
 ```python
 turns = (heads * tails).square_root()    # Even+[edges], from the normals at each edge's two ends
 ```
 
-The same holds for other values. A rotor field blended and differentiated across each triangle gives the frames of the [frame fields](../examples/surfaces/frame_fields/frame_fields.ipynb) example. The rotation that best maps a vertex's rest edges onto its deformed ones is the top eigenvector of a form on rotors, with no reflection to correct afterwards, in the [as-rigid-as-possible deformation](../examples/surfaces/arap/arap.ipynb) example. The electromagnetic field is a bivector of spacetime, read across moving edges and currents, in the [eddy brake](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb) and [Beltrami fields](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb) examples.
+The same holds for other values. A rotor field blended and differentiated across each triangle gives the frames of a [frame fields](../examples/surfaces/frame_fields/frame_fields.ipynb) example. The rotation that best maps a vertex's rest edges onto its deformed ones is the top eigenvector of a form on rotors, with no reflection to correct afterwards, in an [as-rigid-as-possible deformation](../examples/surfaces/arap/arap.ipynb) example. The electromagnetic field is a bivector of spacetime, read across moving edges and currents, in [eddy brake](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb) and [Beltrami fields](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb) examples.
 
 Every such value carries an extrinsic or intrinsic [orientation](orientation.md) and pairs across `&` with its [complement](complementarity.md) without a metric or a mirror sign change.
 
@@ -84,7 +84,7 @@ Advection in a fluid is one such map. At each corner of a simplex, `gradients & 
 advection = Point * (gradients & Point)    # [corners] (Antivector- <- (Antivector-, Antivector-))[faces]
 ```
 
-An operator read backwards across the regressive pairing is its adjugate, and a coupling and its adjugate are one map. The piezoelectric coupling that turns a voltage into forces on a body, read backwards, turns the body's motion into charge, in the [piezoelectric bimorph](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb) example. In an electrokinetic channel one coupling turns a pressure drop into a current and an electric field into a flow, so the streaming current and electro-osmosis are reciprocal by construction, in the [electrokinetics](../examples/fluids/electrokinetics/electrokinetics.ipynb) example. Forms of two arguments are as plain: the kinetic energy and the enstrophy of a dynamo's flows, solved against each other as an eigenproblem, in the [dynamo](../examples/electromagnetism/dynamo/dynamo.ipynb) example.
+An operator read backwards across the regressive pairing is its adjugate, and a coupling and its adjugate are one map. The piezoelectric coupling that turns a voltage into forces on a body, read backwards, turns the body's motion into charge, in a [piezoelectric bimorph](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb) example. In an electrokinetic channel one coupling turns a pressure drop into a current and an electric field into a flow, so the streaming current and electro-osmosis are reciprocal by construction, in an [electrokinetics](../examples/fluids/electrokinetics/electrokinetics.ipynb) example. Forms of two arguments are as plain: the kinetic energy and the enstrophy of a dynamo's flows, solved against each other as an eigenproblem, in a [dynamo](../examples/electromagnetism/dynamo/dynamo.ipynb) example.
 
 <p align="center"><img src="../plots/piezoelectric.gif" alt="A clamped two-layer piezoelectric strip bent up and down at its free tip, strained near its root while a voltage builds along its floating electrode" width="525" /></p>
 
@@ -94,7 +94,7 @@ In vector calculus and finite elements, fluid advection is written as $(\mathbf{
 
 ## Waves of the three-sphere's geometry
 
-Small waves of the geometry of a closed universe run on the 600-cell, a tetrahedral topology on the three-sphere, in the [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example. The geometry is given by the squared lengths of the edges, Regge's variables, and the wave step combines higher-grade values with higher-arity maps.
+Small waves of the geometry of a closed universe run on the 600-cell, a tetrahedral topology on the three-sphere, in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example. The geometry is given by the squared lengths of the edges, Regge's variables, and the wave step combines higher-grade values with higher-arity maps.
 
 <p align="center"><img src="../plots/gravitational_waves_quadrupole.gif" alt="The three-sphere projected along its Hopf circles onto a sphere: a quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays" width="300" /></p>
 
@@ -129,7 +129,7 @@ gradients = frame.solve((directions * simplex.d[0]).sum())   # Vector+[vertices]
 
 In the projective plane, an edge is the difference of two points of weight one and has no part along w, so the edge readings leave a simplex gradient's w component free. Fixing the gradient to read the potential at the corners themselves supplies that component and gives the regressive quotient in closed form.
 
-For a triangle with corners `a`, `b` and `c` of weight one, the line `b & c` through the facing side reads zero at `b` and `c`, and dividing by `a & b & c` scales it to read one at `a`; at any point `p`, `gradient_a & p` is the area ratio with `a` moved to `p`. Across a topology of simplices of any dimension, joining the corners of each facing facet and dividing by the simplex's join computes every corner's gradient together, as on the tetrahedra of the three-sphere in the [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example:
+For a triangle with corners `a`, `b` and `c` of weight one, the line `b & c` through the facing side reads zero at `b` and `c`, and dividing by `a & b & c` scales it to read one at `a`; at any point `p`, `gradient_a & p` is the area ratio with `a` moved to `p`. Across a topology of simplices of any dimension, joining the corners of each facing facet and dividing by the simplex's join computes every corner's gradient together, as on the tetrahedra of the three-sphere in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example:
 
 ```python
 corners = topology.incidence[-1, 0] * vertices                              # [corners] Antivector-[simplices]
@@ -137,7 +137,7 @@ facets = reduce(and_, corners[topology.corners[-1, -2]])                    # [c
 gradients = facets / (facets & corners)                                     # [corners] Vector+[simplices]
 ```
 
-The same quotient builds the Whitney m-form of any m-subsimplex in the [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example, dividing the join of the complementary corners off the subsimplex by the full join closed with the subsimplex's own corners:
+The same quotient builds the Whitney m-form of any m-subsimplex in a [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example, dividing the join of the complementary corners off the subsimplex by the full join closed with the subsimplex's own corners:
 
 ```python
 complements = reduce(and_, topology.off[3, m] * vertices)                   # [k] (m + 1)-vector-[tets]
@@ -147,7 +147,7 @@ forms = complements / (complements & spans)                                 # [k
 
 Because the complementary corners appear in the same order in numerator and denominator, their ordering cancels without sign tables or factorial factors, leaving a form that reads one on its own subsimplex's join, zero on every other's, and `forms & p` at any point `p`.
 
-Where the space has directions the field does not vary along off the simplex, the complement names them by joining them in, and where a surface is curved through a larger ambient space with no fixed complement directions, the metric supplies the tangent plane instead. A static field on triangles laid flat in spacetime does not vary along time, so the facing side is joined with time, in the [eddy brake](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb) example. In an algebra with directions for extensive quantities such as mass, entropy and species, a spatial potential does not vary along them either, in the [convection](../examples/fluids/convection/convection.ipynb) example, and because the quantity directions square to zero no metric inverse exists on the joined prism while the regressive quotient needs no metric at all. On a curved surface embedded in three-space, the metric projects onto each face's patch through `patches.inverse()`, in the [minimal surfaces](../examples/surfaces/minimal_surfaces/minimal_surfaces.ipynb) example:
+Where the space has directions the field does not vary along off the simplex, the complement names them by joining them in, and where a surface is curved through a larger ambient space with no fixed complement directions, the metric supplies the tangent plane instead. A static field on triangles laid flat in spacetime does not vary along time, so the facing side is joined with time, in an [eddy brake](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb) example. In an algebra with directions for extensive quantities such as mass, entropy and species, a spatial potential does not vary along them either, in a [convection](../examples/fluids/convection/convection.ipynb) example, and because the quantity directions square to zero no metric inverse exists on the joined prism while the regressive quotient needs no metric at all. On a curved surface embedded in three-space, the metric projects onto each face's patch through `patches.inverse()`, in a [minimal surfaces](../examples/surfaces/minimal_surfaces/minimal_surfaces.ipynb) example:
 
 ```python
 gradients = (time & sides) / double_areas                              # [corners] Vector+[faces]
@@ -208,7 +208,7 @@ The same few products carry the physics the examples compute on a topology, each
 | `drive & advection(velocity) == advection.adjugate()(drive) & velocity` | the power a drive delivers to an advected flux equals the force on the flow paired with its velocity |
 | `lengths_ab(b - a) & (b - a) == 1`, with `lengths_ab = -(gradient_a * (gradient_b & Point) + gradient_b * (gradient_a & Point)) / 2` | reads one on its own edge and zero on the other two: the metric basis from Regge's variables |
 
-## Appendix: the `numga` examples by grade and arity
+## Appendix: `numga` examples by grade and arity
 
 Each example notebook is counted by the highest grade or antigrade of the values it holds and the highest arity of the maps it builds. Those that compute on a topology:
 

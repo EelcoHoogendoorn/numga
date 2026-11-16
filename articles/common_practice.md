@@ -10,7 +10,7 @@ These cases concern linear and multilinear maps in estimation, mechanics and geo
 
 Scene reconstruction estimates landmark positions and camera poses from image measurements. Standard photogrammetry and computer-vision treatments minimize weighted squared image errors, form Gauss–Newton normal equations for the update, and eliminate the landmark steps by a Schur complement into a reduced camera system [[1, §§4.3, 6.1]](#references).
 
-The [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example represents each image measurement by a quadratic cost on the sensor and pulls that cost back through the camera's adjugate into a sight cone. Because the cone's polar plane vanishes on the sight line, treating that plane as a residual vector and forming normal equations from its coefficients would square a cost that is already quadratic. Instead, camera motion enters the cone's quadratic cost directly:
+A [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example represents each image measurement by a quadratic cost on the sensor and pulls that cost back through the camera's adjugate into a sight cone. Because the cone's polar plane vanishes on the sight line, treating that plane as a residual vector and forming normal equations from its coefficients would square a cost that is already quadratic. Instead, camera motion enters the cone's quadratic cost directly:
 
 ```python
 motion = -Twist.commutator(seen)                                  # [landmarks, cameras] Antivector- <- Bivector+
@@ -31,13 +31,13 @@ In matrix notation, a cone cost $x^{\mathsf T}Qx$ composed with a point-motion J
 
 A robot arm often moves freely in some directions while pressing against a constraint in others. Splitting those tasks by Euclidean orthogonality of six motion coordinates mixes angular and linear units and changes with the chosen origin and length scale. In robotics literature, motion and force instead inhabit dual spaces paired into mechanical power, where zero-power reciprocity relates compatible motions and constraints [[2, Ch. 2, §5]](#references) and spatial-vector tutorials emphasize that no inner product is defined on motion coordinates alone [[3]](#references).
 
-In projective geometric algebra, a motion rate is an extrinsic twist (`Bivector+`) and a force system is an intrinsic forque (`Antibivector-`), paired into power by `twist & forque`. In the [odometry](../examples/estimation/odometry/odometry.ipynb) example, the same type split separates a pose correction from the differential of its cost: information maps twists to forques (`Antibivector- <- Bivector+`), covariance maps forques back to twists (`Bivector+ <- Antibivector-`), and preconditioned conjugate gradients pairs those two spaces while preconditioning by solving the information map, so no coordinate dot product weights angles against lengths.
+In projective geometric algebra, a motion rate is an extrinsic twist (`Bivector+`) and a force system is an intrinsic forque (`Antibivector-`), paired into power by `twist & forque`. In an [odometry](../examples/estimation/odometry/odometry.ipynb) example, the same type split separates a pose correction from the differential of its cost: information maps twists to forques (`Antibivector- <- Bivector+`), covariance maps forques back to twists (`Bivector+ <- Antibivector-`), and preconditioned conjugate gradients pairs those two spaces while preconditioning by solving the information map, so no coordinate dot product weights angles against lengths.
 
 ### Surface normals under deformation
 
 A surface normal can record a chosen outward side of a plane or encode the area and vertex winding of a patch, and computer graphics often stores both as three-component vectors. In rendering texts, preserving tangent orthogonality under an invertible linear transformation carries a surface normal by the inverse transpose [[4, §3.10.3]](#references). In continuum elasticity, transporting an oriented area element under a regular orientation-preserving deformation multiplies that inverse transpose by the Jacobian determinant [[5, §1.7]](#references).
 
-The [surface normals](../examples/orientation/normals/normals.ipynb) example separates the two by orientation: a cutting plane is extrinsic (`Vector+`) and a triangle's joined patch is intrinsic (`Antitrivector-`). Reflecting the scene then carries both the outward side and the corner winding consistently even when their coefficients change with opposite signs. Under any linear deformation between intrinsic point spaces, the outermorphism carries patches forward while the [adjugate](complementarity.md#claims) pulls plane conditions backward across the regressive pairing:
+A [surface normals](../examples/orientation/normals/normals.ipynb) example separates the two by orientation: a cutting plane is extrinsic (`Vector+`) and a triangle's joined patch is intrinsic (`Antitrivector-`). Reflecting the scene then carries both the outward side and the corner winding consistently even when their coefficients change with opposite signs. Under any linear deformation between intrinsic point spaces, the outermorphism carries patches forward while the [adjugate](complementarity.md#claims) pulls plane conditions backward across the regressive pairing:
 
 ```python
 input_plane = deformation.adjugate()(output_plane)                # [] Vector+
@@ -49,7 +49,7 @@ This pullback stays defined even when the deformation is singular. Carrying an i
 
 Deforming a continuum changes both the area patch on which a traction acts and the directions in which the resulting force is expressed. Continuum mechanics records those choices in the Cauchy, first Piola–Kirchhoff and second Piola–Kirchhoff stress tensors, whose component formulas combine the deformation gradient, its inverse and its Jacobian determinant.
 
-The [area transport](../examples/mechanics/area_transport/area_transport.ipynb) example transports an oriented patch forward by applying the deformation's outermorphism to its joined edges, and pulls a flux bivector backward through the adjugate of that area map so both read the same scalar flux:
+An [area transport](../examples/mechanics/area_transport/area_transport.ipynb) example transports an oriented patch forward by applying the deformation's outermorphism to its joined edges, and pulls a flux bivector backward through the adjugate of that area map so both read the same scalar flux:
 
 ```python
 areas = deformation.outermorphism(Patch)                          # [] Antibivector- <- Antibivector-
@@ -68,7 +68,7 @@ In the matrix notation of continuum mechanics, for a regular orientation-preserv
 
 In numerical mechanics, a stiffness or inertia matrix written between dual coordinate conventions can fail to look symmetric on its raw array entries. Averaging such a matrix with its transpose changes the operator, while forming normal equations squares its singular values and condition number. When symmetry belongs to an energy pairing between complementary spaces, pairing the map exposes that symmetry directly.
 
-A vibration mode is a motion rate for which elastic and inertial loads stay proportional. The [normal modes](../examples/mechanics/modes/modes.ipynb) example sums spring stiffnesses and point-mass inertias as maps from twists to forques (`Antibivector- <- Bivector+`), and pairs both with a second twist to form symmetric quadratic energy maps:
+A vibration mode is a motion rate for which elastic and inertial loads stay proportional. A [normal modes](../examples/mechanics/modes/modes.ipynb) example sums spring stiffnesses and point-mass inertias as maps from twists to forques (`Antibivector- <- Bivector+`), and pairs both with a second twist to form symmetric quadratic energy maps:
 
 ```python
 pe_form = Twist & stiffness                                       # [] Scalar+ <- (Bivector+, Bivector+)
@@ -84,7 +84,7 @@ In matrix notation, structural modal analysis solves $Ku=\omega^2Mu$ for a real 
 
 Fitting a rigid rotation between corresponding vectors by the Kabsch–Umeyama algorithm takes a singular-value decomposition of their cross-covariance matrix and branches on the factor determinants to rule out improper reflections [[8]](#references), as used per cell in as-rigid-as-possible surface deformation [[9, §2.1]](#references).
 
-In the [surface deformation](../examples/surfaces/arap/arap.ipynb) example, each vertex instead maximizes edge alignment directly as a quadratic form on four-dimensional Euclidean rotors (`Scalar+ + Bivector+`). That reproduces the unit-quaternion eigenvector solution of absolute orientation from photogrammetry [[10]](#references) directly from the sandwich product rather than a hand-assembled four-by-four matrix:
+In a [surface deformation](../examples/surfaces/arap/arap.ipynb) example, each vertex instead maximizes edge alignment directly as a quadratic form on four-dimensional Euclidean rotors (`Scalar+ + Bivector+`). That reproduces the unit-quaternion eigenvector solution of absolute orientation from photogrammetry [[10]](#references) directly from the sandwich product rather than a hand-assembled four-by-four matrix:
 
 ```python
 alignment = (weights * edges.dot(Rotor >> rest_edges)).sum(axis=0)  # [] Scalar+ <- (Rotor+, Rotor+)
@@ -92,19 +92,19 @@ values, rotors = alignment.eigh()                                   # [modes] Sc
 rotation = rotors[values.argmax()].normalized()                     # [] Rotor+
 ```
 
-Because every normalized eigenvector in `Rotor+` is a proper rotation, reflections never enter the search space. Extending `Rotor` to projective or spherical motors (`Rotor+`) in the [point-cloud registration](../examples/geometry/registration/registration.ipynb) example removes separate centroid subtraction as well: `target * Motor - Motor * source` (`[points] Antivector- <- Rotor+`) is linear in the motor, so minimizing its summed residual against the motor's bulk norm solves for rotation and translation together without choosing an origin.
+Because every normalized eigenvector in `Rotor+` is a proper rotation, reflections never enter the search space. Extending `Rotor` to projective or spherical motors (`Rotor+`) in a [point-cloud registration](../examples/geometry/registration/registration.ipynb) example removes separate centroid subtraction as well: `target * Motor - Motor * source` (`[points] Antivector- <- Rotor+`) is linear in the motor, so minimizing its summed residual against the motor's bulk norm solves for rotation and translation together without choosing an origin.
 
 ### Material laws in moving frames
 
 Moving a dielectric medium mixes the electric and magnetic parts of both the field and the induced excitation, producing coupled three-vector formulas in laboratory coordinates [[11, §5.1, Eq. 22]](#references). Under rest-frame linear response assumptions, the moving medium evaluates its rest-frame law on the field boosted into its rest frame and boosts the resulting excitation back to the laboratory.
 
-The [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example writes that conjugation directly on the spacetime bivector map:
+A [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example writes that conjugation directly on the spacetime bivector map:
 
 ```python
 moving_medium = boost >> rest_medium(boost << Bivector)           # [] Antibivector- <- Bivector+
 ```
 
-The same conjugation moves a rigid-body inertia between body and world frames, while applying a transformation only on the output or only on the input produces [distinct maps](multiple_lenses.md#2-the-geometric-lens). A Lorentz boost transforms the field gradient (`Bivector+ <- Antivector-`) of a point charge in the same way in the [moving charge](../examples/electromagnetism/moving_charge/moving_charge.ipynb) example.
+The same conjugation moves a rigid-body inertia between body and world frames, while applying a transformation only on the output or only on the input produces [distinct maps](multiple_lenses.md#2-the-geometric-lens). A Lorentz boost transforms the field gradient (`Bivector+ <- Antivector-`) of a point charge in the same way in a [moving charge](../examples/electromagnetism/moving_charge/moving_charge.ipynb) example.
 
 In matrix notation, transporting a linear map across frames takes the form $A_{\mathrm{out}}TA_{\mathrm{in}}^{-1}$, where $A_{\mathrm{in}}$ and $A_{\mathrm{out}}$ represent the transformation on the input and output spaces.
 
@@ -114,13 +114,13 @@ These cases concern quantities that tensor formulations pack into coordinate arr
 
 ### Inertia, vorticity and curvature
 
-Three-dimensional vector mechanics represents angular velocity by an axial arrow along its rotation axis so a three-by-three inertia matrix can map it to an angular-momentum arrow, or assembles angular and linear parts into a six-by-six generalized inertia matrix [[2, Ch. 4, §2.2]](#references), relying on grade two and grade one sharing dimension three. The [spinning top](../examples/mechanics/spinning_top/spinning_top.ipynb) example instead builds inertia directly on motion rates (`Bivector+`) by joining each mass point with its velocity:
+Three-dimensional vector mechanics represents angular velocity by an axial arrow along its rotation axis so a three-by-three inertia matrix can map it to an angular-momentum arrow, or assembles angular and linear parts into a six-by-six generalized inertia matrix [[2, Ch. 4, §2.2]](#references), relying on grade two and grade one sharing dimension three. A [spinning top](../examples/mechanics/spinning_top/spinning_top.ipynb) example instead builds inertia directly on motion rates (`Bivector+`) by joining each mass point with its velocity:
 
 ```python
 inertia = points.regressive(points.commutator(Rate) * masses).sum()  # [] Antibivector- <- Bivector+
 ```
 
-The same line includes linear momentum alongside angular momentum in projective space and carries over unchanged to the plane with one rotation component and four-space with six. Fluid vorticity and torsion-free spacetime curvature follow the same pattern. The [vortices](../examples/fluids/vortices/vortices.ipynb) example takes the geometric derivative of the velocity field to obtain divergence and the vorticity plane together without a three-dimensional curl. Following spacetime-algebra treatments of general relativity [[12, §5]](#references), the [gravitational-wave curvature](../examples/relativity/curvature/curvature.ipynb) example represents torsion-free Riemann curvature as a map from spacetime area patches (`Antibivector-`) to rotation planes (`Bivector+`), symmetric under the spacetime pairing rather than as a Euclidean six-by-six array.
+The same line includes linear momentum alongside angular momentum in projective space and carries over unchanged to the plane with one rotation component and four-space with six. Fluid vorticity and torsion-free spacetime curvature follow the same pattern. A [vortices](../examples/fluids/vortices/vortices.ipynb) example takes the geometric derivative of the velocity field to obtain divergence and the vorticity plane together without a three-dimensional curl. Following spacetime-algebra treatments of general relativity [[12, §5]](#references), a [gravitational-wave curvature](../examples/relativity/curvature/curvature.ipynb) example represents torsion-free Riemann curvature as a map from spacetime area patches (`Antibivector-`) to rotation planes (`Bivector+`), symmetric under the spacetime pairing rather than as a Euclidean six-by-six array.
 
 In three-dimensional vector and tensor notation, rotational inertia reads $I_{ij}=\sum m(r^2\delta_{ij}-r_i r_j)$, fluid vorticity is the axial curl $\boldsymbol{\omega} = \nabla \times \mathbf{v}$ (twice the antisymmetric continuum spin rate $\frac{1}{2}(\partial_i v_j - \partial_j v_i)$), and torsion-free Riemann curvature is the four-index tensor $R^{\mu}{}_{\nu\alpha\beta}$, antisymmetric within each index pair and symmetric under pair exchange once the first index is lowered with the spacetime metric.
 
@@ -128,7 +128,7 @@ In three-dimensional vector and tensor notation, rotational inertia reads $I_{ij
 
 Computational elasticity commonly packs symmetric strain and stress tensors into six-component columns and stiffness into a six-by-six matrix. Engineering Voigt notation doubles shear strains while leaving shear stresses unscaled, whereas Kelvin (or Mandel) notation scales both by square-root-of-two factors, so stress and strain arrays must use compatible shear factors to preserve their elastic-energy pairing [[13, §§2–3]](#references).
 
-The [crystal waves](../examples/mechanics/crystal_waves/crystal_waves.ipynb) example keeps stiffness as a multilinear extensor taking a face normal, a displacement and a wavevector to a traction, and binds the wave propagation heading to both plane arguments to form the acoustic Christoffel operator directly:
+A [crystal waves](../examples/mechanics/crystal_waves/crystal_waves.ipynb) example keeps stiffness as a multilinear extensor taking a face normal, a displacement and a wavevector to a traction, and binds the wave propagation heading to both plane arguments to form the acoustic Christoffel operator directly:
 
 ```python
 christoffel = crystal(heading, Antivector, heading)               # [] Vector+ <- Antivector-
@@ -147,11 +147,11 @@ Specifying a component of stress requires two geometric arguments: the plane of 
 
 Macroscopic electromagnetism commonly relates electric field, magnetic induction, electric displacement and magnetic field strength through separate permittivity, permeability and magnetoelectric matrices. Premetric electrodynamics in the exterior-calculus literature [[14]](#references) instead separates the untwisted field two-form from the twisted excitation two-form and places all metric and material structure into a constitutive law between them.
 
-For a local linear medium, the [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example types that response as `Antibivector- <- Bivector+` in four-dimensional spacetime. Both spaces are six-dimensional, their orientations separate field from excitation, and one linear map composes with boosts, media boundaries and dispersion solves while the exterior Maxwell equations stay untouched.
+For a local linear medium, a [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example types that response as `Antibivector- <- Bivector+` in four-dimensional spacetime. Both spaces are six-dimensional, their orientations separate field from excitation, and one linear map composes with boosts, media boundaries and dispersion solves while the exterior Maxwell equations stay untouched.
 
 ## Representations in geometric algebra
 
-These cases concern the [multivector representations](complementarity.md#appendix-representations) of physical quantities, and apply even in geometric-algebra calculations that form no higher-arity extensors.
+These cases concern [multivector representations](complementarity.md#appendix-representations) of physical quantities, and apply even in geometric-algebra calculations that form no higher-arity extensors.
 
 ### Spatial vectors
 
@@ -159,7 +159,7 @@ Spatial-vector dynamics packages rigid-body velocities and forces into dual six-
 
 ### Blending rigid motions
 
-Linear blend skinning averages bone transformation matrices entry by entry, which ceases to be rigid and pinches twisting joints. Dual-quaternion skinning in computer graphics instead forms a weighted sum of unit dual quaternions representing finite rigid transformations and normalizes the result after choosing compatible antipodal signs [[15, §§3.2–3.3]](#references); unit dual quaternions represent rigid transformations only, so non-rigid scale and shear require a separate treatment. The [skeletal skinning](../examples/surfaces/skinning/skinning.ipynb) example writes the same motor blend alongside matrix skinning in projective three-space:
+Linear blend skinning averages bone transformation matrices entry by entry, which ceases to be rigid and pinches twisting joints. Dual-quaternion skinning in computer graphics instead forms a weighted sum of unit dual quaternions representing finite rigid transformations and normalizes the result after choosing compatible antipodal signs [[15, §§3.2–3.3]](#references); unit dual quaternions represent rigid transformations only, so non-rigid scale and shear require a separate treatment. A [skeletal skinning](../examples/surfaces/skinning/skinning.ipynb) example writes the same motor blend alongside matrix skinning in projective three-space:
 
 ```python
 motor_skin = (root + weight * (tip - root)).normalized() >> vertices                  # [vertices] Antivector-
@@ -170,7 +170,7 @@ With the double-cover sign of `tip` aligned to `root` beforehand so antipodal re
 
 ### Electromagnetic fields under a boost
 
-Vector electrodynamics transforms electric and magnetic fields under a Lorentz boost through separate parallel and transverse three-vector formulas [[16, §26-3, Table 26-4]](#references), whereas tensor electrodynamics transforms an antisymmetric four-by-four field matrix. Spacetime algebra represents the electromagnetic field as a single spacetime bivector boosted by a rotor and split into electric and magnetic parts only relative to a chosen observer's velocity [[17, §§III–IV, VI]](#references). The [moving charge](../examples/electromagnetism/moving_charge/moving_charge.ipynb) example types that field as `Bivector+` and boosts a Coulomb rest field directly by `boost >> field`.
+Vector electrodynamics transforms electric and magnetic fields under a Lorentz boost through separate parallel and transverse three-vector formulas [[16, §26-3, Table 26-4]](#references), whereas tensor electrodynamics transforms an antisymmetric four-by-four field matrix. Spacetime algebra represents the electromagnetic field as a single spacetime bivector boosted by a rotor and split into electric and magnetic parts only relative to a chosen observer's velocity [[17, §§III–IV, VI]](#references). A [moving charge](../examples/electromagnetism/moving_charge/moving_charge.ipynb) example types that field as `Bivector+` and boosts a Coulomb rest field directly by `boost >> field`.
 
 <p align="center"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling near the speed of light, sending a spiral wave of boosted electromagnetic field outward" width="300" /></p>
 
@@ -178,7 +178,7 @@ Vector electrodynamics transforms electric and magnetic fields under a Lorentz b
 
 ### Composition of boosts
 
-Two successive Lorentz boosts along non-collinear directions compose into a pure boost accompanied by a spatial Wigner rotation whose angle is not specified by the resultant velocity alone. In the low-speed limit, accumulating those rotations along an accelerated worldline gives the Thomas correction that halves the naive nonrelativistic spin–orbit term [[18, §§VII.C–VII.D]](#references). In the [Thomas precession](../examples/relativity/thomas_precession/thomas_precession.ipynb) example, multiplying boost rotors in spacetime algebra retains both the worldline velocity and the frame rotation in one product, and factoring out the pure boost back to the laboratory frame reads off the accumulated spatial rotation directly.
+Two successive Lorentz boosts along non-collinear directions compose into a pure boost accompanied by a spatial Wigner rotation whose angle is not specified by the resultant velocity alone. In the low-speed limit, accumulating those rotations along an accelerated worldline gives the Thomas correction that halves the naive nonrelativistic spin–orbit term [[18, §§VII.C–VII.D]](#references). In a [Thomas precession](../examples/relativity/thomas_precession/thomas_precession.ipynb) example, multiplying boost rotors in spacetime algebra retains both the worldline velocity and the frame rotation in one product, and factoring out the pure boost back to the laboratory frame reads off the accumulated spatial rotation directly.
 
 ### Reflections and pseudovectors
 

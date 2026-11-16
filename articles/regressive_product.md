@@ -2,7 +2,7 @@
 
 This document sets out a broader perspective on the regressive product in geometric algebra and the role it can play across geometry, calculus and physics. The product itself is the standard regressive product of Grassmann and projective geometric algebra, where it is traditionally used to join points or intersect subspaces. Once elements carry [orientation](orientation.md), that same product also pairs complementary quantities into scalars, contracts fields, forms discrete gradients on simplices, and builds linear maps and their metric-free duals.
 
-Like the outer product `^`, the regressive product `&` uses no metric. Where `^` builds elements up in grade, `&` pairs elements against the space's unit volume, yielding invariant scalars at complementary grades, joining points and directions, and contracting fields partially even when basis directions square to zero. In models that give their quantities orientations and pair them by [complementarity](complementarity.md), `&` becomes the product used most often, as [the count across the `numga` examples](#appendix-operations-across-the-numga-examples) shows.
+Like the outer product `^`, the regressive product `&` uses no metric. Where `^` builds elements up in grade, `&` pairs elements against the space's unit volume, yielding invariant scalars at complementary grades, joining points and directions, and contracting fields partially even when basis directions square to zero. In models that give their quantities orientations and pair them by [complementarity](complementarity.md), `&` becomes the product used most often, as [an operation count across `numga` examples](#appendix-operations-in-numga-examples) shows.
 
 ## Complementary grades and the unit volume
 
@@ -19,7 +19,7 @@ Both `plane ^ point` and `antiscalar` have the same intrinsic top-grade type. Un
 
 Because `antiscalar` multiplies `offset` on the right rather than dividing `plane ^ point`, this relation needs no inverse of `antiscalar` and no lengths along the axes. In projective space (`x+ y+ z+ w0`), Galilean spacetime and thermodynamic state spaces, null basis vectors make `antiscalar` square to zero, yet `plane ^ point` is still a multiple of `antiscalar`. Putting the extrinsic factor first gives matching basis pairs a positive sign in even and odd dimensions alike.
 
-A plane wave advances its phase from crest to crest, and the phase gained across a step counts how many wavefronts that step crosses. A model can represent the wavevector as the extrinsic hyperplane of its wavefronts and an atomic step as an intrinsic displacement between points, as in the [crystal diffraction](../examples/optics/crystal_diffraction/crystal_diffraction.ipynb) example. Their pairing `wavevector & displacement` then gives the phase directly.
+A plane wave advances its phase from crest to crest, and the phase gained across a step counts how many wavefronts that step crosses. A model can represent the wavevector as the extrinsic hyperplane of its wavefronts and an atomic step as an intrinsic displacement between points, as in a [crystal diffraction](../examples/optics/crystal_diffraction/crystal_diffraction.ipynb) example. Their pairing `wavevector & displacement` then gives the phase directly.
 
 ## Joins of points and directions
 
@@ -31,9 +31,9 @@ winding = a & b & c                      # [] Antitrivector-
 volume = a & b & c & d                   # [] Scalar-
 ```
 
-Each join in that chain stays intrinsic. The line is oriented along itself from one point to the next, the triangle's plane is oriented by the order of its corners round the triangle rather than by a positive side outside it, and in three-space `a & b & c & d` is an intrinsic scalar that changes sign in a mirror, as the [surface normals](../examples/orientation/normals/normals.ipynb) example shows.
+Each join in that chain stays intrinsic. The line is oriented along itself from one point to the next, the triangle's plane is oriented by the order of its corners round the triangle rather than by a positive side outside it, and in three-space `a & b & c & d` is an intrinsic scalar that changes sign in a mirror, as a [surface normals](../examples/orientation/normals/normals.ipynb) example shows.
 
-Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in the [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example:
+Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example:
 
 ```python
 ray = light & point                      # [] Antibivector-
@@ -66,7 +66,7 @@ By associativity, `p & q` is the intrinsic line whose pairing with any two wedge
 
 ## The simplex gradient
 
-On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). The term ***simplex gradient*** here means the hyperplane at a corner of a simplex that pairs to `1` with that corner and to `0` with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds the simplex gradient in closed form, as in the [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example:
+On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). The term ***simplex gradient*** here means the hyperplane at a corner of a simplex that pairs to `1` with that corner and to `0` with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds the simplex gradient in closed form, as in a [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb) example:
 
 ```python
 facet = b & c & d                        # [] Antitrivector-
@@ -94,11 +94,11 @@ b & f(a) == f.adjugate()(b) & a          # [] Scalar+
 cone = camera.adjugate()(conic(camera))  # [] Vector+ <- Antivector-
 ```
 
-A pinhole `camera` projects three-space onto an image plane, collapsing depth, so it has no inverse. Its adjugate is still defined and maps image lines back to planes through the pinhole, so `camera.adjugate()(conic(camera))` pulls an image conic back into a sight cone in space, as in the [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. A map equal to its own adjugate (`material == material.adjugate()`) is symmetric across the pairing: differentiating `(a & map(a)) / 2` with respect to `a` gives `((map + map.adjugate()) / 2)(a)`, which reduces to `map(a)` when `map` equals its adjugate.
+A pinhole `camera` projects three-space onto an image plane, collapsing depth, so it has no inverse. Its adjugate is still defined and maps image lines back to planes through the pinhole, so `camera.adjugate()(conic(camera))` pulls an image conic back into a sight cone in space, as in a [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. A map equal to its own adjugate (`material == material.adjugate()`) is symmetric across the pairing: differentiating `(a & map(a)) / 2` with respect to `a` gives `((map + map.adjugate()) / 2)(a)`, which reduces to `map(a)` when `map` equals its adjugate.
 
 ## Mechanics and electrodynamics
 
-A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in the [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples:
+A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples:
 
 ```python
 velocity = point.commutator(rate)        # [] Antivector-
@@ -116,7 +116,7 @@ lorentz = -(field & current)                 # [] Vector+
 lorentz & current == 0                       # [] Scalar+
 ```
 
-Paired with a spatial displacement, `lorentz` gives the mechanical work done on the charges; paired with `-time`, it gives the electrical power transferred to matter, which becomes Joule heating in a resistive conductor. Because `current & current == 0`, pairing `lorentz` with `current` gives `-(field & (current & current)) == 0`, the same identity `pencil & p == 0` that placed the point on `(u ^ v) & p`. For a moving charge, that identity equates the electrical power delivered by the field with the spatial work done along its motion before any spacetime metric or medium enters; those enter separately in `excitation = medium(field)`, as in the [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example.
+Paired with a spatial displacement, `lorentz` gives the mechanical work done on the charges; paired with `-time`, it gives the electrical power transferred to matter, which becomes Joule heating in a resistive conductor. Because `current & current == 0`, pairing `lorentz` with `current` gives `-(field & (current & current)) == 0`, the same identity `pencil & p == 0` that placed the point on `(u ^ v) & p`. For a moving charge, that identity equates the electrical power delivered by the field with the spatial work done along its motion before any spacetime metric or medium enters; those enter separately in `excitation = medium(field)`, as in a [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb) example.
 
 Across these models, a mirror-even scalar reading takes one of two forms:
 
@@ -151,9 +151,9 @@ Outside projective mechanics, physics in geometric algebra has mostly worked in 
 * [Discrete differential geometric algebra](ddga.md): calculus and physics on simplicial topologies built from the simplex gradient.
 * [Geometry and quantities](thermodynamics.md): equilibrium and transport thermodynamics in algebras extended with null directions for extensive quantities.
 
-## Appendix: operations across the `numga` examples
+## Appendix: operations in `numga` examples
 
-Across the 202 `numga` examples, each row below counts uses of one geometric algebra operation and the number of examples in which it appears. Scalar multiplication, sparse topology operators and rank-one dyads are excluded from the bare geometric product:
+Across 202 `numga` examples, each row below counts uses of one geometric algebra operation and the number of examples in which it appears. Scalar multiplication, sparse topology operators and rank-one dyads are excluded from the bare geometric product:
 
 | Operation | Uses | Examples |
 | --- | ---: | ---: |

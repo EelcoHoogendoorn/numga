@@ -58,7 +58,7 @@ Because an extensor's arguments can belong to any subspace of the algebra, a mul
 edge_forms = edges.dot(Rotor >> rest_edges)                       # [edges] Scalar+ <- (Rotor+, Rotor+)
 ```
 
-In geometry-processing literature, as-rigid-as-possible surface modeling fits a local rotation at each vertex by minimizing weighted edge residuals over its incident edges [[4]](#references). In the [surface deformation](../examples/surfaces/arap/arap.ipynb) example, summing `edge_forms` at each vertex gives that best-fitting proper rotation directly as the form's top eigenvector. The [point-cloud registration](../examples/geometry/registration/registration.ipynb) example aligns rotations and translations together through a linear residual on projective motors, and [Discrete differential geometric algebra](ddga.md#up-the-grade-axis) differentiates fields of rotors on a simplicial topology in the same way.
+In geometry-processing literature, as-rigid-as-possible surface modeling fits a local rotation at each vertex by minimizing weighted edge residuals over its incident edges [[4]](#references). In a [surface deformation](../examples/surfaces/arap/arap.ipynb) example, summing `edge_forms` at each vertex gives that best-fitting proper rotation directly as the form's top eigenvector. A [point-cloud registration](../examples/geometry/registration/registration.ipynb) example aligns rotations and translations together through a linear residual on projective motors, and [Discrete differential geometric algebra](ddga.md#up-the-grade-axis) differentiates fields of rotors on a simplicial topology in the same way.
 
 ### Grades and symmetries
 
@@ -70,14 +70,14 @@ Symmetric tensors stay symmetric multi-argument maps rather than forming a new g
 
 Tensor algebra usually starts from a bare vector space and supplies a metric as a separate bilinear form, whereas a geometric algebra builds a metric into its geometric product. That built-in metric need not be the physical metric of a model: a position-dependent physical metric can be supplied as an extensor while the algebra's product stays fixed. With a fixed nondegenerate reference metric defining the dot product, any physical metric on a direction space `Direction` can be written as `Direction.dot(metric_map)` for a self-adjoint `metric_map`, or kept as a duality map from directions to planes evaluated through `&`, which rests on a unit of volume alone. Norms and rotors built from the algebra's own product belong to the reference metric.
 
-The Kerr black-hole examples put both choices side by side. The [metric formulation](../examples/relativity/kerr/kerr_metric.ipynb) example represents the curved metric as a duality map `Vector+ <- Antivector-` together with its Levi-Civita connection. Following the gauge-theory formulation of gravity in spacetime algebra [[6, §§1, 5.3]](#references), the [gauge formulation](../examples/relativity/kerr/kerr.ipynb) example instead represents the geometry by a position-dependent frame map `Antivector- <- Antivector-` and a bivector connection over flat Minkowski space. Both evaluate the same squared proper interval along a direction:
+Kerr black-hole examples put both choices side by side. A [metric formulation](../examples/relativity/kerr/kerr_metric.ipynb) example represents the curved metric as a duality map `Vector+ <- Antivector-` together with its Levi-Civita connection. Following the gauge-theory formulation of gravity in spacetime algebra [[6, §§1, 5.3]](#references), a [gauge formulation](../examples/relativity/kerr/kerr.ipynb) example instead represents the geometry by a position-dependent frame map `Antivector- <- Antivector-` and a bivector connection over flat Minkowski space. Both evaluate the same squared proper interval along a direction:
 
 ```python
 metric_interval = metric(geometry)(direction) & direction         # [] Scalar+
 gauge_interval = -gauge_inverse(geometry)(direction).squared()    # [] Scalar+
 ```
 
-On the exterior Kerr domain traced in the [side-by-side comparison](../examples/relativity/kerr/kerr_comparison.ipynb) example, both formulations produce identical rays and polarization images. Placing the local metric in an extensor or in a frame over the algebra's product is therefore a choice of representation.
+On the exterior Kerr domain traced in a [side-by-side comparison](../examples/relativity/kerr/kerr_comparison.ipynb) example, both formulations produce identical rays and polarization images. Placing the local metric in an extensor or in a frame over the algebra's product is therefore a choice of representation.
 
 ## Forms and exterior algebra
 
@@ -87,11 +87,11 @@ In differential geometry [[7, §1]](#references), differential forms are fields 
 
 ### Exterior and metric structure in applications
 
-Nearly all of the `numga` examples combine exterior and metric structure in one calculation. A swimming body balances forques and twists against a distance-dependent fluid drag, elastic waves combine oriented facet tractions with a metric shear modulus, and gravitational waves couple spacetime curvature on area patches with metric light-cone propagation. Electromagnetism shows the split clearly: in premetric electrodynamics [[9, §2]](#references), charge conservation and the homogeneous flux laws require no metric, while the [constitutive relation](common_practice.md#electromagnetic-constitutive-tensors) introduces the spacetime metric in vacuum or a medium's response in matter. Three-dimensional vector calculus packages those pieces into composite operators such as curl and the cross product, whereas geometric algebra keeps the exterior products and metric contractions distinct inside one algebra.
+Nearly all `numga` examples combine exterior and metric structure in one calculation. A swimming body balances forques and twists against a distance-dependent fluid drag, elastic waves combine oriented facet tractions with a metric shear modulus, and gravitational waves couple spacetime curvature on area patches with metric light-cone propagation. Electromagnetism shows the split clearly: in premetric electrodynamics [[9, §2]](#references), charge conservation and the homogeneous flux laws require no metric, while the [constitutive relation](common_practice.md#electromagnetic-constitutive-tensors) introduces the spacetime metric in vacuum or a medium's response in matter. Three-dimensional vector calculus packages those pieces into composite operators such as curl and the cross product, whereas geometric algebra keeps the exterior products and metric contractions distinct inside one algebra.
 
 ## Geometric algebra and extensors
 
-A multivector is an extensor with no arguments, and naming an argument space by its type turns the products that combine multivectors into linear and [multilinear maps](multiple_lenses.md#2-the-geometric-lens). Geometric algebra supplies the elements and products; extensors carry those products into the maps between elements. In the [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example, a thin lens built from a centre, a plane and a focal length refracts projective rays, moves under a rigid motor by conjugating its output and input, and composes with robot-arm kinematics and sensor projection into one map per body. An inertia, a covariance or a material map has the same status and can be added, composed, moved or solved through the same operations.
+A multivector is an extensor with no arguments, and naming an argument space by its type turns the products that combine multivectors into linear and [multilinear maps](multiple_lenses.md#2-the-geometric-lens). Geometric algebra supplies the elements and products; extensors carry those products into the maps between elements. In a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example, a thin lens built from a centre, a plane and a focal length refracts projective rays, moves under a rigid motor by conjugating its output and input, and composes with robot-arm kinematics and sensor projection into one map per body. An inertia, a covariance or a material map has the same status and can be added, composed, moved or solved through the same operations.
 
 ## Geometric constructions
 
@@ -106,7 +106,7 @@ Linear and tensor formulations introduce oriented products, reciprocity pairings
 | Reciprocity pairing of twists and wrenches in screw theory | The regressive pairing of a twist with a forque |
 | Pauli and Dirac matrices | Multiplication acting as a map on spinors |
 
-The wedge that builds a cross product also builds a plane, the outermorphism that transports an area also transports a volume, and the product that acts on spinors in the [extensor representations](../examples/math/extensor_representations/extensor_representations.ipynb) example also composes rotations across dimensions.
+The wedge that builds a cross product also builds a plane, the outermorphism that transports an area also transports a volume, and the product that acts on spinors in an [extensor representations](../examples/math/extensor_representations/extensor_representations.ipynb) example also composes rotations across dimensions.
 
 ## Transport and irreversible thermodynamics
 
@@ -114,13 +114,13 @@ In linear irreversible thermodynamics, flux densities relate to thermodynamic fo
 
 [Geometry and quantities](thermodynamics.md) models coupled transport in one map by joining spacetime's geometric algebra with a null basis vector for each tracked extensive variable. When an entropy direction is joined to spacetime, each carrier combines its charge and carried entropy in one vector. One exterior derivative `-gradient ^ potentials` pushes each carrier according to its contents while a magnetic plane turns its drift through its Hall angle, and sweeping those contents along the drift sums to a single transport response `Antibivector- <- Bivector+` from drives to fluxes.
 
-Each of those named effects comes from scalar readings of that single map. For symmetric carrier mobilities, Kelvin's relation holds because one content vector couples each carrier to both drive and flux, reversing the magnetic field turns the response into its adjugate as in Onsager–Casimir reciprocity, and pairing a drive with its flux gives a dissipation `drive & flux` that is not negative when the mobilities are positive, as the [magnetotransport](../examples/thermodynamics/magnetotransport/magnetotransport.ipynb) example computes on a planar bar and a Corbino ring.
+Each of those named effects comes from scalar readings of that single map. For symmetric carrier mobilities, Kelvin's relation holds because one content vector couples each carrier to both drive and flux, reversing the magnetic field turns the response into its adjugate as in Onsager–Casimir reciprocity, and pairing a drive with its flux gives a dissipation `drive & flux` that is not negative when the mobilities are positive, as a [magnetotransport](../examples/thermodynamics/magnetotransport/magnetotransport.ipynb) example computes on a planar bar and a Corbino ring.
 
 In the matrix notation of linear irreversible thermodynamics, coupled electric and thermal transport in a plane with magnetic field $B$ has the form $J_i = \sum_j L_{ij}(B)\,X_j$ with $L_{ij}(B) = L_{ji}(-B)$ for equal-parity forces. In the planar carrier model above, scalar readings of the single response give the sixteen entries for two currents in two directions.
 
 ## Specialized algebras and calculi
 
-Many named algebras in physics, geometry and engineering are taught as separate formalisms with their own symbols, rules and libraries. Within geometric algebra and extensors they can be represented by choosing a signature, a grade subspace and an orientation ([Complementarity](complementarity.md#appendix-representations)), first at the multivector level and then as maps when extensor arguments enter; the `numga` examples linked in the tables below run those constructions.
+Many named algebras in physics, geometry and engineering are taught as separate formalisms with their own symbols, rules and libraries. Within geometric algebra and extensors they can be represented by choosing a signature, a grade subspace and an orientation ([Complementarity](complementarity.md#appendix-representations)), first at the multivector level and then as maps when extensor arguments enter; `numga` examples linked in the tables below run those constructions.
 
 ### Nullary subalgebras and grade subspaces
 
