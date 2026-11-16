@@ -1,6 +1,6 @@
 # Simplicial topologies
 
-`Topology` represents an oriented simplicial complex from its vertex count and top simplices alone, with no coordinates and no geometric algebra attached. Its operators are plain-number `Sparse` maps ([Fields and field maps](fields.md#sparse-storage)), so the same combinatorial incidences, boundaries and exterior derivatives act on fields in any algebra while keeping their `GAType` and orientation. [Discrete differential geometric algebra](../articles/ddga.md) develops the calculus built on these maps.
+`Topology` represents an oriented simplicial complex from integer vertex connectivity alone. In both concept and implementation it is independent of geometric algebra, importing none of `numga`'s algebraic layers and holding no coordinates, metric or signature. It lives in `numga` because its plain-number `Sparse` incidences, boundaries and exterior derivatives ([Fields and field maps](fields.md#sparse-storage)) compose directly with fields of multivectors and extensors. Joins, regressive quotients and `.adjugate()` then turn pure simplex connectivity into simplex gradients, surface connections and material pullbacks across any algebra and signature ([Discrete differential geometric algebra](../articles/ddga.md)).
 
 ```python
 import numpy as np
