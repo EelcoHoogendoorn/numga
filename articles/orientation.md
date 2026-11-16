@@ -22,17 +22,17 @@ The join can be viewed as a direction along the line, from the one point to the 
 
 The meet can be viewed as a rotation around the line, from the one plane to the other, lying in the space around the line. A mirror that contains the line flips the space around it side for side, so that rotation is reversed.
 
-The terms ***intrinsic orientation*** and ***extrinsic orientation*** here mean a sense within an element itself and a sense in the space around it, as in [Projective Duality Encodes Complementary Orientations in Geometric Algebras](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf). An element's orientation is which of the two it carries; type comments mark extrinsic with `+` and intrinsic with `-`.
+The terms ***intrinsic orientation*** and ***extrinsic orientation*** here mean an orientation within an element itself and an orientation in the space around it, following [[1]](#references). An element's orientation is which of the two it has; type comments mark extrinsic with `+` and intrinsic with `-`.
 
-## The plain sandwich
+## The unoriented sandwich
 
 In projective three-space, where vectors are planes and antivectors are points, the outer product `^` of two planes is their meet and the regressive product `&` of two points is their join. Both lines have grade two and the same coefficients up to scale.
 
-Reflecting every element `x` in a mirror plane `mirror` with the plain sandwich product, `mirror * x * mirror.inverse()`, commutes with the geometric product and with the outer and inner products built from it, so it negates the meet `red ^ blue` as it should. Because the sandwich of a join is minus the join of the sandwiches, it does not commute with the regressive product, and negates the join `ends[0] & ends[1]` as well, turning around a line that lies in the mirror:
+Reflecting every element `x` in a mirror plane `mirror` with the grade-involuted sandwich, `mirror * x.involute() * mirror.inverse()`, swaps `red` and `blue` and commutes with the geometric and outer products, so it negates the meet `red ^ blue` as it should. Because it commutes with `^` while reversing the space's unit volume, it anti-commutes with the regressive product in every dimension and at every grade, turning around the joined line `ends[0] & ends[1]` that lies in the mirror:
 
 <p align="center"><img src="../plots/line_in_mirror.png" alt="Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result" width="603" /></p>
 
-*Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its intrinsic orientation. Left: the line. Middle: its mirror image, with its direction unchanged. Right: the result of reflecting with the sandwich product directly; the points are unchanged, but the line is turned around.*
+*Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its intrinsic orientation. Left: the line. Middle: its mirror image, with its direction unchanged. Right: the result of reflecting with the unoriented sandwich; the line is turned around.*
 
 ```python
 # The mirror is the plane x = 0; two planes cross in the z axis, and two points lie on it.
@@ -40,18 +40,16 @@ mirror = mv.x                                          # [] Vector+
 red, blue = mv.x + mv.y, mv.y - mv.x                   # [] Vector+, [] Vector+
 ends = mv.point([[0.0, 0.0, -0.5], [0.0, 0.0, 0.5]])   # [points] Antivector-
 
-def sandwich(x):
-    return mirror * x * mirror.inverse()
+def reflect(x):
+    return mirror * x.involute() * mirror.inverse()
 
 # Minus the meet, matching blue ^ red, the meet of the mirrored planes.
-sandwich(red ^ blue)                                   # [] Bivector+
-# The two points lie in the mirror and stay unchanged, so their join is unchanged.
-sandwich(ends[0]) & sandwich(ends[1])                  # [] Antibivector-
+reflect(red ^ blue)                                    # [] Bivector+
 # Minus the join, turned around instead of unchanged.
-sandwich(ends[0] & ends[1])                            # [] Antibivector-
+reflect(ends[0] & ends[1])                             # [] Antibivector-
 ```
 
-Unoriented geometric algebra instead inserts a grade sign, `mirror * x.involute() * mirror.inverse()`, or an overall minus sign, `-mirror * x.involute() * mirror.inverse()`. Because `x.involute()` equals `x` at grade two, the first still negates both lines and the second leaves both unchanged. Applied uniformly to every element, no single sandwich rule has the geometric action of a mirror.
+Putting an overall minus sign in front, `-mirror * x.involute() * mirror.inverse()`, leaves intrinsic points in the mirror and their joins unchanged, while negating planes that lie in the mirror and leaving `red ^ blue` unflipped instead of negated. Applied uniformly to every element, no single sandwich rule has the geometric action of a mirror.
 
 ## An orientation-aware reflection
 
@@ -72,7 +70,7 @@ Mirroring a system together with its measuring apparatus must also preserve ever
 
 *Figure: a body of three masses turns, and its mirror image turns the other way. Colours identify matching masses, marker sizes show the masses, and arrows show their velocities.*
 
-The body's rate of turning is an extrinsic line (`Bivector+`), oriented around its axis, while the mass points are intrinsic (`Antivector-`). Joining each mass point with its velocity under that rate gives an intrinsic angular momentum (`Antibivector-`), oriented along its line, and the kinetic energy is half the regressive pairing of the rate with the momentum. Reflected with orientation, the mirrored body has the same kinetic energy; reflected with the plain sandwich, its kinetic energy comes out negative:
+The body's rate of turning is an extrinsic line (`Bivector+`), oriented around its axis, while the mass points are intrinsic (`Antivector-`). Joining each mass point with its velocity under that rate gives an intrinsic angular momentum (`Antibivector-`), oriented along its line, and the kinetic energy is half the regressive pairing of the rate with the momentum. Reflected with orientation, the mirrored body has the same positive kinetic energy. Reflected uniformly with `reflect`, with or without an overall minus sign, both factors preserve their outer product while the unit volume reverses, so `rate & momentum` changes sign in every dimension and the mirrored body's kinetic energy comes out negative:
 
 ```python
 points = mv.point([[1.0, 0.0, 0.0], [0.0, 1.0, 0.5], [-0.5, 0.0, 1.0]])     # [points] Antivector-
@@ -86,10 +84,10 @@ momentum = inertia(rate)                                                    # []
 # 1.494: the same energy.
 ((mirror >> rate) & (mirror >> momentum)) / 2                               # [] Scalar+
 # -1.494: negative energy.
-(sandwich(rate) & sandwich(momentum)) / 2                                   # [] Scalar+
+(reflect(rate) & reflect(momentum)) / 2                                     # [] Scalar+
 ```
 
-The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) example animates the body, and the [mechanical work](../examples/orientation/mechanical_work/mechanical_work.ipynb) example shows the same contrast for the power a push delivers to a crank.
+An [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) example animates the body, and a [mechanical work](../examples/orientation/mechanical_work/mechanical_work.ipynb) example shows the same contrast for the power a push delivers to a crank.
 
 Every such reading pairs an extrinsic value with an intrinsic one by the regressive product, such as `rate & momentum` above, `field & spin`, or `force & displacement`. As [Complementarity](complementarity.md) develops, that pairing uses no metric and remains unchanged across dimensions, signatures and general linear maps as well as in a mirror.
 
@@ -101,7 +99,7 @@ The line is one grade among the rest. Every element of the algebra can carry eit
 
 *Figure: a triangle lying in a horizontal plane, and its mirror image in a vertical mirror. Left: the plane's positive side, which stays above both triangles. Right: the order of the corners, which the mirror reverses.*
 
-The plane equation of the triangle's plane orients it by which side is positive in the space outside it, an extrinsic orientation, and the vertical mirror keeps the positive side up. Joining the triangle's three corners in order gives the same plane oriented by its corners going round within it, an intrinsic orientation, and in the mirror image the corners go round the other way. The [surface normals](../examples/orientation/normals/normals.ipynb) example draws both:
+The plane equation of the triangle's plane orients it by which side is positive in the space outside it, an extrinsic orientation, and the vertical mirror keeps the positive side up. Joining the triangle's three corners in order gives the same plane oriented by its corners going round within it, an intrinsic orientation, and in the mirror image the corners go round the other way. A [surface normals](../examples/orientation/normals/normals.ipynb) example draws both:
 
 ```python
 corners = mv.point([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])     # [corners] Antivector-
@@ -116,7 +114,7 @@ mirror >> side                                                              # []
 mirror >> winding                                                           # [] Antitrivector-
 ```
 
-In a plane, a point can likewise be oriented by its weight, as a mass is, or by a turn around it, as a pivot is. The [circle constructed twice](../examples/orientation/conformal_circle/conformal_circle.ipynb) example shows the same split for a circle in the conformal algebra of space.
+In a plane, a point can likewise be oriented by its weight, as a mass is, or by a turn around it, as a pivot is. A [circle constructed twice](../examples/orientation/conformal_circle/conformal_circle.ipynb) example shows the same split for a circle in the conformal algebra of space.
 
 ## From the plane to space
 
@@ -147,7 +145,7 @@ Once the orientations of the inputs are chosen, each operation fixes the orienta
 
 Orientation also rules out expressions whose terms transform in incompatible ways. In the spinning body above, `rate` (`Bivector+`) and `momentum` (`Antibivector-`) have opposite orientations, so `rate + momentum` has no single transformation law under reflection. Raising an intrinsic element to an exponential mixes orientations in the same way, since its even powers are extrinsic and its odd powers are intrinsic, whereas `rate.exp()` is extrinsic throughout and generates a motion.
 
-In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds correspond to outer and inner orientation, represented by untwisted and twisted differential forms, as set out in [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf).
+In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds correspond to outer and inner orientation, represented by untwisted and twisted differential forms [[2, §§1–2]](#references), and in projective geometry the two kinds of line correspond to Study's spears and axes [[3, §8.6.1]](#references).
 
 ## The rules
 
@@ -160,9 +158,14 @@ Together with two conventions, that expressions keep the same form and signs acr
 5. **The primitive products stay plain.** The geometric, outer and regressive products and the commutators act on the coefficients as the algebra defines them, and their results' orientations follow from their inputs'.
 6. **An intrinsic value has two sizes**, its norm, of a projective point its weight, and its antinorm, of a direction its length.
 
-## Further reading
+## Companion documents
 
-* [Orientation in numga](../docs/orientation.md): the orientation rules for every constructor and operation in `numga`.
+* [The regressive product](regressive_product.md): how `&` pairs orientations, joins points, contracts fields and builds linear maps and their adjugates.
 * [Complementarity](complementarity.md): how complementary pairings and physical representations extend across geometry, mechanics and physics.
-* [*Projective Duality Encodes Complementary Orientations in Geometric Algebras*](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf) (Leo Dorst, *Mathematical Methods in the Applied Sciences*, 2024): introduces the names `extrinsic` and `intrinsic` and the reading of projective duality as the conversion between them.
-* [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022): develops the distinction between axes and spears in projective geometric algebra, after Study.
+* [Orientation in numga](../docs/orientation.md): the orientation rules for every constructor and operation in `numga`.
+
+## References
+
+1. [*Projective Duality Encodes Complementary Orientations in Geometric Algebras*](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf) (Leo Dorst, *Mathematical Methods in the Applied Sciences*, 2024).
+2. [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (Alain Bossavit, 2002).
+3. [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022).

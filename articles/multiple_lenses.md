@@ -49,7 +49,7 @@ Evaluation is all `ray_fn` offers: a Python function hides the arithmetic it per
 
 An extensor built from geometry transforms as its geometry does: building it again from its transformed elements gives the same map as transforming the map itself, on its output and on each of its inputs. That holds because a motion or reflection of space is itself an element of the algebra, and its action on an element, `transformation >> x`, preserves every product.
 
-Because those transformations and their actions are themselves elements and maps of the algebra, the same map can act as a transformation in one expression and be transformed as an object in another. A thin lens in the [scenegraph example](../examples/geometry/scenegraph/scenegraph.ipynb) bends each incoming ray toward its optical `center` where the ray meets its `plane`, in proportion to `1 / focal`. At the same time, the lens is an object in the scene, carried by a rigid motion `motor` along with everything else. Moving the lens as a map, by undoing the motion on the incoming ray, applying the lens and carrying the outgoing ray forward, gives the same map as building the lens from its moved centre and plane:
+Because those transformations and their actions are themselves elements and maps of the algebra, the same map can act as a transformation in one expression and be transformed as an object in another. A thin lens in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example bends each incoming ray toward its optical `center` where the ray meets its `plane`, in proportion to `1 / focal`. At the same time, the lens is an object in the scene, carried by a rigid motion `motor` along with everything else. Moving the lens as a map, by undoing the motion on the incoming ray, applying the lens and carrying the outgoing ray forward, gives the same map as building the lens from its moved centre and plane:
 
 ```python
 lens = Line - (center & (Line ^ plane)) / focal                          # [] Antibivector- <- Antibivector-
@@ -101,15 +101,20 @@ The outputs can be multivectors of any type, and the inputs can belong to any mu
 
 The multilinear-map definition and the sum-of-products construction describe the same space of extensors. The extensors of interest in practice are a subset of that space: those whose factors carry a meaning, such as a motor built from two planes or a lens built from its centre and plane. Which constructions have a geometric meaning is a question of interpretation, not of definition; the expansion above establishes only that no multilinear map is out of reach of the products.
 
-In linear algebra, pulling linear forms back across the canonical pairing defines the dual map on dual spaces, whereas transferring vectors across an inner product defines the adjoint ([*Linear Algebra Done Right*](https://linear.axler.net/LADR4e.pdf), §§3F and 7A); the adjugate across `&` and the adjoint across the scalar product make the same separation here. Standard presentations of linear algebra within geometric algebra start from linear maps on vectors and extend them over outer products as grade-preserving outermorphisms ([*Gravity, Gauge Theories and Geometric Algebra*](https://arxiv.org/pdf/gr-qc/0405033), §2.3), whereas the extensors considered here include multilinear maps of any arity between arbitrary oriented and mixed-grade spaces.
+In linear algebra, pulling linear forms back across the canonical pairing defines the dual map on dual spaces, whereas transferring vectors across an inner product defines the adjoint [[1, §§3F, 7A]](#references); the adjugate across `&` and the adjoint across the scalar product make the same separation here. Standard presentations of linear algebra within geometric algebra start from linear maps on vectors and extend them over outer products as grade-preserving outermorphisms [[2, §2.3]](#references), whereas the extensors considered here include multilinear maps of any arity between arbitrary oriented and mixed-grade spaces.
 
 ## How the lenses fit together
 
 The three lenses describe one set of operations. Naming an argument's space by its type in a product builds a map from geometry, supplying a value evaluates it, and supplying another map composes the two. Moving a map is composition with a transformation's own action, and the tensor transformation law is what that composition gives because the transformation preserves the products the map was built from. Sums of products reach every multilinear map, so nothing outside the algebra's products is needed to build any extensor, apply it, or move it.
 
-## Further reading
+## Companion documents
 
-* [Extensor overview](../docs/extensors.md): applications across mechanics, optics, estimation, electromagnetism, relativity, and spin.
-* [Extensor tutorial](../docs/tutorial/extensors/00-introduction.md): the mathematics developed from a linear map.
-* [The adjoint](../docs/tutorial/extensors/09-the-adjoint.md) and [the adjugate](../docs/tutorial/extensors/10-the-adjugate.md): moving a map from one side of a pairing to the other.
+* [Why orientation](orientation.md): why geometric constructions and positive physical energies require intrinsic and extrinsic orientation.
+* [The regressive product](regressive_product.md): how `&` pairs orientations, joins points, contracts fields and builds linear maps and their adjugates.
 * [Complementarity](complementarity.md), [Extensors, linear algebra, tensors and forms](frameworks.md) and [Extensors and common practice](common_practice.md): how these maps pair complementary quantities, relate to other mathematical frameworks, and apply across geometry and physics.
+* `numga` documentation: [Extensor overview](../docs/extensors.md), [Extensor tutorial](../docs/tutorial/extensors/00-introduction.md), [The adjoint](../docs/tutorial/extensors/09-the-adjoint.md) and [the adjugate](../docs/tutorial/extensors/10-the-adjugate.md).
+
+## References
+
+1. [*Linear Algebra Done Right*](https://linear.axler.net/LADR4e.pdf) (Sheldon Axler, 4th ed., 2024).
+2. [*Gravity, Gauge Theories and Geometric Algebra*](https://arxiv.org/pdf/gr-qc/0405033) (Anthony Lasenby, Chris Doran and Stephen Gull, *Philosophical Transactions of the Royal Society A*, 1998; arXiv, 2004).
