@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator
 from itertools import product
 
 import numpy as np
-from numga import stack
+from numga import Algebra, stack
 from numga.topology import Topology
 
 from examples import instantiate
@@ -32,6 +32,18 @@ critical_share = 0.25
 crystal_step = 0.01
 n_steps_per_swing = 40
 n_settling_swings = 8
+# The crystals' turning in the exact quadrupole: rates in the planes of space at the origin, sampled every few steps.
+Turn = core.Rate.derive.within(Algebra("x+y+z+"))                               # Bivector+
+n_steps_a_sample = 2
+n_spin_periods, n_spun_periods, n_late_periods = 15, 8, 4
+n_spin_frames_a_period = 20
+n_trial_periods, n_trial_frames_a_period = 40, 8
+# Trials: shares of the page's swing at a quarter of critical damping, then less damping at a third of the swing; and
+# the crystals turned diagonal to the wave's axes.
+trial_swing_shares = np.array([1 / 2, 2 / 5, 1 / 3, 1 / 3, 1 / 3])                # [5]
+trial_critical_shares = np.array([1 / 4, 1 / 4, 1 / 4, 1 / 8, 1 / 16])          # [5]
+diagonal_swing_shares = np.array([1, 1 / 2, 1 / 3])                              # [3]
+diagonal_critical_shares = np.full(3, 1 / 4)                                     # [3]
 
 # Relaxed irregular triangulation of the three-sphere under the binary icosahedral group.
 n_seed_orbits = 5
@@ -53,9 +65,16 @@ eighth = (mv.xy * (-np.pi / 8)).exp()                                           
 quadrupole_lags = np.array([0, np.pi / 2])                                       # [2]
 
 gauge_share = 0.4
-holding_share = 1 / 4
-gauge_damping = 0.4
+gauge_tuning = 1.4
+gauge_damping = 1.0
 n_arc_points = 12
+# Trials of the triangle gauges from rest in the travelling quadrupole: shear tunings to the wave's frequency and
+# shares of critical damping, one run each, the gauges tuned to the wave beside the gauges as set.
+n_gauge_trial_periods = 60
+n_gauge_samples_a_period = 20
+n_gauge_frames_a_period = 5
+gauge_trial_tunings = np.array([1.0, gauge_tuning])                             # [n_trials]
+gauge_trial_shares = np.array([0.4, gauge_damping])                             # [n_trials]
 
 light_source, light_target, light_spreading = mv.z.dual(), mv.y.dual(), mv.xy   # [] Point-, [] Point-, [] Rate+
 n_rays = 7
@@ -105,6 +124,13 @@ def crystal_places() -> core.Motor:
     forward = (axis_rates[2] * (-crystal_distance / 2)).exp()                   # [] Motor+
     side_shifts = (axis_rates[0] * (-offsets / 2)).exp()                        # [3] Motor+
     return eye * forward * side_shifts
+
+
+def diagonal_places() -> core.Motor:
+    """Turns the crystal frames `[3] Motor+` at their places so that their cube's axes lie diagonal, an eighth turn in
+    the wave's plane, to the axes the exact quadrupole stretches and squeezes: the wave then shears only the crystals'
+    triply degenerate mode."""
+    return core.frame(crystal_places() >> core.origin) * eighth
 
 
 def crystals(frames: core.Motor) -> tuple[Topology, core.Point]:
@@ -162,7 +188,67 @@ def crystal_states(pick: Callable[[core.Point], np.ndarray], waves: core.Waves, 
     damping = mv.scalar(np.repeat(dampings, n_bonds_each)[:, None]).field()     # Scalar+[E]
     start = times[0] - n_settling_swings * 2 * np.pi / frequency
     at_rest = mv(core.Through, np.zeros((V, 3))).dual().field()                 # Point-[V]
-    return core.massive(pick, waves, bonds, rest, stiffness, damping, 0.0, atoms, at_rest, start, crystal_step, times)
+    return core.massive(pick, waves, bonds, rest, stiffness, damping, atoms, at_rest, start, crystal_step, times)
+
+
+def quadrupole_crystals(frames: core.Motor, swing: float, share: float, turns: Turn,
+                        n_periods: int) -> tuple[np.ndarray, core.Point, core.Scalar]:
+    """Steps the soft, tuned and stiff crystals placed by `frames` `[3] Motor+`, unstrained and turning rigidly at
+    `turns` `[3] Bivector+`, through the exact quadrupole of `swing`, damped at `share` of critical, for `n_periods`;
+    gives the sample times, each crystal's atoms read in the frame at its middle as proper offsets from it
+    `[n_samples, 3, 4] Point-`, and the bond strains `[n_samples] Scalar+[E]`."""
+    bonds, atoms = crystals(frames)
+    V, E, F, T = bonds.n_elements
+    # Each atom starts with the velocity of its step from the crystal's middle under the turn, carried to its own frame.
+    places = atoms.batch().reshape(T, -1)                                       # [3, 4] Point-
+    middles = core.frame(places.sum(axis=-1).normalized())[:, None]             # [3, 1] Motor+
+    turned = (middles.inverse() >> places).cast(core.Step).commutator(turns[:, None])   # [3, 4] Point-
+    velocities = ((core.frame(places).inverse() * middles) >> turned).cast(core.Step).reshape(-1).field()   # Point-[V]
+    wave = core.Quadrupole(V, swing)
+    stiffnesses = core.quadrupole_frequency ** 2 / 2 * tunings                  # [3]
+    dampings = share * np.sqrt(2 * stiffnesses)                                 # [3]
+    rest = core.round_steps(bonds, atoms).norm()                                # Scalar+[E]
+    stiffness = mv.scalar(np.repeat(stiffnesses, E // T)[:, None]).field()      # Scalar+[E]
+    damping = mv.scalar(np.repeat(dampings, E // T)[:, None]).field()           # Scalar+[E]
+    period = 2 * np.pi / core.quadrupole_frequency
+    sample_step = n_steps_a_sample * crystal_step
+    times = sample_step * np.arange(int(n_periods * period / sample_step) + 1)  # [n_samples]
+    states = core.massive(lambda places: None, wave, bonds, rest, stiffness, damping, atoms, velocities, 0.0,
+                          crystal_step, times)
+    offsets, strains = [], []
+    for time, (positions, bond_strains) in zip(times, states):
+        places = positions.batch().reshape(T, -1)                               # [3, 4] Point-
+        middles = places.sum(axis=-1).normalized()                              # [3] Point-
+        steps = (core.frame(middles)[:, None].inverse() >> places).cast(core.Step)   # [3, 4] Point-
+        # The proper offset adds half the wave's stretch to the step, as the springs read their bonds.
+        strain, _, _ = wave.strains(time)
+        proper = steps + core.translating(strain(core.Step))(steps) / 2         # [3, 4] Point-
+        offsets.append(proper - proper.sum(axis=-1)[:, None] / 4)
+        strains.append(bond_strains.batch())
+    return times, stack(offsets), stack(strains)
+
+
+def turning_rates(offsets: core.Point, sample_step: float) -> Turn:
+    """Each crystal's rigid turning `[n_samples - 2, 3] Bivector+`: its angular momentum, the offsets joined with their
+    central-difference velocities, solved through its inertia."""
+    middle = offsets[1:-1]                                                      # [n_samples - 2, 3, 4] Point-
+    velocities = (offsets[2:] - offsets[:-2]) / (2 * sample_step)               # [n_samples - 2, 3, 4] Point-
+    momenta = (middle & velocities).sum(axis=-1)                                # [n_samples - 2, 3] Antibivector-
+    inertias = middle.regressive(middle.commutator(Turn)).sum(axis=-1)          # [n_samples - 2, 3] Antibivector- <- Bivector+
+    return inertias.solve(momenta)
+
+
+def tidal_turning(swing: float, times: np.ndarray, offsets: core.Point) -> Turn:
+    """The turning `[n_samples - 2, 3] Bivector+` the wave's tidal pull alone gives each crystal from rest: the torque
+    of half the strain's second rate on its proper offsets, summed over time and solved through its inertia."""
+    _, _, second_rates = core.Quadrupole(1, swing).strains(times)               # [n_samples] Plane+ <- Point-
+    tidal = core.translating(second_rates(core.Step)) / 2                       # [n_samples] Point- <- Point-
+    torques = (offsets & tidal[:, None, None](offsets)).sum(axis=-1)            # [n_samples, 3] Antibivector-
+    sample_step = times[1] - times[0]
+    momenta = ((torques[1:-1] + torques[:-2]) * (sample_step / 2)).cumsum(axis=0)   # [n_samples - 2, 3] Antibivector-
+    middle = offsets[1:-1]                                                      # [n_samples - 2, 3, 4] Point-
+    inertias = middle.regressive(middle.commutator(Turn)).sum(axis=-1)          # [n_samples - 2, 3] Antibivector- <- Bivector+
+    return inertias.solve(momenta)
 
 
 def irregular_three_sphere() -> tuple[Topology, core.Point]:
@@ -263,28 +349,49 @@ def light_paths(pick: Callable[[core.Point], np.ndarray], waves: core.Waves, cir
     return core.base_points(places, circling)
 
 
-def gauge_states(pick: Callable[[core.Point], np.ndarray], waves: core.Waves, frequency: float, bonds: Topology,
-                 atoms: core.Point, times: np.ndarray) -> Iterator[tuple[core.Point, core.Scalar]]:
-    """Steps anchored triangle gauges tuned in shear to `frequency` through `waves` across `times`."""
+def gauge_states(pick: Callable[[core.Point], np.ndarray], waves: core.Waves, frequency: float, tuning: float,
+                 share: float, bonds: Topology, atoms: core.Point, start: float,
+                 times: np.ndarray) -> Iterator[tuple[core.Point, core.Scalar]]:
+    """Steps triangle gauges from rest at `start` through `waves` across `times`, their shear mode at `tuning` of the
+    wave's `frequency` and damped at `share` of critical."""
     V, E = bonds.n_elements
-    holding = (holding_share * frequency) ** 2
-    stiffness = 2 / 3 * (frequency ** 2 - holding)
-    damping = 2 / 3 * (2 * gauge_damping * frequency - 2 * np.sqrt(holding))
+    # Unit masses on an equilateral triangle shear at a squared frequency of three halves the bond stiffness.
+    shear_frequency = tuning * frequency
+    stiffness = 2 / 3 * shear_frequency ** 2
+    damping = 2 / 3 * (2 * share * shear_frequency)
     round_steps = core.round_steps(bonds, atoms)                                # Point-[E]
     rest = round_steps.norm()                                                   # Scalar+[E]
     stiffnesses = mv.scalar(np.full((E, 1), stiffness)).field()                 # Scalar+[E]
     dampings = mv.scalar(np.full((E, 1), damping)).field()                      # Scalar+[E]
     at_rest = mv(core.Through, np.zeros((V, 3))).dual().field()                 # Point-[V]
-    start = times[0] - n_settling_swings * 2 * np.pi / frequency
-    return core.massive(pick, waves, bonds, rest, stiffnesses, dampings, holding, atoms, at_rest, start, crystal_step,
-                        times)
+    return core.massive(pick, waves, bonds, rest, stiffnesses, dampings, atoms, at_rest, start, crystal_step, times)
 
 
-def quadrupole_history(cell_topology: Topology, cell_vertices: core.Point) -> tuple[core.Waves, float]:
-    """Steps a circularly polarized travelling quadrupole wave on the 600-cell from two orthogonal squash patterns."""
+def gauge_readouts(states: Iterator[tuple[core.Point, core.Scalar]],
+                   sample_step: float) -> tuple[core.Scalar, Turn, core.Scalar]:
+    """Reads each triangle gauge across `states` sampled every `sample_step`: its bond strains `[n_samples, F, 3]
+    Scalar+`, its rigid turning `[n_samples - 2, F] Bivector+` in its middle's frame, and its area over its area at
+    rest `[n_samples, F] Scalar+`, which falls to zero where the triangle turns inside out."""
+    offsets, strains = [], []
+    for positions, bond_strains in states:
+        places = positions.batch().reshape(-1, 3)                               # [F, 3] Point-
+        middles = places.sum(axis=-1).normalized()                              # [F] Point-
+        steps = (core.frame(middles)[:, None].inverse() >> places).cast(core.Step)   # [F, 3] Point-
+        offsets.append(steps - steps.sum(axis=-1)[:, None] / 3)
+        strains.append(bond_strains.batch().reshape(-1, 3))
+    offsets = stack(offsets)                                                    # [n_samples, F, 3] Point-
+    patches = (offsets[..., 1] - offsets[..., 0]) & (offsets[..., 2] - offsets[..., 0])   # [n_samples, F] Antibivector-
+    # A triangle turns over freely, so only a patch that shrinks through nothing inverts it.
+    areas = patches.norm() / patches[0].norm()                                  # [n_samples, F] Scalar+
+    return stack(strains), turning_rates(offsets, sample_step), areas
+
+
+def quadrupole_history(cell_topology: Topology, cell_vertices: core.Point, reach: float) -> tuple[core.Waves, float]:
+    """Steps a circularly polarized travelling quadrupole wave on the 600-cell from two orthogonal squash patterns, from
+    its settling to `reach` past one period."""
     patterns = squash(cell_topology, cell_vertices, stack((mv.x, eighth >> mv.x)),
                       stack((mv.y, eighth >> mv.y)))                            # [2] Scalar+[E]
-    return stepped_history(cell_topology, cell_vertices, patterns, quadrupole_lags, swing, n_light_steps * light_step)
+    return stepped_history(cell_topology, cell_vertices, patterns, quadrupole_lags, swing, reach)
 
 
 def quadrupole_frames(pick: Callable[[core.Point], np.ndarray], waves: core.Waves, frequency: float,
@@ -294,7 +401,8 @@ def quadrupole_frames(pick: Callable[[core.Point], np.ndarray], waves: core.Wave
     circling = turn.log()                                                       # [] Rate+
     bonds, atoms = triangle_gauges(bases, circling)
     starts, headings = light_fan(circling)
-    states = gauge_states(pick, waves, frequency, bonds, atoms, times)
+    start = times[0] - n_settling_swings * 2 * np.pi / frequency
+    states = gauge_states(pick, waves, frequency, gauge_tuning, gauge_damping, bonds, atoms, start, times)
     for time, (positions, strains) in zip(times, states):
         yield (core.stretches(waves, pick, sphere_points, sphere_points, turn, n_guardrail_sides, n_circle_samples,
                               time),
@@ -327,7 +435,7 @@ def main() -> None:
                                      irregular_topology, irregular_vertices, flight(core.frame(middle))),
                    "gravitational_waves_irregular", duration_ms)
 
-    quadrupole, quadrupole_frequency = quadrupole_history(cell_topology, cell_vertices)
+    quadrupole, quadrupole_frequency = quadrupole_history(cell_topology, cell_vertices, n_light_steps * light_step)
     turn = circle_turn(cell_vertices, n_guardrail_sides)                        # [] Motor+
     bases = decagon_bases(cell_vertices, turn.log())                            # [12] Point-
     sphere_topology, sphere_points = base_sphere()
@@ -358,6 +466,97 @@ def main() -> None:
     assert ((at_one - averaged).abs() < 1e-6 * averaged.abs().max()).all()
 
 
+def crystal_spin(name: str, frames: core.Motor, swing: float, share: float, turns: Turn, n_periods: int,
+                 n_frames_a_period: int) -> tuple[core.Point, core.Scalar]:
+    """Steps the three crystals placed by `frames`, turning at `turns`, through the exact quadrupole of `swing`, damped
+    at `share` of critical; writes their animation and the chart of their turning, from their momentum and from the
+    wave's tidal torque, and gives the proper offsets `[n_samples, 3, 4] Point-` and the bond strains
+    `[n_samples] Scalar+[E]`."""
+    from examples.relativity.gravitational_waves import render
+    from examples.util.animation import save_animation, save_figure
+
+    times, offsets, strains = quadrupole_crystals(frames, swing, share, turns, n_periods)
+    turning = turning_rates(offsets, times[1] - times[0])                       # [n_samples - 2, 3] Bivector+
+    tidal = tidal_turning(swing, times, offsets)                                # [n_samples - 2, 3] Bivector+
+    readouts = render.spin_readouts(times, strains, turning, tidal)
+    save_animation(render.spin_frames(readouts, n_frames_a_period), name, duration_ms)
+    save_figure(render.spin_chart(readouts), f"{name}_torque")
+    return offsets, strains
+
+
+def spun_by_the_wave() -> None:
+    """The three crystals from rest in the page's wave for `n_spin_periods`; then, with no wave, the unstrained tuned
+    crystal started turning rigidly with the angular momentum it had over the last `n_late_periods`, beside the strains
+    its bonds held over those periods in the wave."""
+    from examples.relativity.gravitational_waves import render, web
+    from examples.util.animation import save_figure
+
+    at_rest = mv.xy * np.zeros(len(tunings))                                    # [3] Bivector+
+    offsets, strains = crystal_spin("gravitational_waves_crystal_spin", crystal_places(), web.wave_swing,
+                                    critical_share, at_rest, n_spin_periods, n_spin_frames_a_period)
+    sample_step = n_steps_a_sample * crystal_step
+    n_late = int(n_late_periods * 2 * np.pi / core.quadrupole_frequency / sample_step)
+    late = offsets[-n_late - 1:-1]                                              # [n_late, 3, 4] Point-
+    velocities = (offsets[-n_late:] - offsets[-n_late - 2:-2]) / (2 * sample_step)   # [n_late, 3, 4] Point-
+    momenta = (late & velocities).sum(axis=-1).sum(axis=0) / n_late             # [3] Antibivector-
+    unstrained = offsets[0].regressive(offsets[0].commutator(Turn)).sum(axis=-1)   # [3] Antibivector- <- Bivector+
+    # Only the tuned crystal is set turning.
+    turns = unstrained.solve(momenta) * np.array([0, 1, 0])                     # [3] Bivector+
+    _, spun_strains = crystal_spin("gravitational_waves_crystal_spin_no_wave", crystal_places(), 0.0, critical_share,
+                                   turns, n_spun_periods, n_spin_frames_a_period)
+    save_figure(render.centrifugal_bars(strains[-n_late:].sum(axis=0) / n_late,
+                                        spun_strains[-n_late:].sum(axis=0) / n_late),
+                "gravitational_waves_crystal_spin_strains")
+
+
+def swing_trials(name: str, frames: core.Motor, swing_shares: np.ndarray, critical_shares: np.ndarray) -> None:
+    """The three crystals placed by `frames` from rest for `n_trial_periods` in the page's wave at each of
+    `swing_shares` of its swing, damped at the matching `critical_shares` of critical, one animation and chart each."""
+    from examples.relativity.gravitational_waves import web
+
+    at_rest = mv.xy * np.zeros(len(tunings))                                    # [3] Bivector+
+    for swing_share, share in zip(swing_shares, critical_shares):
+        crystal_spin(f"{name}_swing_{swing_share:.2f}_damping_{share:.3f}", frames, swing_share * web.wave_swing,
+                     share, at_rest, n_trial_periods, n_trial_frames_a_period)
+
+
+def crystal_spin_trials() -> None:
+    """Writes the crystals' turning in the exact quadrupole on the CPU: the page's wave, the same spin with no wave, and
+    the trials of swing, damping and orientation."""
+    spun_by_the_wave()
+    swing_trials("gravitational_waves_crystal_spin", crystal_places(), trial_swing_shares, trial_critical_shares)
+    swing_trials("gravitational_waves_crystal_spin_diagonal", diagonal_places(), diagonal_swing_shares,
+                 diagonal_critical_shares)
+
+
+def gauge_trials() -> None:
+    """The Hopf view's triangle gauges from rest in its travelling quadrupole for `n_gauge_trial_periods`, at each of
+    `gauge_trial_tunings` and `gauge_trial_shares`: one animation each of their strains, turning and areas, and one
+    chart of all the runs."""
+    from examples.relativity.gravitational_waves import render
+    from examples.util.animation import save_animation, save_figure
+
+    cell_topology, cell_vertices = six_hundred_cell()
+    pick = numerical.picking(cell_topology, cell_vertices)
+    _, frequency = quadrupole_history(cell_topology, cell_vertices, 0.0)
+    period = 2 * np.pi / frequency
+    start = -n_settling_swings * period
+    waves, _ = quadrupole_history(cell_topology, cell_vertices, start + n_gauge_trial_periods * period)
+    turn = circle_turn(cell_vertices, n_guardrail_sides)                        # [] Motor+
+    bonds, atoms = triangle_gauges(decagon_bases(cell_vertices, turn.log()), turn.log())
+    sample_step = period / n_gauge_samples_a_period
+    times = start + sample_step * np.arange(n_gauge_trial_periods * n_gauge_samples_a_period + 1)   # [n_samples]
+    runs = []
+    for tuning, share in zip(gauge_trial_tunings, gauge_trial_shares):
+        states = gauge_states(pick, waves, frequency, tuning, share, bonds, atoms, start, times)
+        readouts = render.gauge_chart_readouts(times - start, period, frequency, *gauge_readouts(states, sample_step))
+        save_animation(render.gauge_chart_frames(readouts, n_gauge_frames_a_period),
+                       f"gravitational_waves_gauges_tuning_{tuning:.2f}_damping_{share:.2f}", duration_ms)
+        runs.append(readouts)
+    save_figure(render.gauge_comparison(runs, gauge_trial_tunings, gauge_trial_shares, n_settling_swings + 1),
+                "gravitational_waves_gauge_trials")
+
+
 def pinned() -> None:
     """Writes the repository's pinned animations for the exterior quadrupole and the interior 600-cell wave view."""
     from examples.relativity.gravitational_waves import render
@@ -365,7 +564,7 @@ def pinned() -> None:
 
     cell_topology, cell_vertices = six_hundred_cell()
     pick = numerical.picking(cell_topology, cell_vertices)
-    quadrupole, quadrupole_frequency = quadrupole_history(cell_topology, cell_vertices)
+    quadrupole, quadrupole_frequency = quadrupole_history(cell_topology, cell_vertices, n_light_steps * light_step)
     turn = circle_turn(cell_vertices, n_guardrail_sides)                        # [] Motor+
     bases = decagon_bases(cell_vertices, turn.log())                            # [12] Point-
     sphere_topology, sphere_points = base_sphere()

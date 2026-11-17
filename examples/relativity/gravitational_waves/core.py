@@ -293,6 +293,29 @@ class Waves:
         return connection_rate, stretch, translating(strain_rate) / 2
 
 
+class Quadrupole:
+    """The exact lowest quadrupole wave of the round three-sphere, `quadrupole_source` on the GPU, oscillating at
+    `quadrupole_frequency` with the same strain in every frame, so every site reads the same maps."""
+
+    def __init__(self, n_sites: int, swing: float) -> None:
+        self.sites, self.swing = mv.scalar(np.ones((n_sites, 1))).field(), swing   # Scalar+[V_sites]
+        self.pattern = (mv.x * (mv.x & Step) - mv.y * (mv.y & Step)).cast(Strain)   # [] Plane+ <- Point-
+
+    def strains(self, time: float) -> tuple[Strain, Strain, Strain]:
+        """The strain `[] Plane+ <- Point-` at `time`, its rate, and its second rate."""
+        phase = quadrupole_frequency * time
+        return (self.pattern * (2 * self.swing * np.cos(phase)),
+                self.pattern * (-2 * self.swing * quadrupole_frequency * np.sin(phase)),
+                self.pattern * (-2 * self.swing * quadrupole_frequency ** 2 * np.cos(phase)))
+
+    def at(self, tetrahedra: np.ndarray, places: Point, time: float) -> tuple[Rolling, Stretching, Stretching]:
+        """The connection, stretch and squeeze of `Waves.at`, the same at every site of `places` `Point-[V_sites]`."""
+        strain, strain_rate, _ = self.strains(time)
+        stretch = translating(strain(Step))                                     # [] Point- <- Point-
+        connection_rate = moving(Step + stretch / 2) + turning(Step - 2 * stretch)   # [] Rate+ <- Point-
+        return connection_rate * self.sites, stretch * self.sites, translating(strain_rate) / 2 * self.sites
+
+
 def proper_separations(connection_rate: Rolling, bonds: Topology, positions: Point) -> Point:
     """Applying each tail particle's connection `(Rate+ <- Point-)[V]` to its bond's round step gives the bond's proper
     separation `Point-[E]`."""
@@ -301,12 +324,11 @@ def proper_separations(connection_rate: Rolling, bonds: Topology, positions: Poi
 
 
 def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, rest: Scalar, stiffness: Scalar,
-            damping: Scalar, holding: float, starts: Point, velocities: Point, start: float, step: float,
+            damping: Scalar, starts: Point, velocities: Point, start: float, step: float,
             times: np.ndarray) -> Iterator[tuple[Point, Scalar]]:
     """Yields particle positions `Point-[V]` and bond proper strains `Scalar+[E]` at `times` as spring-bound unit-mass
     particles step through `waves` by symplectic Euler."""
-    homes = starts.batch()                                                      # [V] Point-
-    positions, velocities, lengths, time = homes, velocities.batch(), rest, start
+    positions, velocities, lengths, time = starts.batch(), velocities.batch(), rest, start
     for target in times:
         while time < target - step / 2:
             places = positions.field()                                          # Point-[V]
@@ -316,9 +338,6 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
             # Springs and dashpots act along proper separations to pull stretched bond endpoints together.
             pulls = (stiffness * (lengths - rest) + damping * (lengths - previous_lengths) / step) / lengths   # Scalar+[E]
             forces = -(bonds.d[0].adjugate() * (pulls * proper)).batch()        # [V] Point-
-            # Critically damped holding springs tether gauge particles gently to their free-fall home positions.
-            home_steps = (frame(positions).inverse() >> homes).cast(Step)       # [V] Point-
-            forces = forces + holding * home_steps - 2 * np.sqrt(holding) * velocities
             connection_rate, stretch, squeeze = connection_rate.batch(), stretch.batch(), squeeze.batch()   # [V] Rate+ <- Point-, Point- <- Point-, Point- <- Point-
             motion = velocities - stretch(velocities) / 2                       # [V] Point-
             carried_velocities = velocities - velocities.commutator(connection_rate(motion)).cast(Step) * step
