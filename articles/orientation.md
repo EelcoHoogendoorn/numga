@@ -114,7 +114,7 @@ mirror >> side                                                              # []
 mirror >> winding                                                           # [] Antitrivector-
 ```
 
-In a plane, a point can likewise be oriented by its weight, as a mass is, or by a turn around it, as a pivot is. A [circle constructed twice](../examples/orientation/conformal_circle/conformal_circle.ipynb) example shows the same split for a circle in the conformal algebra of space.
+In a plane, a point can likewise be oriented by its weight, as a mass is, or by a turn around it, as a pivot is. A [circle constructed twice](../examples/orientation/conformal_circle/conformal_circle.ipynb) example shows the same split for a circle in the conformal algebra of space [[2, §1.1]](#references).
 
 ## From the plane to space
 
@@ -145,7 +145,7 @@ Once the orientations of the inputs are chosen, each operation fixes the orienta
 
 Orientation also rules out expressions whose terms transform in incompatible ways. In the spinning body above, `rate` (`Bivector+`) and `momentum` (`Antibivector-`) have opposite orientations, so `rate + momentum` has no single transformation law under reflection. Raising an intrinsic element to an exponential mixes orientations in the same way, since its even powers are extrinsic and its odd powers are intrinsic, whereas `rate.exp()` is extrinsic throughout and generates a motion.
 
-In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds correspond to outer and inner orientation, represented by untwisted and twisted differential forms [[2, §§1–2]](#references), and in projective geometry the two kinds of line correspond to Study's spears and axes [[3, §2.2]](#references), [[4, §8.6.1]](#references).
+In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds correspond to outer and inner orientation, represented by untwisted and twisted differential forms [[3, §§1–2]](#references), and in projective geometry the two kinds of line correspond to Study's spears and axes [[4, §2.2]](#references), [[5, §8.6.1]](#references).
 
 ## The rules
 
@@ -167,6 +167,7 @@ Together with two conventions, that expressions keep the same form and signs acr
 ## References
 
 1. [*Projective Duality Encodes Complementary Orientations in Geometric Algebras*](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf) (Leo Dorst, *Mathematical Methods in the Applied Sciences*, 2024).
-2. [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (Alain Bossavit, 2002).
-3. [*On the Homogeneous Model of Euclidean Geometry*](https://arxiv.org/pdf/1101.4542) (Charles Gunn, in *Guide to Geometric Algebra in Practice*, Leo Dorst and Joan Lasenby, eds., Springer, 2011; extended preprint of AGACSE 2010).
-4. [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022).
+2. [*Geometric Algebra for Computer Science: An Object-Oriented Approach to Geometry*](https://geometricalgebra.org/downloads/ga4cs_chapter1.pdf) (Leo Dorst, Daniel Fontijne and Stephen Mann, Morgan Kaufmann, 2007; open Chapter 1).
+3. [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (Alain Bossavit, 2002).
+4. [*On the Homogeneous Model of Euclidean Geometry*](https://arxiv.org/pdf/1101.4542) (Charles Gunn, in *Guide to Geometric Algebra in Practice*, Leo Dorst and Joan Lasenby, eds., Springer, 2011; extended preprint of AGACSE 2010).
+5. [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022).
