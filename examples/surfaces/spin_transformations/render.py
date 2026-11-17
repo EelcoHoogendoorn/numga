@@ -25,7 +25,7 @@ pixels = 300
 # The rounding animation's camera turned half way round onto Spot's face, where the curvature is highest and the
 # flow does most of its rounding, and its margin as a share of the larger side.
 rounding_azimuth = azimuth + np.pi
-rounding_margin = 0.3
+rounding_margin = 0.22
 background = np.ones(3)
 # The checkerboard's cubes across the reference surface, and its light and dark squares on the outer and inner
 # side of the surface.

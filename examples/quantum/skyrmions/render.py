@@ -1,6 +1,6 @@
-"""Rendering for magnetic skyrmions tiles the periodic triangular lattice across a rectangular viewport, colours out-of-plane spin components in quantized bands, overlays in-plane spin components as flow streaks, and plots crystallization transients.
+"""Rendering for magnetic skyrmions tiles the periodic triangular lattice across a rectangular viewport, colours each spin by its whole direction, its direction in the film as hue and its tilt out of the film as a darker or paler shade, and plots crystallization transients.
 
-Because triangles straddling the torus wrap have vertices at opposite ends of the fundamental rhombus, each triangle is reconstructed locally from its first vertex and two edge steps and then translated across all nine neighbour copies so the rectangular frame clips cleanly without torn faces. Camera planes pair directly with site points, while pairing spins with the film plane and perpendicular coordinate planes reads out the out-of-plane colour scalar and in-plane streak directions.
+Because triangles straddling the torus wrap have vertices at opposite ends of the fundamental rhombus, each triangle is reconstructed locally from its first vertex and two edge steps and then translated across all nine neighbour copies so the rectangular frame clips cleanly without torn faces. Camera planes pair directly with site points, while pairing spins with the film plane and perpendicular planes reads out the shade and the hue.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 
 import numpy as np
-from matplotlib import colormaps
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
@@ -16,18 +15,18 @@ from examples.util import charts
 from examples.util.panels import image_figure
 from numga import stack
 from numga.extensor import Extensor
-from numga.render import contours, flow, simplices
+from numga.render import contours, simplices
 from numga.render.camera import Camera
 from numga.render.drawing import composited
 from numga.topology import Topology
 
-# Quantized coolwarm colour bands keep animated GIF palettes compact.
-field_colormap = colormaps["coolwarm"]
-n_bands = 13
+# A spin's direction in the film sets the hue; its tilt out of the film darkens the hue toward a deep shade along the
+# field and pales it toward a light one against it, by a power of its reading along the field that holds the hue over
+# most of a whirl.
+dark_end, light_end, shade_power, hue_swing = 0.08, 0.88, 1.3, 0.75
 n_animation_colours = 32
 n_pixels = 320
 n_panel_pixels, panel_gap = 260, 8
-streak_ink, full_streak, streak_length = np.array(to_rgb("#26262e")), 1.0, 14.0
 corner_reach = 7.0
 bond_colour, bond_width, site_radius = np.array(to_rgb("#5b6470")), 1.5, 3.0
 wrap_colour, wrap_width, wrap_dashes = np.array(to_rgb("#c0392b")), 1.5, (6.0, 4.0)
@@ -70,7 +69,7 @@ def period_bounds(periods: Extensor) -> np.ndarray:
 
 
 def spin_layers(topology: Topology, spins: Extensor, places: Extensor, tile_topology: Topology, view: Camera) -> list:
-    """Quantized out-of-plane colour bands and in-plane flow streaks depict `spins` (`Spin-[V]`) on the tiled triangles."""
+    """The colour of each spin's whole direction depicts `spins` (`Spin-[V]`) on the tiled triangles."""
     V, E, F = topology.n_elements
     mv = spins.context.multivector
     corner_spins = topology.incidence[2, 0] * spins                           # [3] Spin-[F]
@@ -78,17 +77,21 @@ def spin_layers(topology: Topology, spins: Extensor, places: Extensor, tile_topo
     n_places = places.shape[0]
     n_copies = n_places // (3 * F)
     tile_spins = face_spins[None].broadcast_to((n_copies, F, 3)).reshape(-1)  # [n_places] Spin-
-    field_components = np.asarray((mv.xy & tile_spins).to_array())
+    along = (mv.xy & tile_spins).to_array()                                   # [n_places]
     # Pairing with yz and zx reads the spin's in-plane precession components as horizontal and vertical film steps.
     in_plane_readings = stack((mv.yz, mv.zx)) & tile_spins[:, None]           # [n_places, 2] Scalar+
     in_plane_steps = (stack((mv.x.dual(), mv.y.dual())) * in_plane_readings).sum(axis=-1)   # [n_places] Point-
-    colours = field_colormap((field_components + 1) / 2)[:, :3]
-    band_centres = (np.arange(n_bands) + 0.5) / n_bands                       # [n_bands]
-    bands = contours.Bands(-1.0, 2 / n_bands, field_colormap(band_centres))
-    return [
-        contours.picture(places, tile_topology, field_components, colours, view, bands=(bands,)),
-        flow.layer(places, tile_topology, in_plane_steps, view, full_streak, streak_ink, length=streak_length),
-    ]
+    in_film = in_plane_steps.antinorm().to_array()                            # [n_places]
+    # The spin read against three planes a third of a turn apart gives the three colour channels, which run once
+    # through the colour wheel as its direction in the film turns once.
+    hue_planes = (mv.xy * (-np.pi / 3 * np.arange(3))).exp() >> mv.yz         # [3] Field+
+    film = (hue_planes & tile_spins[:, None]).to_array()                      # [n_places, 3]
+    hues = np.clip(0.5 + hue_swing * film / np.maximum(in_film, 1e-12)[:, None], 0, 1)   # [n_places, 3]
+    # From the dark shade along the field through the full hue in the film to the pale shade against it.
+    lightness = (0.5 - 0.5 * np.sign(along) * np.abs(along) ** shade_power)[:, None]     # [n_places, 1]
+    colours = np.where(lightness < 0.5, dark_end + 2 * lightness * (hues - dark_end),
+                       hues + (2 * lightness - 1) * (light_end - hues))       # [n_places, 3]
+    return [contours.picture(places, tile_topology, along, colours, view)]
 
 
 def lattice_figure(topology: Topology, vertices: Extensor, bonds: Extensor, periods: Extensor) -> Figure:
