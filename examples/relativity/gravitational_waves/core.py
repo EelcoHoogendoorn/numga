@@ -293,29 +293,6 @@ class Waves:
         return connection_rate, stretch, translating(strain_rate) / 2
 
 
-class Quadrupole:
-    """The exact lowest quadrupole wave of the round three-sphere, `quadrupole_source` on the GPU, oscillating at
-    `quadrupole_frequency` with the same strain in every frame, so every site reads the same maps."""
-
-    def __init__(self, n_sites: int, swing: float) -> None:
-        self.sites, self.swing = mv.scalar(np.ones((n_sites, 1))).field(), swing   # Scalar+[V_sites]
-        self.pattern = (mv.x * (mv.x & Step) - mv.y * (mv.y & Step)).cast(Strain)   # [] Plane+ <- Point-
-
-    def strains(self, time: float) -> tuple[Strain, Strain, Strain]:
-        """The strain `[] Plane+ <- Point-` at `time`, its rate, and its second rate."""
-        phase = quadrupole_frequency * time
-        return (self.pattern * (2 * self.swing * np.cos(phase)),
-                self.pattern * (-2 * self.swing * quadrupole_frequency * np.sin(phase)),
-                self.pattern * (-2 * self.swing * quadrupole_frequency ** 2 * np.cos(phase)))
-
-    def at(self, tetrahedra: np.ndarray, places: Point, time: float) -> tuple[Rolling, Stretching, Stretching]:
-        """The connection, stretch and squeeze of `Waves.at`, the same at every site of `places` `Point-[V_sites]`."""
-        strain, strain_rate, _ = self.strains(time)
-        stretch = translating(strain(Step))                                     # [] Point- <- Point-
-        connection_rate = moving(Step + stretch / 2) + turning(Step - 2 * stretch)   # [] Rate+ <- Point-
-        return connection_rate * self.sites, stretch * self.sites, translating(strain_rate) / 2 * self.sites
-
-
 def proper_separations(connection_rate: Rolling, bonds: Topology, positions: Point) -> Point:
     """Applying each tail particle's connection `(Rate+ <- Point-)[V]` to its bond's round step gives the bond's proper
     separation `Point-[E]`."""
@@ -343,6 +320,52 @@ def massive(pick: Callable[[Point], np.ndarray], waves: Waves, bonds: Topology, 
             carried_velocities = velocities - velocities.commutator(connection_rate(motion)).cast(Step) * step
             velocities = carried_velocities - squeeze(carried_velocities) * step + forces * step   # [V] Point-
             rolling = velocities - stretch(velocities) / 2                      # [V] Point-
+            rolls = frame(positions) * (moving(rolling) * (-step / 2)).exp()    # [V] Motor+
+            positions = rolls >> origin                                         # [V] Point-
+            time += step
+        yield positions.field(), lengths / rest - 1
+
+
+def circle_gaps(bonds: Topology, places: Point, circling: Rate) -> tuple[Point, Point]:
+    """Each bond's step `Point-[E]` in its tail's frame from the tail to the nearest point of the head's Hopf circle
+    under `circling`, and the direction `Point-[E]` of the tail's own circle in that frame."""
+    tails, heads = bonds.incidence[1, 0] * places                               # Point-[E], Point-[E]
+    tail_fibres = base_points(tails, circling)                                  # Point-[E]
+    rises = polar(tail_fibres) & (frame(tails).inverse() >> heads).cast(Step)   # Scalar+[E]
+    # A turn by `circling` carries every point along its circle at twice the speed of `origin.commutator(circling)`.
+    nearest = (circling * (rises / (2 * origin.commutator(circling).norm()))).exp() >> heads   # Point-[E]
+    return (frame(tails).inverse() >> nearest).cast(Step), tail_fibres
+
+
+def horizontal_massive(pick: Callable[[Point], np.ndarray], waves: Waves, circling: Rate, bonds: Topology, rest: Scalar,
+                       stiffness: Scalar, damping: Scalar, starts: Point, velocities: Point, start: float, step: float,
+                       times: np.ndarray) -> Iterator[tuple[Point, Scalar]]:
+    """Yields particle positions `Point-[V]` and bond strains `Scalar+[E]` at `times` as spring-bound unit-mass
+    particles step through `waves` by symplectic Euler, moving only across the Hopf circles of `circling` and freely
+    within that horizontal plane, the plane the base sphere shows; the springs read the bonds' `rest` lengths
+    `Scalar+[E]` as the distances between the atoms' circles."""
+    positions, velocities, lengths, time = starts.batch(), velocities.batch(), rest, start
+    for target in times:
+        while time < target - step / 2:
+            places = positions.field()                                          # Point-[V]
+            fibres = base_points(positions, circling)                           # [V] Point-
+            connection_rate, stretch, squeeze = waves.at(pick(positions), places, time)   # (Rate+ <- Point-)[V], (Point- <- Point-)[V], (Point- <- Point-)[V]
+            gaps, tail_fibres = circle_gaps(bonds, places, circling)            # Point-[E], Point-[E]
+            proper = origin.commutator((bonds.incidence[1, 0][0] * connection_rate)(gaps)).cast(Step)   # Point-[E]
+            # Each bond's proper separation between the atoms' circles, across the Hopf circle through its tail.
+            across = proper - tail_fibres * (polar(tail_fibres) & proper)       # Point-[E]
+            previous_lengths, lengths = lengths, across.norm()                  # Scalar+[E], Scalar+[E]
+            # Springs and dashpots act across the circles to pull stretched bond endpoints together.
+            pulls = (stiffness * (lengths - rest) + damping * (lengths - previous_lengths) / step) / lengths   # Scalar+[E]
+            forces = -(bonds.d[0].adjugate() * (pulls * across)).batch()        # [V] Point-
+            connection_rate, stretch, squeeze = connection_rate.batch(), stretch.batch(), squeeze.batch()   # [V] Rate+ <- Point-, Point- <- Point-, Point- <- Point-
+            motion = velocities - stretch(velocities) / 2                       # [V] Point-
+            carried_velocities = velocities - velocities.commutator(connection_rate(motion)).cast(Step) * step
+            velocities = carried_velocities - squeeze(carried_velocities) * step + forces * step   # [V] Point-
+            # Each atom's step along its own Hopf circle is taken out of its velocity and its rolling.
+            velocities = velocities - fibres * (polar(fibres) & velocities)     # [V] Point-
+            free_rolling = velocities - stretch(velocities) / 2                 # [V] Point-
+            rolling = free_rolling - fibres * (polar(fibres) & free_rolling)    # [V] Point-
             rolls = frame(positions) * (moving(rolling) * (-step / 2)).exp()    # [V] Motor+
             positions = rolls >> origin                                         # [V] Point-
             time += step
