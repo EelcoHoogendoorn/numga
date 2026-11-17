@@ -307,13 +307,13 @@ strains = stiffness.solve(-loads_at_stations(loads, stations))                  
 carriers = ((twist * bonds) * (-1 / 2)).exp()                                    # Rotor+[E]
 head_fields = exchange(carriers >> tail_spins)                                   # Field+[E]
 turning_rate = (undamped_field + damping * undamped_field.commutator(spins.dual())) / (1 + damping ** 2)   # Field+[V]
-shortest_turns = (1 + head_spins * tail_spins).normalized()                      # Rotor+[E]
-half_turns = holonomies(topology, shortest_turns).log()                          # Field+[F]
-charges = -2 * (half_turns & corner_spins) / (4 * np.pi)                         # Scalar+[F]
+first, second, third = topology.incidence[2, 0] * spins                          # Spin-[F], Spin-[F], Spin-[F]
+holonomy = ((1 + first * third) * (1 + third * second) * (1 + second * first)).normalized()   # Rotor+[F]
+charges = -2 * (holonomy.log() & first) / (4 * np.pi)                            # Scalar+[F]
 ```
 
 * Multiplying each bond by an intrinsic scalar `twist` builds a rotor `carriers` whose sandwich `exchange(carriers >> tail_spins)` combines Heisenberg exchange, chiral Dzyaloshinskii–Moriya twist and bond anisotropy in one parallel transport.
-* Multiplying the shortest-arc rotors `(1 + head_spins * tail_spins).normalized()` around each triangle gives a face holonomy whose logarithm `half_turns` reads the exact spherical solid angle, summing to the integer skyrmion count with no coordinate chart.
+* Multiplying the shortest-arc rotors `1 + second * first` between a triangle's corner spins around the triangle gives, once normalized, a face holonomy whose logarithm reads the exact spherical solid angle, summing to the integer skyrmion count with no coordinate chart.
 * Commuting the effective field with `spins.dual()` adds the quarter-turn Gilbert damping rate directly in the space of turning planes, and exponentiating `turning_rate` preserves unit spin length.
 
 ---
