@@ -26,7 +26,9 @@ rail_share = 0.014
 bead_scale = 2.0
 ghost_ink, ghost_share, wave_ghost_share = np.array([0.72, 0.75, 0.80], dtype=np.float32), 0.003, 0.0
 rung_ink = np.array([0.85, 0.87, 0.90])
-particle_ink, particle_radius = np.array([1.0, 0.86, 0.35], dtype=np.float32), 0.012
+# Each atom of a crystal keeps its own ink, so that the crystal's turning reads at a glance.
+particle_inks = np.array([[1.0, 0.86, 0.35], [0.35, 0.9, 0.45], [0.35, 0.85, 1.0], [0.95, 0.45, 0.95]])
+particle_radius = 0.012
 bond_radius, saturating_strain = 0.005, 0.15
 strain_map = "coolwarm"
 lamp_placement = (core.mv.yw * 0.4 - core.mv.xw * 0.3).exp()                  # [] Motor+
@@ -45,6 +47,10 @@ struct TetVisual {
 const tet_edges = array<vec2<u32>, 6>(''' + tet_edges + ''');
 '''
 
+particle_inks_source = (f"\nconst particle_inks = array<vec3<f32>, {len(particle_inks)}>("
+                        + ", ".join("vec3<f32>({!r}, {!r}, {!r})".format(*map(float, ink)) for ink in particle_inks)
+                        + ");\n")
+
 ball_source = '''
 struct Ball {
     centre: Point,
@@ -52,7 +58,7 @@ struct Ball {
 }
 '''
 
-inside_source = visual_source + ball_source + '''
+inside_source = visual_source + ball_source + particle_inks_source + '''
 var<uniform> start_place: Point;
 var<uniform> start_tet: u32;
 var<uniform> right: Step;
@@ -62,7 +68,6 @@ var<uniform> eye_time: f32;
 var<uniform> max_legs: u32;
 var<uniform> light: Point;
 var<uniform> n_particles: u32;
-var<uniform> particle_ink: vec3<f32>;
 var<uniform> particle_radius_squared: f32;
 var<uniform> n_bonds: u32;
 var<uniform> bond_radius_squared: f32;
@@ -84,20 +89,25 @@ fn tangent(place: Point, toward: Point) -> Point {
 }
 
 fn ball_share(leg: Leg, centre: Point, radius_squared: f32) -> f32 {
-    let reading = leg.plane & centre;
-    if (reading <= 0.0) {
-        return 2.0;
+    // The ball is the cap of points within the angle whose squared sine is `radius_squared` of the unit `centre`,
+    // `(centre . p)^2 >= (1 - radius_squared) |p|^2` along `p = chart + segment * share`: one cap in every cell's chart.
+    let cosine_squared = 1.0 - radius_squared;
+    let start = centre.dot(leg.chart);
+    let along = centre.dot(leg.segment);
+    let a = along * along - cosine_squared * leg.segment.dot(leg.segment);
+    let b = start * along - cosine_squared * leg.chart.dot(leg.segment);
+    let c = start * start - cosine_squared * leg.chart.dot(leg.chart);
+    // A leg that starts inside the cap entered it at the cell's facet.
+    if (c >= 0.0 && start > 0.0) {
+        return 0.0;
     }
-    let offset = leg.chart - centre / reading;
-    let a = leg.segment.dot(leg.segment);
-    let b = offset.dot(leg.segment);
-    let c = offset.dot(offset) - radius_squared;
     let disc = b * b - a * c;
-    if (c <= 0.0 || disc < 0.0) {
+    if (disc < 0.0) {
         return 2.0;
     }
-    let share = (-b - sqrt(disc)) / a;
-    return select(2.0, share, share >= 0.0);
+    // The root where the cap's reading rises through its edge, entering it.
+    let share = (sqrt(disc) - b) / a;
+    return select(2.0, share, share >= 0.0 && start + along * share > 0.0);
 }
 
 fn ball_nearest(leg: Leg, centre: Point) -> f32 {
@@ -249,7 +259,8 @@ fn sample(pixel: vec2<f32>) -> Sample {
         if (hit_particle < n_particles) {
             let normal = tangent(hit, hit - atom_at(hit_particle, particle_time).normalized());
             let to_eye = -tangent(hit, leg.segment);
-            let lit = particle_ink * (0.30 + 0.50 * max(normal.dot(to_light), 0.0)
+            let ink = particle_inks[hit_particle % (n_particles / n_crystals)];
+            let lit = ink * (0.30 + 0.50 * max(normal.dot(to_light), 0.0)
                       + 0.25 * max(normal.dot(to_eye), 0.0));
             return faded(lit, distance);
         }
@@ -416,7 +427,7 @@ def inside(walk: str, walk_values: dict, topology: Topology, vertices: core.Poin
     walk_bindings = {name: value for name, value in walk_values.items() if name != "gradients"}
     bindings = walk_bindings | dict(tets=tet_table(topology, walk_values["gradients"]),
                                     visuals=visual_table(topology, vertices, styles, beads),
-                                    half_height=half_height, max_legs=max_legs, particle_ink=particle_ink,
+                                    half_height=half_height, max_legs=max_legs,
                                     particle_radius_squared=particle_radius ** 2,
                                     bond_radius_squared=bond_radius ** 2)
     for frame_index, (eye_time, crystal) in enumerate(zip(eye_times, crystals)):
@@ -570,7 +581,8 @@ base_background = np.ones(3)
 saturating_stretch = 0.12
 dot_radius, atom_radius = 4.5, 2.5
 bond_width, light_width = 3.0, 1.4
-atom_ink = np.array([0.25, 0.25, 0.25])
+# Each atom of a gauge keeps its own ink, so that the gauge's turning reads at a glance.
+atom_inks = np.array([[0.25, 0.25, 0.25], [0.25, 0.25, 0.25], [0.1, 0.75, 0.25]])
 light_ink = np.array([0.1, 0.1, 0.1])
 
 
@@ -604,7 +616,7 @@ def base_view(sphere_topology: Topology, sphere_points: core.Point, decagon_base
     dot_inks = hues(decagon_bases.shape[0])
     parts = [(solids.ball(lying(decagon_bases, 0.0), dot_radius * pixel)[:, None], dot_inks),
              (solids.ball(lying(atoms, bond_width / 2), atom_radius * pixel)[:, None],
-              np.broadcast_to(atom_ink, (atoms.shape[0], 3)))]
+              np.tile(atom_inks, (atoms.shape[0] // len(atom_inks), 1)))]
     return solids.draw(parts, outside, base_background, inks=[], translucent=[],
                        meshes=[(surface, 1.0), (bonds, 1.0), (rays, 1.0)])
 
@@ -614,3 +626,186 @@ def base_views(sphere_topology: Topology, sphere_points: core.Point, decagon_bas
     """Yields exterior base-sphere frames across `states`."""
     for state in states:
         yield base_view(sphere_topology, sphere_points, decagon_bases, *state)
+
+
+# --- the crystals turning in the exact quadrupole, drawn on the CPU ----------------------------------------------------
+spin_charts_px, spin_torque_px = (480, 330), (700, 240)
+# Readers of a turning's three planes of space at the origin.
+turn_readers = stack((core.mv.xy, core.mv.yz, core.mv.zx)).dual()              # [3] Antibivector-
+bond_inks = ["#4c72b0", "#dd8452", "#55a868", "#c44e52", "#8172b3", "#937860"]
+crystal_names = ["soft", "tuned", "stiff"]
+
+
+def spin_readouts(times: np.ndarray, strains: core.Scalar, turning: core.Rate, tidal: core.Rate) -> tuple:
+    """Wave periods, bond strains `[n_samples, 3, 6]`, and turnings over half the wave frequency
+    `[n_samples - 2, 3, 3]`, measured and from the tidal torque."""
+    half_frequency = core.quadrupole_frequency / 2
+    n_samples = len(times)
+    return (times * core.quadrupole_frequency / (2 * np.pi), strains.to_array().reshape(n_samples, 3, -1),
+            (turning[..., None] & turn_readers).to_array() / half_frequency,
+            (tidal[..., None] & turn_readers).to_array() / half_frequency)
+
+
+def spin_axes() -> tuple:
+    """Two stacked charts sharing the time axis."""
+    figure, (turning_chart, strain_chart) = charts.subplots(*spin_charts_px, nrows=2, sharex=True)
+    for chart in (turning_chart, strain_chart):
+        chart.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+        chart.spines[["top", "right"]].set_visible(False)
+    turning_chart.set_ylabel("turning\n/ half wave freq.")
+    strain_chart.set(ylabel="tuned bond\nstrains", xlabel="wave periods")
+    turning_chart.tick_params(labelbottom=False)
+    return figure, turning_chart, strain_chart
+
+
+@charts.style()
+def spin_frames(readouts: tuple, n_frames_a_period: int) -> Iterator[np.ndarray]:
+    """Yields frames of the crystals' turning in the wave's plane and the tuned crystal's bond strains, drawn up to
+    the frame's time."""
+    from examples.util.animation import capture
+
+    periods, strains, turning, _ = readouts
+    figure, turning_chart, strain_chart = spin_axes()
+    turnings = [turning_chart.plot([], [], color=ink, label=name)[0] for ink, name in zip(crystal_inks, crystal_names)]
+    bond_strains = [strain_chart.plot([], [], color=ink, alpha=0.35)[0] for ink in bond_inks]
+    # Each bond's strain averaged over one wave period, drawn at the middle of the period.
+    samples_a_period = int(round((len(periods) - 1) / periods[-1]))
+    means = np.stack([np.convolve(values, np.ones(samples_a_period) / samples_a_period, mode="valid")
+                      for values in strains[:, 1].T], axis=-1)                  # [n_samples - samples_a_period + 1, 6]
+    mean_strains = [strain_chart.plot([], [], color=ink, linewidth=2 * charts.LINE_WIDTH)[0] for ink in bond_inks]
+    turning_reach = 1.1 * max(np.abs(turning[..., 0]).max(), 0.1)
+    turning_chart.set(xlim=(0, periods[-1]), ylim=(-turning_reach, turning_reach))
+    strain_chart.set_ylim(np.abs(strains[:, 1]).max() * np.array([-1.1, 1.1]))
+    turning_chart.legend(frameon=False, loc="upper left", ncol=3, handlelength=1)
+    figure.tight_layout(pad=0.3)
+    for frame in np.searchsorted(periods, np.arange(1, int(periods[-1] * n_frames_a_period)) / n_frames_a_period):
+        for line, rates in zip(turnings, turning[:frame, :, 0].T):
+            line.set_data(periods[1:frame + 1], rates)
+        for line, values in zip(bond_strains, strains[:frame + 1, 1].T):
+            line.set_data(periods[:frame + 1], values)
+        for line, values in zip(mean_strains, means[:max(frame - samples_a_period + 2, 0)].T):
+            line.set_data(periods[samples_a_period // 2:samples_a_period // 2 + len(values)], values)
+        yield capture(figure)
+    plt.close(figure)
+
+
+@charts.style()
+def spin_chart(readouts: tuple) -> plt.Figure:
+    """The crystals' turning in the wave's plane read from their angular momentum (solid) against the turning the
+    wave's tidal torque alone gives them (dashed), with the tuned crystal's turning in the other two planes (grey)."""
+    periods, _, turning, tidal = readouts
+    figure, chart = charts.subplots(*spin_torque_px)
+    chart.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+    for crystal, (ink, name) in enumerate(zip(crystal_inks, crystal_names)):
+        chart.plot(periods[1:-1], turning[:, crystal, 0], color=ink, label=f"{name}, from momentum")
+        chart.plot(periods[1:-1], tidal[:, crystal, 0], color=ink, linestyle="--", label=f"{name}, from tidal torque")
+    chart.plot(periods[1:-1], turning[:, 1, 1:], color="0.6", linewidth=charts.FRAME_WIDTH)
+    chart.set(xlabel="wave periods", ylabel="turning / half wave freq.", xlim=(0, periods[-1]))
+    chart.spines[["top", "right"]].set_visible(False)
+    chart.legend(frameon=False, loc="best", ncol=2)
+    figure.tight_layout(pad=0.3)
+    return figure
+
+
+@charts.style()
+def centrifugal_bars(driven: core.Scalar, spun: core.Scalar) -> plt.Figure:
+    """The tuned crystal's six bond strains averaged over its last wave periods in the wave (solid) beside the strains
+    it settles to turning at the same rate with no wave (hatched)."""
+    driven_strains, spun_strains = driven.to_array().reshape(3, -1)[1], spun.to_array().reshape(3, -1)[1]   # [6], [6]
+    figure, chart = charts.subplots(360, 200)
+    places = np.arange(len(bond_inks))                                          # [6]
+    chart.bar(places - 0.2, driven_strains, width=0.4, color=bond_inks, label="in the wave")
+    chart.bar(places + 0.2, spun_strains, width=0.4, color="white", edgecolor=bond_inks, hatch="///",
+              label="turning, no wave")
+    chart.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+    chart.set(xticks=places, xticklabels=[], ylabel="mean bond strain")
+    chart.tick_params(axis="x", length=0)
+    chart.spines[["top", "right", "bottom"]].set_visible(False)
+    chart.legend(frameon=False, loc="lower left")
+    figure.tight_layout(pad=0.3)
+    return figure
+
+
+# --- the Hopf view's triangle gauges over many wave periods ------------------------------
+gauge_chart_px = (480, 420)
+gauge_comparison_px = (560, 420)
+gauge_ink, peak_ink = "#4c72b0", "#222222"
+gauge_run_inks = ["#999999", "#dd8452", "#55a868", "#c44e52", "#8172b3", "#937860", "#4c72b0", "#da8bc3"]
+
+
+def gauge_chart_readouts(elapsed: np.ndarray, period: float, frequency: float, strains: core.Scalar,
+                         turning: core.Rate, areas: core.Scalar) -> tuple:
+    """Wave periods `[n_samples]`, bond strains `[n_samples, F, 3]`, each gauge's turning over half the wave frequency
+    `[n_samples - 2, F]` and its area over its area at rest `[n_samples, F]`."""
+    return (elapsed / period, strains.to_array().reshape(*strains.shape),
+            turning.norm().to_array().reshape(*turning.shape) / (frequency / 2), areas.to_array().reshape(*areas.shape))
+
+
+def gauge_chart_panels(width_px: int, height_px: int) -> tuple:
+    """Three stacked charts sharing the time axis: bond strains, turning, areas."""
+    figure, axes = charts.subplots(width_px, height_px, nrows=3, sharex=True)
+    for chart in axes:
+        chart.axhline(0, color="0.6", linewidth=charts.FRAME_WIDTH)
+        chart.spines[["top", "right"]].set_visible(False)
+    strain_chart, turning_chart, area_chart = axes
+    strain_chart.set_ylabel("bond strain")
+    turning_chart.set_ylabel("turning\n/ half wave freq.")
+    area_chart.set(ylabel="area / rest", xlabel="wave periods")
+    return figure, strain_chart, turning_chart, area_chart
+
+
+@charts.style()
+def gauge_chart_frames(readouts: tuple, n_frames_a_period: int) -> Iterator[np.ndarray]:
+    """Yields frames of every gauge's bond strains, turning and area (thin) with their extremes across the gauges
+    (dark), drawn up to the frame's time."""
+    from examples.util.animation import capture
+
+    periods, strains, turning, areas = readouts
+    n_samples, F, _ = strains.shape
+    figure, strain_chart, turning_chart, area_chart = gauge_chart_panels(*gauge_chart_px)
+    bond_lines = [strain_chart.plot([], [], color=gauge_ink, alpha=0.15, linewidth=charts.FRAME_WIDTH)[0]
+                  for _ in range(3 * F)]
+    turning_lines = [turning_chart.plot([], [], color=gauge_ink, alpha=0.3, linewidth=charts.FRAME_WIDTH)[0]
+                     for _ in range(F)]
+    area_lines = [area_chart.plot([], [], color=gauge_ink, alpha=0.3, linewidth=charts.FRAME_WIDTH)[0]
+                  for _ in range(F)]
+    peak_line = strain_chart.plot([], [], color=peak_ink)[0]
+    lowest_area = area_chart.plot([], [], color=peak_ink)[0]
+    strain_reach = 1.1 * np.abs(strains).max()
+    strain_chart.set(xlim=(0, periods[-1]), ylim=(-strain_reach, strain_reach))
+    turning_chart.set_ylim(0, 1.1 * max(turning.max(), 0.1))
+    area_chart.set_ylim(min(0, 1.1 * areas.min() - 0.1), 1.1 * areas.max())
+    figure.tight_layout(pad=0.3)
+    flat_strains = strains.reshape(n_samples, -1)                               # [n_samples, 3 F]
+    for frame in np.searchsorted(periods, np.arange(1, int(periods[-1] * n_frames_a_period) + 1) / n_frames_a_period):
+        shown = slice(0, frame + 1)
+        for line, values in zip(bond_lines, flat_strains[shown].T):
+            line.set_data(periods[shown], values)
+        peak_line.set_data(periods[shown], np.abs(flat_strains[shown]).max(axis=-1))
+        for line, values in zip(turning_lines, turning[:max(frame - 1, 0)].T):
+            line.set_data(periods[1:max(frame, 1)], values)
+        for line, values in zip(area_lines, areas[shown].T):
+            line.set_data(periods[shown], values)
+        lowest_area.set_data(periods[shown], areas[shown].min(axis=-1))
+        yield capture(figure)
+    plt.close(figure)
+
+
+@charts.style()
+def gauge_comparison(runs: list[tuple], tunings: np.ndarray, shares: np.ndarray, shown_periods: float) -> plt.Figure:
+    """Each run's largest bond strain, fastest turning and smallest area across the gauges, against time, with the
+    end of the notebook's run marked."""
+    figure, strain_chart, turning_chart, area_chart = gauge_chart_panels(*gauge_comparison_px)
+    for (periods, strains, turning, areas), tuning, share, ink in zip(runs, tunings, shares, gauge_run_inks):
+        label = f"tuning {tuning:.2f}, damping {share:.2f}"
+        strain_chart.plot(periods, np.abs(strains).max(axis=(1, 2)), color=ink, label=label)
+        turning_chart.plot(periods[1:-1], turning.max(axis=-1), color=ink)
+        area_chart.plot(periods, areas.min(axis=-1), color=ink)
+    for chart in (strain_chart, turning_chart, area_chart):
+        chart.axvline(shown_periods, color="0.6", linestyle="--", linewidth=charts.FRAME_WIDTH)
+    strain_chart.set(xlim=(0, runs[0][0][-1]), ylabel="largest |bond strain|")
+    strain_chart.legend(frameon=False, loc="upper right", fontsize=charts.points(charts.TICK_PX))
+    turning_chart.set_ylabel("fastest turning\n/ half wave freq.")
+    area_chart.set_ylabel("smallest\narea / rest")
+    figure.tight_layout(pad=0.3)
+    return figure

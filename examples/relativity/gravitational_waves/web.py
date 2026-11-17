@@ -253,7 +253,6 @@ def scene(ghosts: float, eye: core.Motor, swing: float) -> dict:
                 n_rolls=core.n_rolls, swing=swing)
     tracer = walk | dict(
         n_particles=V_bonds, n_bonds=E_bonds, n_crystals=T_bonds,
-        particle_ink=render.particle_ink,
         particle_radius_squared=render.particle_radius ** 2, bond_radius_squared=render.bond_radius ** 2,
         max_legs=render.max_legs, eye_time=0.0, pixels=list(image_points), start_place=place, start_tet=start_tet,
         right=view[0], up=view[1], forward=view[2], light=eye >> lamp)
