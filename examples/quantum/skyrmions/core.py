@@ -112,10 +112,9 @@ def dynamics(
 
 def charges(topology: Topology, spins: Spin) -> Scalar:
     """Spherical solid angles enclosed by each triangle's three `spins` (`Spin-[V]`) give the topological charge per face (`Scalar+[F]`)."""
-    tail_spins, head_spins = topology.incidence[1, 0] * spins                 # Spin-[E], Spin-[E]
-    # Half the turn of the spin product transports each edge's tail spin along the shortest arc to its head spin.
-    shortest_turns = (1 + head_spins * tail_spins).normalized()               # Rotor+[E]
-    # The face holonomy logarithm lies in the second corner spin's plane at half the enclosed solid angle.
-    half_turns = holonomies(topology, shortest_turns).log()                   # Field+[F]
-    corner_spins = topology.incidence[2, 0][1] * spins                        # Spin-[F]
-    return -2 * (half_turns & corner_spins) / (4 * np.pi)
+    first, second, third = topology.incidence[2, 0] * spins                   # Spin-[F], Spin-[F], Spin-[F]
+    # Half the turn of a spin product transports one corner's spin along the shortest arc to the next corner's,
+    # and the three transports around the triangle compose into its holonomy.
+    holonomy = ((1 + first * third) * (1 + third * second) * (1 + second * first)).normalized()   # Rotor+[F]
+    # The holonomy logarithm lies in the first corner spin's plane at half the enclosed solid angle.
+    return -2 * (holonomy.log() & first) / (4 * np.pi)
