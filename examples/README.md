@@ -1,5 +1,7 @@
 # Examples
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how examples and notebooks are organized.
+
 ## Geometry
 
 - [Projection](geometry/projection/) — Pinhole cameras, shadows and stereo correspondences use the same join-and-meet construction.

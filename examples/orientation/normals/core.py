@@ -18,7 +18,7 @@ mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()                                                  # Antivector-
 Plane = ga.gatype.vector()                                                      # Vector+
 Surface = ga.gatype(Point & Point & Point)                                      # Antitrivector-
-# Joining two points orients a line along itself (a spear in Dorst's terminology),
+# Joining two points orients a line along itself (Study's spear, as in Gunn's projective duality),
 # whereas intersecting two planes orients a line around itself (an axis).
 Spear = ga.gatype(Point & Point)                                                # Antibivector-
 Axis = ga.gatype(Plane ^ Plane)                                                 # Bivector+
