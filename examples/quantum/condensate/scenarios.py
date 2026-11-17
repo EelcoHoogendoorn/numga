@@ -24,7 +24,7 @@ cloud_width, amplitude_noise, angle_noise, seed = 4.5, 0.05, 0.3, 0
 step, n_steps, stride = 0.05, 1200, 6
 n_drawn_frames = n_steps // 2 // stride + 1
 frame_duration_ms = 40
-n_animation_colours = 64
+n_animation_colours = 256
 # Radial bins for enclosed vortex counts and winding threshold identifying a vortex triangle.
 n_radii = 61
 counting_radii = np.linspace(0.0, 6.0, n_radii)                               # [n_radii]
@@ -79,7 +79,7 @@ def main() -> None:
             drawn_states.append(wave)
             yield wave
 
-    save_animation(render.density_animation(topology, vertices, drawn_prefix()), "condensate",
+    save_animation(render.wave_animation(topology, vertices, drawn_prefix()), "condensate",
                    frame_duration_ms, colors=n_animation_colours)
     settled_states = drawn_states + list(states)
     settled_wave = settled_states[-1]                                         # Wave+[V]
@@ -106,7 +106,7 @@ def pinned() -> None:
 
     topology, vertices, _, states = trap_relaxation(n_rings, n_steps, stride)
     drawn = islice(states, n_drawn_frames)
-    pin_animation(render.density_animation(topology, vertices, drawn), "condensate",
+    pin_animation(render.wave_animation(topology, vertices, drawn), "condensate",
                   frame_duration_ms, colors=n_animation_colours)
 
 
