@@ -12,7 +12,7 @@ def test_condensate_step_and_rendering():
     atom_count = (dual_areas * settled_wave.scalar_norm_squared()).sites.sum()   # [] Scalar+
     assert (atom_count - 1).abs() < 1e-10
 
-    frames = list(render.density_animation(topology, vertices, settled_states))
+    frames = list(render.wave_animation(topology, vertices, settled_states))
     assert len(frames) == 2
     assert frames[-1].shape == (render.n_pixels, render.n_pixels, 3)
 
