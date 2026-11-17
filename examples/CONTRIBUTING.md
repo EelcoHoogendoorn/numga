@@ -1,6 +1,6 @@
 # Contributing an example
 
-`numga`'s [examples](README.md) explore what geometric algebra and [extensors](../docs/extensors.md) express cleanly across geometry, physics, engineering and mathematics. Contributions of new examples are welcome, whether a pull request adding a worked example or an [issue](https://github.com/EelcoHoogendoorn/numga/issues) proposing a problem that tests the limits of the approach.
+`numga`'s [examples](README.md) showcase geometric algebra and [extensors](../docs/extensors.md) across geometry, physics, engineering and mathematics. Contributions are welcome, whether a pull request adding a worked example or an [issue](https://github.com/EelcoHoogendoorn/numga/issues) challenging the approach with a problem where it might fall short.
 
 A good example pairs a concrete phenomenon with a clear visual or animation, and writes the geometric-algebra calculation that drives it directly in front of the reader.
 
