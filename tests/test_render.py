@@ -7,6 +7,7 @@ import pytest
 
 from examples.util import shapes
 from numga.render import drawing, meshes, Scene, simplices, solids
+from numga.topology import Topology
 
 pytest.importorskip("wgpu")
 
@@ -39,3 +40,18 @@ def test_meshes_and_simplices_without_matplotlib():
     comp = drawing.composited([dots])
     assert comp.shape == (64, 64, 4)
     assert comp[32, 32, 3] > 0.5
+
+
+def test_tube_narrows_with_its_points_widths():
+    # A tube up the picture, 16 pixels wide at its foot and 4 at its head, drawn as one chain.
+    mv = solids.mv
+    heights = np.linspace(-0.8, 0.8, 5)
+    pts = mv.point(heights[:, None] * np.array([0.0, 0.0, 1.0]))
+    widths = np.linspace(16.0, 4.0, 5)
+    cam_view = solids.View(solids.aim(solids.origin, elevation=0.0, azimuth=0.0), np.array([1.0, 1.0]), pixels=64)
+    tube = simplices.tubes(pts, Topology.chains([5]), np.array([0.2, 0.3, 0.8]), widths, cam_view)
+    scene = Scene(cam_view, np.ones(3), parts=[], meshes=[(tube, 1.0)], inks=[], translucent=[])
+    img = scene.draw([], [], [], [])
+    drawn = (img < 200).any(axis=-1).sum(axis=1)                                 # [rows] pixels across
+    # Rows a quarter of the way down and three quarters: near the head, about 6 pixels; near the foot, about 14.
+    assert drawn[16] < drawn[48] - 3
