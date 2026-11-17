@@ -41,7 +41,7 @@ seed_angles_around_axis = np.array([0.0, np.pi / 4, np.pi / 5])                 
 n_trace_steps, trace_step, trace_stride = 170, 0.018, 2
 smoothing_turn, smoothing_reach = 0.58, 0.20
 speed_floor, wall_pull = 0.14, 0.08
-line_width = 4.6
+line_width, taper_share = 4.6, 0.15
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -148,7 +148,14 @@ def torus_field_image(
     colours = segment_colours(climb_rates.to_array(), shells)                   # [n_curves, n_steps - 1, 3]
     scene_lines = solids.origin + solids.context.include_from_algebra(space_slice(lines).batch())
     chains = Topology.chains([n_steps] * n_curves)
-    tubes = simplices.tubes(scene_lines.reshape(-1), chains, colours.reshape(-1, 3), line_width, view, gloss=solids.gloss)
+    # Each open line's tube thins to a point over the last `taper_share` of its length at either end, along a quarter
+    # circle of the share of its length reached at each point.
+    reached = np.cumsum(steps.antinorm().to_array(), axis=1)                    # [n_curves, n_steps - 1]
+    shares = np.concatenate((np.zeros((n_curves, 1)), reached), axis=1) / reached[:, -1:]   # [n_curves, n_steps]
+    ends = np.minimum(np.minimum(shares, 1 - shares) / taper_share, 1)          # [n_curves, n_steps]
+    widths = line_width * np.sqrt(ends * (2 - ends))                            # [n_curves, n_steps]
+    tubes = simplices.tubes(scene_lines.reshape(-1), chains, colours.reshape(-1, 3), widths.reshape(-1), view,
+                            gloss=solids.gloss)
 
     return solids.draw([], view, background, inks=[], translucent=[], meshes=[(wall_surface, 0.16), (tubes, 1.0)])
 

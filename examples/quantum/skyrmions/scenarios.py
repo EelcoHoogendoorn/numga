@@ -17,7 +17,7 @@ n_sites = 48
 twist_angle = 0.55
 damping, time_step, n_substeps = 0.5, 0.2, 12
 frame_duration_ms = 40
-n_gallery_colours = 24
+n_gallery_colours = 32
 
 # Crystallization uses geometrically growing time steps so early aggregation and late lattice relaxation advance evenly across frames.
 crystal_field, n_crystal_frames, first_time_step = 0.4, 140, 0.014
