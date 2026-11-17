@@ -22,6 +22,10 @@ from examples.util.panels import fitted, show
 elevation, azimuth = np.radians(20.0), np.radians(35.0)
 margin = 0.06
 pixels = 300
+# The rounding animation's camera turned half way round onto Spot's face, where the curvature is highest and the
+# flow does most of its rounding, and its margin as a share of the larger side.
+rounding_azimuth = azimuth + np.pi
+rounding_margin = 0.3
 background = np.ones(3)
 # The checkerboard's cubes across the reference surface, and its light and dark squares on the outer and inner
 # side of the surface.
@@ -47,6 +51,14 @@ def square_view(vertices: Point, side: int) -> solids.View:
     """A square view framing the surface's `vertices` (`Point-[V]`), `side` pixels across."""
     view = solids.view([solids.origin + solids.context.include_from_algebra(vertices.batch())], 0.0, elevation, azimuth, margin, side)
     return view.squared()
+
+
+def held(topology: Topology, vertices: Point) -> Point:
+    """The surface at `vertices` (`Point-[V]`) moved so that its area-weighted centroid sits at the origin."""
+    centroids = topology.incidence[2, 0].mean(axis=0) * vertices               # Point-[F]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)               # [3] Point-[F]
+    areas = (sides[0] & sides[1]).norm() / 2                                   # Scalar+[F]
+    return vertices - (centroids * areas).sites.sum() / areas.sites.sum()      # Point-[V]
 
 
 def bare_layout(figure: plt.Figure, axes: np.ndarray) -> None:
@@ -134,8 +146,14 @@ def dirac_figure(topology: Topology, gallery: dict[int, Point], reference: Point
 
 
 def rounding_animation(topology: Topology, frames: Iterable[Point]) -> Iterator[np.ndarray]:
-    """Yields RGB frames along `frames` (`Point-[V]`), textured with the initial surface's checkerboard."""
+    """Yields RGB frames along `frames` (`Point-[V]`), each held on its own area-weighted centroid in one view
+    fitted to the first, textured with the initial surface's checkerboard."""
     iterator = iter(frames)
     first = next(iterator)
+    # One view for every frame, square about the origin: the first surface held on its centroid, and its
+    # reflection through the centroid, frame it symmetrically.
+    offsets = solids.context.include_from_algebra(held(topology, first).batch())  # [V] Point-
+    view = solids.view([solids.origin + offsets, solids.origin - offsets], 0.0, elevation, rounding_azimuth,
+                       rounding_margin, pixels).squared()
     for frame in chain([first], iterator):
-        yield surface_image(topology, frame, first, square_view(frame, pixels))
+        yield surface_image(topology, held(topology, frame), first, view)
