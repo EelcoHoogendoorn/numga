@@ -2,7 +2,7 @@
 
 This document sets out a broader perspective on the regressive product in geometric algebra and the role it can play across geometry, calculus and physics. The product itself is the standard regressive product of Grassmann and projective geometric algebra, where it is traditionally used to join points or intersect subspaces. Once elements carry [orientation](orientation.md), that same product also pairs complementary quantities into scalars, contracts fields, forms discrete gradients on simplices, and builds linear maps and their metric-free duals.
 
-Like the outer product `^`, the regressive product `&` uses no metric. Where `^` builds elements up in grade, `&` pairs elements against the space's unit volume, yielding invariant scalars at complementary grades, joining points and directions, and contracting fields partially even when basis directions square to zero. In models that give their quantities orientations and pair them by [complementarity](complementarity.md), `&` becomes the product used most often, as [an operation count across `numga` examples](#appendix-operations-in-numga-examples) shows.
+Like the outer product `^`, the regressive product `&` uses no metric. Where `^` builds elements up in grade, `&` pairs elements against the space's unit volume, yielding invariant scalars at complementary grades, joining points and directions, and contracting fields partially even when basis directions square to zero. In models that give their quantities orientations and pair them by [complementarity](complementarity.md), `&` becomes the product used most often, as [an operation count](#appendix-operations-in-numga-examples) across [`numga` examples](../examples/README.md) shows.
 
 ## Complementary grades and the unit volume
 
@@ -23,7 +23,7 @@ A plane wave advances its phase from crest to crest, and the phase gained across
 
 ## Joins of points and directions
 
-While the outer product `^` cuts space down by intersecting hyperplanes, the regressive product `&` builds geometry up from points, as in plane-based projective geometric algebra [[2, Ch. 3]](#references), [[3, §6]](#references). Two points join into the line from the first to the second, a third point joins with that line into the plane of their triangle, and in three-space a fourth point closes the tetrahedron into its signed volume:
+While the outer product `^` cuts space down by intersecting hyperplanes, the regressive product `&` builds geometry up from points, as in projective geometric algebra [[2, §2.2]](#references), [[3, Ch. 3]](#references), [[4, §6]](#references). Two points join into the line from the first to the second, a third point joins with that line into the plane of their triangle, and in three-space a fourth point closes the tetrahedron into its signed volume:
 
 ```python
 edge = a & b                             # [] Antibivector-
@@ -108,7 +108,7 @@ energy = (rate & momentum) / 2           # [] Scalar+
 
 In three dimensions (`x+ y+ z+`), the rate has grade two while the momentum has grade one, so their inner product `rate | momentum` is a vector rather than a scalar. Because grade two and grade `n - 2` always add to `n`, `(rate & momentum) / 2` has the same form in the plane, in space and in four dimensions, and stays positive in a mirror.
 
-In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time vector forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. Pairing the field partially with the four-current has the form `(u ^ v) & p` from earlier and gives the Lorentz four-force:
+In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time direction forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. Pairing the field partially with the four-current has the form `(u ^ v) & p` from earlier and gives the Lorentz four-force:
 
 ```python
 voltage_slope = field & (direction & time)   # [] Scalar+
@@ -135,13 +135,13 @@ With elements typed by orientation, that single operation serves geometry and ph
 
 ## Related work
 
-Grassmann's exterior algebra introduced both the progressive wedge product and the regressive product, and Grassmann–Cayley and projective geometric algebras developed the regressive product for joining points and intersecting subspaces. On degenerate metrics, alternative definitions including pseudoscalar dualization $I^{-1}(IY \wedge IX)$, the shuffle product and Poincaré duality are compared in [[3, §6]](#references).
+Grassmann's exterior algebra introduced both the progressive wedge product and the regressive product, and Grassmann–Cayley and projective geometric algebras developed the regressive product for joining points and intersecting subspaces. On degenerate metrics, alternative definitions including pseudoscalar dualization $I^{-1}(IY \wedge IX)$, the shuffle product and Poincaré duality are compared in [[4, §6]](#references).
 
-In exterior calculus, the graded interior contraction $i_v(\omega \wedge \eta) = i_v\omega \wedge \eta + (-1)^p \omega \wedge i_v\eta$, the evaluation bracket $\langle \cdot, \cdot \rangle$ and the dual multivector join $\vee$ are defined on separate vector and form spaces alongside untwisted and twisted differential forms for outer and inner orientation [[4, §§1–2]](#references). On simplicial complexes, finite element exterior calculus [[5, §§1.3, 5]](#references) and discrete exterior calculus [[6, §6]](#references) likewise separate discrete coboundary forms from dual-cell Hodge stars. Within a single oriented geometric algebra, `&` carries the evaluation bracket at complementary grades, the interior contraction when an extrinsic element is paired partially with an intrinsic one, and the point join on intrinsic elements.
+In exterior calculus, the graded interior contraction $i_v(\omega \wedge \eta) = i_v\omega \wedge \eta + (-1)^p \omega \wedge i_v\eta$, the evaluation bracket $\langle \cdot, \cdot \rangle$ and the dual multivector join $\vee$ are defined on separate vector and form spaces alongside untwisted and twisted differential forms for outer and inner orientation [[5, §§1–2]](#references). On simplicial complexes, finite element exterior calculus [[6, §§1.3, 5]](#references) and discrete exterior calculus [[7, §6]](#references) likewise separate discrete coboundary forms from dual-cell Hodge stars. Within a single oriented geometric algebra, `&` carries the evaluation bracket at complementary grades, the interior contraction when an extrinsic element is paired partially with an intrinsic one, and the point join on intrinsic elements.
 
-In projective rigid-body mechanics, where a null basis vector makes the inner product vanish on translations, point–plane contact ($A_i \vee f < 0$), kinetic energy ($T = \frac{1}{2} B_b \vee I_b[B_b]$), power ($\Pi = B \vee F$) and hinge constraints ($L \vee F_L = 0$) have been written with the regressive product in an unoriented projective algebra, alongside outer-product forms such as $T I = \frac{1}{2} B_b \wedge I_b[B_b]$ and reciprocal-pseudoscalar scalar products $\langle \frac{1}{2} B I_r I[B] \rangle$ for differentiating Lagrangians [[7, §§2.6–2.9]](#references).
+In projective rigid-body mechanics, where a null basis vector makes the inner product vanish on translations, velocity states, momentum and wrench spears, dual inertia maps, kinetic energy ($E = -\Omega \vee \Pi$) and external power ($\dot{E} = -\Omega \vee \Delta$) are formulated across Euclidean, elliptic and hyperbolic Cayley–Klein spaces through the metric-free regressive pairing on dual Grassmann algebras [[2, §6]](#references), [[8, Ch. 9]](#references). Single-algebra plane-based treatments write point–plane contact ($A_i \vee f < 0$), kinetic energy ($T = \frac{1}{2} B_b \vee I_b[B_b]$), power ($\Pi = B \vee F$) and hinge constraints ($L \vee F_L = 0$) in one unoriented algebra alongside outer-product forms ($T I = \frac{1}{2} B_b \wedge I_b[B_b]$) and reciprocal-pseudoscalar scalar products ($\langle \frac{1}{2} B I_r I[B] \rangle$) for differentiating Lagrangians [[9, §§2.6–2.9]](#references).
 
-Outside projective mechanics, physics in geometric algebra has mostly worked in nondegenerate Euclidean and Minkowski metrics, writing contractions such as the Lorentz force density $J \cdot F$ with the metric inner product [[8, §VII.C]](#references). Premetric electrodynamics in exterior calculus instead writes the Lorentz force density from the untwisted 2-form $F$ and twisted 3-form $J$ using an auxiliary frame $e_\alpha$ as $f_\alpha = (e_\alpha \rfloor F) \wedge J$ and treats the force law and field energy–momentum balance separately [[9, §§3, 5]](#references).
+Outside projective mechanics, physics in geometric algebra has mostly worked in nondegenerate Euclidean and Minkowski metrics, writing contractions such as the Lorentz force density $J \cdot F$ with the metric inner product [[10, §VII.C]](#references). Premetric electrodynamics in exterior calculus instead writes the Lorentz force density from the untwisted 2-form $F$ and twisted 3-form $J$ using an auxiliary frame $e_\alpha$ as $f_\alpha = (e_\alpha \rfloor F) \wedge J$ and treats the force law and field energy–momentum balance separately [[11, §§3, 5]](#references).
 
 ## Companion documents
 
@@ -153,7 +153,7 @@ Outside projective mechanics, physics in geometric algebra has mostly worked in 
 
 ## Appendix: operations in `numga` examples
 
-Across 202 `numga` examples, each row below counts uses of one geometric algebra operation and the number of examples in which it appears. Scalar multiplication, sparse topology operators and rank-one dyads are excluded from the bare geometric product:
+Across 202 [`numga` examples](../examples/README.md), each row below counts uses of one geometric algebra operation and the number of examples in which it appears. Scalar multiplication, sparse topology operators and rank-one dyads are excluded from the bare geometric product:
 
 | Operation | Uses | Examples |
 | --- | ---: | ---: |
@@ -169,11 +169,13 @@ Across 202 `numga` examples, each row below counts uses of one geometric algebra
 ## References
 
 1. [*Projective Duality Encodes Complementary Orientations in Geometric Algebras*](https://pure.uva.nl/ws/files/189200508/Projective_duality_encodes_complementary_orientations_in_geometric_algebras.pdf) (Leo Dorst, *Mathematical Methods in the Applied Sciences*, 2024).
-2. [*A Guided Tour to the Plane-Based Geometric Algebra PGA*](https://bivector.net/PGA4CS.pdf) (Leo Dorst and Steven De Keninck, 2022).
-3. [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022).
-4. [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (Alain Bossavit, 2002).
-5. [*Finite element exterior calculus: from Hodge theory to numerical stability*](https://arxiv.org/pdf/0906.4325) (Douglas N. Arnold, Richard S. Falk and Ragnar Winther, *Bulletin of the American Mathematical Society*, 2010).
-6. [*Discrete Exterior Calculus*](https://arxiv.org/pdf/math/0508341) (Mathieu Desbrun, Anil N. Hirani, Melvin Leok and Jerrold E. Marsden, 2005).
-7. [*May the Forque Be with You: Dynamics in PGA*](https://bivector.net/PGAdyn.pdf) (Leo Dorst and Steven De Keninck, 2022).
-8. [*Spacetime Physics with Geometric Algebra*](https://davidhestenes.net/geocalc/pdf/SpacetimePhysics.pdf) (David Hestenes, *American Journal of Physics*, 2003).
-9. [*Recent developments in premetric classical electrodynamics*](https://arxiv.org/pdf/physics/0610221) (Friedrich W. Hehl, Yakov Itin and Yuri N. Obukhov, 2006).
+2. [*On the Homogeneous Model of Euclidean Geometry*](https://arxiv.org/pdf/1101.4542) (Charles Gunn, in *Guide to Geometric Algebra in Practice*, Leo Dorst and Joan Lasenby, eds., Springer, 2011; extended preprint of AGACSE 2010).
+3. [*A Guided Tour to the Plane-Based Geometric Algebra PGA*](https://bivector.net/PGA4CS.pdf) (Leo Dorst and Steven De Keninck, 2022).
+4. [*A Bit Better: Variants of Duality in Geometric Algebras with Degenerate Metrics*](https://arxiv.org/pdf/2206.02459) (Charles Gunn, 2022).
+5. [*Applied Differential Geometry (A compendium)*](https://people.math.ethz.ch/~hiptmair/Courses/CEM/BOS02c.pdf) (Alain Bossavit, 2002).
+6. [*Finite element exterior calculus: from Hodge theory to numerical stability*](https://arxiv.org/pdf/0906.4325) (Douglas N. Arnold, Richard S. Falk and Ragnar Winther, *Bulletin of the American Mathematical Society*, 2010).
+7. [*Discrete Exterior Calculus*](https://arxiv.org/pdf/math/0508341) (Mathieu Desbrun, Anil N. Hirani, Melvin Leok and Jerrold E. Marsden, 2005).
+8. [*Geometry, Kinematics, and Rigid Body Mechanics in Cayley–Klein Geometries*](https://depositonce.tu-berlin.de/bitstreams/5a02e6fc-d9c3-4e6f-a5ab-f4a970e81209/download) (Charles Gunn, Doctoral Dissertation, Technische Universität Berlin, 2011; DOI `10.14279/depositonce-3058`).
+9. [*May the Forque Be with You: Dynamics in PGA*](https://bivector.net/PGAdyn.pdf) (Leo Dorst and Steven De Keninck, 2022).
+10. [*Spacetime Physics with Geometric Algebra*](https://davidhestenes.net/geocalc/pdf/SpacetimePhysics.pdf) (David Hestenes, *American Journal of Physics*, 2003).
+11. [*Recent developments in premetric classical electrodynamics*](https://arxiv.org/pdf/physics/0610221) (Friedrich W. Hehl, Yakov Itin and Yuri N. Obukhov, 2006).

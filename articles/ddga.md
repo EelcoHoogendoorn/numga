@@ -2,7 +2,7 @@
 
 This document describes what geometric algebra and extensors bring to a topology: values of every grade on its elements, and operators of any arity between them. The simplex gradient is defined by a discrete statement of the fundamental theorem of geometric calculus, and the calculus and the physics on a topology follow from it.
 
-Geometric algebra gives the values on a topology every grade, rotations and fields of spacetime among them, with every product between them. [Extensors](multiple_lenses.md) give the operators between those values any arity, assembled over the topology as matrices are. The two extend independently and combine freely, and `numga` examples sit mostly away from the corner of scalars, vectors and matrices, as [a count of `numga` examples by grade and arity](#appendix-numga-examples-by-grade-and-arity) shows.
+Geometric algebra gives the values on a topology every grade, rotations and fields of spacetime among them, with every product between them. [Extensors](multiple_lenses.md) give the operators between those values any arity, assembled over the topology as matrices are. The two extend independently and combine freely, and [`numga` examples](../examples/README.md) sit mostly away from the corner of scalars, vectors and matrices, as [a count by grade and arity](#appendix-numga-examples-by-grade-and-arity) shows.
 
 ## The gradient of a simplex
 
@@ -210,7 +210,7 @@ The same few products carry the physics the examples compute on a topology, each
 
 ## Appendix: `numga` examples by grade and arity
 
-Each example notebook is counted by the highest grade or antigrade of the values it holds and the highest arity of the maps it builds. Those that compute on a topology:
+Each [`numga` example notebook](../examples/README.md) is counted by the highest grade or antigrade of the values it holds and the highest arity of the maps it builds. Those that compute on a topology:
 
 | values | arity 0 | arity 1 | arity 2 | arity 3 | arity 4 | total |
 | --- | --- | --- | --- | --- | --- | --- |
