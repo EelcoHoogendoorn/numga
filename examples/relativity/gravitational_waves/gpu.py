@@ -48,7 +48,7 @@ var<uniform> fastest: f32;
 var<uniform> lamp: Point;
 var<uniform> n_crystals: u32;
 var<uniform> longest_substep: f32;
-var<uniform> saturating_strain: f32;
+var<uniform> strain_reach: f32;
 var<storage, read_write> camera: array<Camera>;
 var<storage, read_write> atoms: array<Atom>;
 var<storage, read_write> springs: array<Spring>;
@@ -160,7 +160,7 @@ fn record(level: u32) {
         history[slot * n_crystals * atoms_each + i] = atoms[i].place;
     }
     for (var b = 0u; b < n_crystals * bonds_each; b++) {
-        let share = 0.5 + 0.5 * clamp((springs[b].length / springs[b].rest - 1.0) / saturating_strain, -1.0, 1.0);
+        let share = 0.5 + 0.5 * clamp((springs[b].length / springs[b].rest - 1.0) / strain_reach, -1.0, 1.0);
         let at = share * f32(n_strain_inks - 1u);
         let below = u32(floor(at));
         let ink = mix(strain_inks[below], strain_inks[min(below + 1u, n_strain_inks - 1u)], at - floor(at));

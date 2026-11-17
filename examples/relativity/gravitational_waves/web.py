@@ -253,6 +253,7 @@ def scene(ghosts: float, eye: core.Motor, swing: float) -> dict:
                 n_rolls=core.n_rolls, swing=swing)
     tracer = walk | dict(
         n_particles=V_bonds, n_bonds=E_bonds, n_crystals=T_bonds,
+        particle_ink=render.particle_ink,
         particle_radius_squared=render.particle_radius ** 2, bond_radius_squared=render.bond_radius ** 2,
         max_legs=render.max_legs, eye_time=0.0, pixels=list(image_points), start_place=place, start_tet=start_tet,
         right=view[0], up=view[1], forward=view[2], light=eye >> lamp)
@@ -260,7 +261,7 @@ def scene(ghosts: float, eye: core.Motor, swing: float) -> dict:
                  half_height=float(np.tan(render.fov_radians / 2) * image_points[1] / image_points[0]))
     advance = walk | dict(dt=0.0, thrust=0.0, roll=0.0, yaw=0.0, pitch=0.0, braking=0.0, fastest=gpu.fastest,
                           lamp=lamp, n_crystals=T_bonds, longest_substep=scenarios.crystal_step,
-                          saturating_strain=render.saturating_strain)
+                          strain_reach=render.strain_reach)
     neighbours, entries = topology.neighbours
     on_rail = np.zeros(V, dtype=np.uint32)                                     # [V]
     on_rail[rails] = np.arange(len(rails))[:, None]
