@@ -1,6 +1,8 @@
 # Contributing an example
 
-A good example pairs a concrete physical, geometric or mathematical phenomenon with a clear visual or animation, and writes the geometric-algebra calculation that drives it directly in front of the reader.
+`numga`'s [examples](README.md) explore what geometric algebra and [extensors](../docs/extensors.md) express cleanly across geometry, physics, engineering and mathematics. Contributions of new examples are welcome, whether a pull request adding a worked example or an [issue](https://github.com/EelcoHoogendoorn/numga/issues) proposing a problem that tests the limits of the approach.
+
+A good example pairs a concrete phenomenon with a clear visual or animation, and writes the geometric-algebra calculation that drives it directly in front of the reader.
 
 Both the calculation and the rendering stay in geometric algebra from start to finish. Coordinates enter once when constructing elements, quantities carry their geometric grade and [orientation](../docs/orientation.md), and neither the calculation nor the renderer unpacks raw coordinate arrays for geometry. Scene drawing uses [`numga.render` and `numga.wgsl`](../docs/rendering.md) directly on typed elements in the example's own algebra.
 
