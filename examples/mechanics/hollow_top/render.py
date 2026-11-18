@@ -1,4 +1,4 @@
-"""Ray-traced views and stem inclination charts depict the hollow tippe top and its opposite-spin launches."""
+"""Ray-traced views and stem inclination charts depict the asymmetric hollow spinning top and its opposite-spin launches."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
