@@ -1,6 +1,6 @@
 # Extensors and common practice
 
-This document compares common approaches to applied problems with the constructions that arise in geometric algebra and extensors. Each case describes how a problem is usually formulated, sets out the geometric construction in a runnable `numga` example, and examines the practical consequences for modelling and computation, including what becomes shorter, which choices become explicit, and where extra sign or factor rules disappear.
+This document compares common approaches to applied problems with the constructions that arise in geometric algebra and [extensors](multiple_lenses.md). Each case describes how a problem is usually formulated, sets out the geometric construction in a runnable `numga` example, and examines the practical consequences for modelling and computation, including what becomes shorter, which choices become explicit, and where extra sign or factor rules disappear.
 
 ## Maps and numerical methods
 
@@ -10,7 +10,7 @@ These cases concern linear and multilinear maps in estimation, mechanics and geo
 
 Scene reconstruction estimates landmark positions and camera poses from image measurements. Standard photogrammetry and computer-vision treatments minimize weighted squared image errors, form Gauss–Newton normal equations for the update, and eliminate the landmark steps by a Schur complement into a reduced camera system [[1, §§4.3, 6.1]](#references).
 
-A [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example represents each image measurement by a quadratic cost on the sensor and pulls that cost back through the camera's adjugate into a sight cone. Because the cone's polar plane vanishes on the sight line, treating that plane as a residual vector and forming normal equations from its coefficients would square a cost that is already quadratic. Instead, camera motion enters the cone's quadratic cost directly:
+A [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example represents each image measurement by a quadratic cost on the sensor and pulls that cost back through the camera's [adjugate](complementarity.md#claims) into a sight cone. Because the cone's polar plane vanishes on the sight line, treating that plane as a residual vector and forming normal equations from its coefficients would square a cost that is already quadratic. Instead, camera motion enters the cone's quadratic cost directly:
 
 ```python
 motion = -Twist.commutator(seen)                                  # [landmarks, cameras] Antivector- <- Bivector+

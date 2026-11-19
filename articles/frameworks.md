@@ -21,7 +21,7 @@ These inclusions keep the constructions of the smaller frameworks intact while e
 
 ## Matrices and linear algebra
 
-Every linear map between finite-dimensional multivector spaces is a linear extensor, and every such map can be built from geometric-algebra products, whether it acts from vectors to vectors, between different grades, or on mixed-grade spaces. A scalar readout multiplied by a fixed output gives a rank-one map. In projective space, a plane's reading of a point scales a fixed direction ([thin-walled beams](../docs/extensors.md#14-bending-and-twisting-of-thin-walled-beams), [vibration modes](../docs/extensors.md#33-vibration-modes-of-a-suspended-plate)):
+Every linear map between finite-dimensional multivector spaces is a linear extensor, and every such map can be built from geometric-algebra products, whether it acts from vectors to vectors, between different grades, or on mixed-grade spaces. A scalar readout multiplied by a fixed output gives a rank-one map. In plane-based projective space, a plane's reading of a point scales a fixed direction ([thin-walled beams](../docs/extensors.md#14-bending-and-twisting-of-thin-walled-beams), [vibration modes](../docs/extensors.md#33-vibration-modes-of-a-suspended-plate)):
 
 ```python
 dyad = direction * (plane & Point)                                # [] Antivector- <- Antivector-

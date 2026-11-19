@@ -6,7 +6,7 @@ From computer science, extensors arise through partial application of the produc
 
 ## 1. The computer science lens
 
-Partial application binds some arguments of a function now and takes the rest later. In projective three-space, planes are extrinsic vectors, joined lines are intrinsic antibivectors, and points are intrinsic antivectors, where `+` and `-` record how each transforms in a mirror ([Why orientation](orientation.md)). For a fixed light source, a Python function accepts a point and returns the line joining them:
+Partial application binds some arguments of a function now and takes the rest later. In the plane-based projective three-space convention used here, cutting planes are modelled as extrinsic vectors, weighted points as intrinsic antivectors, and joined lines as intrinsic antibivectors, where `+` and `-` record how each transforms in a mirror ([Why orientation](orientation.md)). For a fixed light source, a Python function accepts a point and returns the line joining them:
 
 ```python
 def ray_fn(point: Point) -> Line:
@@ -24,7 +24,7 @@ composed = intersection(ray)                                 # [] Antivector- <-
 
 `ray_fn` is a Python function, while `ray` is an extensor. Both are first-class Python objects, and `ray_fn(point)` and `ray(point)` return the same line. In the block above, `shadow` meets each ray with the ground plane directly, while `intersection` packages that meet as its own map on lines so `intersection(ray)` constructs the same shadow map by composition.
 
-A Python function hides the arithmetic inside it and supports evaluation alone. An extensor holds that linear action as an algebraic value, so evaluation is only one of the operations available on it. For a linear map `M`, `M.solve(y)` finds an input `x` satisfying `M(x) == y`, and when `M` is invertible, `M.inverse()` builds the inverse map as an extensor that composes and multiplies like any other. Reading `M` backwards across the regressive pairing gives its metric-free adjugate `M.adjugate()` for every linear map, even without a metric or an inverse. When the algebra carries a nondegenerate metric, `M.adjoint()` transfers `M` across the scalar product instead, and when input and output share one space, eigenvalues and trace are available directly on `M`. A Python function exposes none of these operations.
+A Python function hides the arithmetic inside it and supports evaluation alone. An extensor holds that linear action as an algebraic value, so evaluation is only one of the operations available on it. For a linear map `M`, `M.solve(y)` finds an input `x` satisfying `M(x) == y`, and when `M` is invertible, `M.inverse()` builds the inverse map as an extensor that composes and multiplies like any other. Reading `M` backwards across the [regressive pairing](regressive_product.md) gives its metric-free adjugate `M.adjugate()` for every linear map, even without a metric or an inverse. When the algebra carries a nondegenerate metric, `M.adjoint()` transfers `M` across the scalar product instead, and when input and output share one space, eigenvalues and trace are available directly on `M`. A Python function exposes none of these operations.
 
 ## 2. The geometric lens
 

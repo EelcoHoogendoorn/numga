@@ -26,7 +26,7 @@ The terms ***intrinsic orientation*** and ***extrinsic orientation*** here mean 
 
 ## The unoriented sandwich
 
-In projective three-space, where vectors are planes and antivectors are points, the outer product of two planes is their meet and the regressive product of two points is their join. Both lines have grade two and the same coefficients up to scale.
+In plane-based projective three-space, where vectors represent planes and antivectors represent points, the outer product of two planes is their meet and the [regressive product](regressive_product.md) of two points is their join. Both lines have grade two and the same coefficients up to scale.
 
 Reflecting every element with the grade-involuted sandwich `mirror * x.involute() * mirror.inverse()` swaps `red` and `blue` and commutes with the geometric and outer products, so it negates the meet `red ^ blue` as it should. Because it commutes with the outer product while reversing the space's unit volume, it anti-commutes with the regressive product in every dimension and at every grade, turning around the joined line `ends[0] & ends[1]` that lies in the mirror:
 

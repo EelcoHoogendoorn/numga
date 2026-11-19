@@ -42,7 +42,7 @@ Because the product is geometric, the derivative holds both parts. For an extrin
 
 ## The pullback of a material
 
-The Laplacian of a potential is its gradient, weighed by a material, gathered back into the vertices. The material maps each simplex's gradient to the flux on that simplex, and the gathering is the [adjugate](complementarity.md#claims) of the gradient, reading the gradient backwards across the regressive pairing ([eigen fluids](https://numga.org/#eigen-fluids), [superconductor](https://numga.org/#superconductor)):
+The Laplacian of a potential is its gradient, weighed by a material, gathered back into the vertices. The material maps each simplex's gradient to the flux on that simplex, and the gathering is the [adjugate](complementarity.md#claims) of the gradient, reading the gradient backwards across the [regressive pairing](regressive_product.md) ([eigen fluids](https://numga.org/#eigen-fluids), [superconductor](https://numga.org/#superconductor)):
 
 ```python
 laplacian = gradient.adjugate()(material(gradient))    # (Antiscalar- <- Scalar+)[vertices <- vertices]
