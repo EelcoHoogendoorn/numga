@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.mechanics.tippe_top import core, render, scenarios
+from examples.mechanics.hollow_top import core, render, scenarios
 
 coarse_spacing = 0.5
 

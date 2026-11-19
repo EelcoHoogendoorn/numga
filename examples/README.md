@@ -73,7 +73,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how examples and notebooks are orga
 - [Arm manipulability](mechanics/manipulability/) — Joint axes determine the gripper's velocity and force ellipsoids as the arm changes pose.
 - [Articulated robot dynamics](mechanics/articulated/) — Brax's humanoid in reduced coordinates: inverse and forward dynamics, its mass matrix pulled back through the map from hinge speeds to link rates, and an implicit step with the ground's contact as extra inertia, as it drops limp onto the ground; compiled with JAX.
 - [Spinning top](mechanics/spinning_top/) — A top built from ellipsoids moves in contact with a concave bowl.
-- [Chiral tippe top](mechanics/tippe_top/tippe_top.ipynb) — A hollow ellipsoid rises onto its tip for one spin direction while the opposite spin stays upright.
+- [Asymmetric hollow spinning top](mechanics/hollow_top/hollow_top.ipynb) — An asymmetric hollow spinning top flips upside down onto its stem for one spin direction while the opposite spin stays upright.
 - [Riccati feedback](mechanics/riccati/riccati.ipynb) — Optimal feedback docks a vessel with three thrusters while balancing accuracy and effort.
 - [Rolling ball](mechanics/rolling_ball/) — A ball's orientation changes as it rolls around a closed path on a table.
 - [Tricycle](mechanics/tricycle/) — Wheel constraints determine steering motion in the plane and in space.
@@ -81,7 +81,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how examples and notebooks are orga
 - [Kepler motion](mechanics/kepler/) — A scaled position spinor regularizes close passages in a Kepler orbit.
 - [Foucault's pendulum](mechanics/foucault/) — Earth's rotation turns a pendulum's swing plane relative to its floor.
 - [Tides](mechanics/tides/) — Soft gravitational masses produce a tidal map that stretches a cluster of stars.
-- [Rattleback](mechanics/rattleback/) — An asymmetric rolling body exchanges rocking and spin, reversing rotation in one sense.
+- [Rattleback](mechanics/rattleback/) — An asymmetric rolling body exchanges rocking and spin, reversing its spin back and forth.
 
 ## Elasticity and materials
 

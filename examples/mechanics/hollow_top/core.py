@@ -1,6 +1,6 @@
-"""A hollow ellipsoid and its rounded stem form one rigid top with two contact surfaces.
+"""A hollow ellipsoid and its rounded stem form one asymmetric rigid top with two contact surfaces.
 
-An offset, turned cavity rotates the mass distribution relative to the outer shell, so sliding friction at the shell and the tip couples spinning to rocking differently for opposite spins. The same carved quadrics supply both the visible surfaces and the mass samples.
+An offset, turned cavity breaks reflection symmetry between the mass distribution and the outer shell; launched with opposite spins on a frictional table, one spin direction flips upside down onto its stem while the other stays upright. The same carved quadrics supply both the visible surfaces and the mass samples.
 """
 from __future__ import annotations
 

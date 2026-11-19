@@ -1,4 +1,4 @@
-"""Opposite-spin launches of a uniform hollow top demonstrate chiral spin preference."""
+"""Opposite-spin launches of an asymmetric hollow spinning top."""
 from __future__ import annotations
 
 from itertools import tee
@@ -6,7 +6,7 @@ from itertools import tee
 import numpy as np
 
 from numga import stack
-from examples.mechanics.tippe_top import core
+from examples.mechanics.hollow_top import core
 
 # Outer shell at the origin, offset tilted cavity breaking through its top, stem, and spherical tip.
 shell_semiaxes = np.array([1.05, 0.95, 1.01])
@@ -57,23 +57,23 @@ def quadrature_grid(spacing: float) -> core.Point:
 
 
 def main() -> None:
-    from examples.mechanics.tippe_top import render
+    from examples.mechanics.hollow_top import render
     from examples.util.animation import save_animation, save_figure
 
     mass, inertia = core.mass_distribution(parts, quadrature_grid(sample_spacing), sample_spacing**3)  # [] Point-, Forque- <- Rate+
-    save_figure(render.setup_figure(parts, mass), "tippe_top_construction")
+    save_figure(render.setup_figure(parts, mass), "hollow_top_construction")
     motor, rate = core.release_states(contacts, mass, spins, lean)           # [2] Motor+, Rate+
     shown_stream, recorded_stream = tee(core.motion(
         contacts, mass, inertia, motor, rate, gravity,
         static_friction, dynamic_friction, step, n_states, n_steps_per_frame,
     ))
     save_animation(render.frames(parts, mass, first_frame, n_frames, shown_stream),
-                   "tippe_top_opposite_spins", frame_duration_ms)
+                   "hollow_top_opposite_spins", frame_duration_ms)
     placements = stack([placement for placement, _ in recorded_stream])      # [n_states, 2] Motor+
     stem_directions = placements >> core.up                                  # [n_states, 2] Point-
     vertical = core.mv.z & stem_directions                                   # [n_states, 2] Scalar+
     times = np.arange(n_states) * frame_interval
-    save_figure(render.inclination_figure(times, vertical), "tippe_top_inclination")
+    save_figure(render.inclination_figure(times, vertical), "hollow_top_inclination")
 
     # checks
     assert (core.mv.w & mass) > 0
