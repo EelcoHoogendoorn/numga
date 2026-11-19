@@ -6,7 +6,7 @@ That algebra represents how a material's variables couple to one another, both i
 
 ## Introduction
 
-Extending an algebra by a dimension can unify what were separate descriptions. When space is extended with a time dimension to spacetime, the electric and magnetic fields can be modelled together as a single spacetime bivector. When geometry is extended with a projective dimension, rotation and translation can be modelled as one rigid motion, and one inertia relates its rate to its momentum. Extending the algebra once more, with, for instance, a direction for entropy, is a step of the same kind.
+Extending an algebra with an extra basis direction can unify what were separate descriptions. Extending the algebra of space with a time direction gives spacetime, where the electric and magnetic fields can be modelled together as a single bivector. Extending it with a degenerate projective direction represents Euclidean geometry homogeneously, so rotation and translation can be modelled as one rigid motion and one inertia relates its rate to its momentum. Extending the algebra once more with a degenerate direction for entropy is a step of the same kind.
 
 Each extension allows separate elements to be modelled as one, and laws that carry separate names to be written as one statement:
 
@@ -16,7 +16,7 @@ Each extension allows separate elements to be modelled as one, and laws that car
 | a projective dimension | a rotation and a translation, as one motion | Newton, Euler and Steiner, as one equation of motion with one inertia |
 | thermodynamic quantities | the electric field and the slopes of temperature, pressure and chemical potential, as one bivector | Ohm, Fourier, Fick and Darcy, with Seebeck, Peltier and the other effects between them, as one map |
 
-In spacetime, the electromagnetic field (F) is a bivector, the fall of the potential (A), minus the gradient wedged with it, and it acts on charge. A moving charge is a current, its velocity joined with its charge, and the field does work on the current at the rate given by their pairing, the power that heats a resistor:
+In spacetime, the electromagnetic field (F) is a bivector, the fall of the potential (A), minus the gradient wedged with it, and it acts on charge. A moving charge is a current, its velocity joined with its charge, and the field does work on the current at the rate given by their pairing, the power that heats a resistor ([moving charges](../docs/extensors.md#28-moving-charges), [eddy brake](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb)):
 
 ```python
 field = -gradient ^ potential   # [] Bivector+
@@ -28,7 +28,7 @@ Thermodynamics already pairs temperature with entropy as electromagnetism pairs 
 
 A thermocouple is a material in which the two parts of this drive act together. A temperature difference across the junction of two metals drives an electric current through it, and an electric current through the junction carries heat, because the electrons that carry the current hold entropy as well as charge.
 
-The term ***carrier*** here means anything that moves through a material and carries something along with it, such as an electron in a metal or a small piece of a flowing fluid. The term ***parcel*** here means a carrier's contents, modelled as a single element of the algebra, here the sum of its charge and its entropy. Because the parcel holds everything at once, the carrier's velocity joined with its parcel is the flux of all of it together, charge and entropy alike, and the drive does work on that flux at the rate given by their pairing:
+The term ***carrier*** here means anything that moves through a material and carries something along with it, such as an electron in a metal or a small piece of a flowing fluid. The term ***parcel*** here means a carrier's contents, modelled as a single element of the algebra, here the sum of its charge and its entropy. Because the parcel holds everything at once, the carrier's velocity joined with its parcel is the flux of all of it together, charge and entropy alike, and the drive does work on that flux at the rate given by their pairing ([thermocouple](../examples/thermodynamics/thermocouple/thermocouple.ipynb), [magnetotransport](../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field)):
 
 ```python
 drive = -gradient ^ potentials   # [] Bivector+
@@ -36,7 +36,7 @@ flux = velocity & parcel         # [] Antibivector-
 power = drive & flux             # [] Scalar+
 ```
 
-The same kind of coupling occurs in equilibrium. A rubber band warms when it is stretched, and it pulls harder when it is warmed. In continuum mechanics, the forces on a material's points do work on their displacements. With entropy in the algebra, the band's temperature joins its forces in one element, its potentials, and a stretch together with a change of entropy is one change of its state. Their pairing is the work done on the band, heat included:
+The same kind of coupling occurs in equilibrium. A rubber band warms when it is stretched, and it pulls harder when it is warmed. In continuum mechanics, the forces on a material's points do work on their displacements. With entropy in the algebra, the band's temperature joins its forces in one element, its potentials, and a stretch together with a change of entropy is one change of its state. Their pairing is the work done on the band, heat included ([rubber band](https://numga.org/#rubber-band)):
 
 ```python
 work = potentials & change   # [] Scalar+
@@ -46,9 +46,9 @@ In both materials a change of one variable causes a response in another, and the
 
 ## Equilibrium
 
-The rubber band's two effects are tied because the band stores energy. Quantities carried with the material are intrinsic (`-`) while quantities that measure or act on them are extrinsic (`+`) ([Why orientation](orientation.md), [Complementarity](complementarity.md)). The band's state is intrinsic, combining the positions of its points with its entropy, and its potentials are extrinsic, combining the forces on its points with its temperature. Their regressive pairing `potentials & change` uses no metric, which matters here because nothing measures an entropy against a length.
+The rubber band's two effects are tied because the band stores energy. Quantities carried with the material are intrinsic (`-`) while quantities that measure or act on them are extrinsic (`+`) ([Why orientation](orientation.md), [Complementarity](complementarity.md)). The band's state is intrinsic, combining the positions of its points with its entropy, and its potentials are extrinsic, combining the forces on its points with its temperature. Their [regressive pairing](regressive_product.md) `potentials & change` uses no metric, which matters here because nothing measures an entropy against a length.
 
-The band's potentials are the derivative of its energy with respect to its state, and the derivative of the potentials in turn is a map, from a change of state to the change of potentials that it causes. The term ***material map*** here means a map of this kind, which says how a material responds; in mechanics alone it is the stiffness. Because the band's material map is the second derivative of one energy, it is symmetric, which in the algebra reads as the map being equal to its [adjugate](complementarity.md#claims):
+The band's potentials are the derivative of its energy with respect to its state, and the derivative of the potentials in turn is a map, from a change of state to the change of potentials that it causes. The term ***material map*** here means a map of this kind, which says how a material responds; in mechanics alone it is the stiffness. Because the band's material map is the second derivative of one energy, it is symmetric, which in the algebra reads as the map being equal to its [adjugate](complementarity.md#claims) ([rubber band](https://numga.org/#rubber-band)):
 
 ```python
 material == material.adjugate()   # [] Vector+ <- Antivector-
@@ -63,15 +63,15 @@ The material map has four readings, the change of each potential that each chang
 
 The two cells off the diagonal are the band's two effects, and the symmetry of the material map makes them equal: added entropy changes the band's pull by as much as a stretch changes its temperature. That symmetry is the tie between the band's warming and its pull, as a [rubber band](../examples/thermodynamics/rubber_band/rubber_band.ipynb) example computes it. Symmetries of this kind are known as Maxwell's relations.
 
-<p align="center"><img src="../plots/rubber_band_lamp_and_pull.gif" alt="Two hanging rubber bands side by side: the left band warms under a lamp, contracts and lifts its weight; the right band warms slightly when pulled down and cools when released" width="300" /></p>
+<p align="center"><a href="https://numga.org/#rubber-band"><img src="../plots/rubber_band_lamp_and_pull.gif" alt="Two hanging rubber bands side by side: the left band warms under a lamp, contracts and lifts its weight; the right band warms slightly when pulled down and cools when released" width="300" /></a></p>
 
-*Figure: two hanging rubber bands on a shared timeline, coloured by temperature. On the left, heat from a lamp warms the band, raising its tension and lifting the weight; on the right, pulling the unlit band down warms it slightly at fixed entropy and releasing it cools it back.*
+*Figure: two hanging rubber bands on a shared timeline, coloured by temperature. On the left, heat from a lamp warms the band, raising its tension and lifting the weight; on the right, pulling the unlit band down warms it slightly at fixed entropy and releasing it cools it back ([gallery](https://numga.org/#rubber-band), [notebook](../examples/thermodynamics/rubber_band/rubber_band.ipynb)).*
 
 Where the coupled variables occupy different grades, the state and the potentials become mixed-grade elements and the material map remains a single symmetric extensor. In a [paramagnetic salt](../examples/thermodynamics/paramagnetic_salt/paramagnetic_salt.ipynb) example, magnetization is an intrinsic patch of the spin plane and entropy is the dual of its basis vector, paired with the magnetic field's bivector and temperature's vector: magnetizing the salt warms it, removing the field cools it, and inverting that mixed-grade material map gives the change of magnetization and entropy for a given change of field and temperature.
 
 ## Transport
 
-The thermocouple's two effects are tied for a different reason. In fluid dynamics, the transport of a quantity by the motion of a fluid is called advection. The term ***advection*** here means the map from a carrier's velocity to the flux that it makes, the regressive product of the velocity with the parcel. Its adjugate runs the other way. It takes a drive to the force on the carrier, the electric part acting on the electron's charge and the thermal part on its entropy, so that the force paired with a velocity equals the power that the drive delivers to the flux:
+The thermocouple's two effects are tied for a different reason. In fluid dynamics, the transport of a quantity by the motion of a fluid is called advection. The term ***advection*** here means the map from a carrier's velocity to the flux that it makes, the regressive product of the velocity with the parcel. Its adjugate runs the other way. It takes a drive to the force on the carrier, the electric part acting on the electron's charge and the thermal part on its entropy, so that the force paired with a velocity equals the power that the drive delivers to the flux ([thermocouple](../examples/thermodynamics/thermocouple/thermocouple.ipynb)):
 
 ```python
 # Spatial, the type of a velocity through space, is the identity map on such velocities.
@@ -80,7 +80,7 @@ force = advection.adjugate()(drive)               # [] Vector+
 drive & advection(velocity) == force & velocity   # [] Scalar+
 ```
 
-The force on a carrier and the flux that the carrier makes are therefore one map, read backwards and forwards, with no metric used on either sector. A mobility, which is a property of the material and carries the metric of space, turns the force into a velocity, and the three maps together are the material map of transport, the response:
+The force on a carrier and the flux that the carrier makes are therefore one map, read backwards and forwards, with no metric used on either sector. A mobility, which is a property of the material and carries the metric of space, turns the force into a velocity, and the three maps together are the material map of transport, the response ([thermocouple](../examples/thermodynamics/thermocouple/thermocouple.ipynb), [magnetotransport](../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field)):
 
 ```python
 response = advection(mobility(advection.adjugate()))   # [] Antibivector- <- Bivector+
@@ -98,7 +98,7 @@ With one kind of carrier, no current flows once a voltage balances the temperatu
 
 Every extensive variable that a model tracks, such as mass, volume or the amount of a chemical species, can be modelled the way entropy was, by an added basis vector that squares to zero. Its potential joins the potentials, a carrier's share of it joins the parcel, and the drive, the flux and the power are formed in the same way.
 
-The term ***quantities*** here means these added variables, as against the geometry. The terms ***geometric sector*** and ***quantity sector*** here mean the two groups of basis vectors, those of space, time and the projective dimension, and those added for the quantities. A planar algebra with all of them has the basis vectors `x+ y+ t- w0` in its geometric sector and `v0 m0 s0 n0` in its quantity sector, for volume, mass, entropy and the amount of a species, where the mark after each letter is the sign of its square. Charge already sits in the geometric sector along spacetime's time direction `-t.dual()`, while the units of volume and entropy are the duals of their basis vectors[^volume] as written below:
+The term ***quantities*** here means these added variables, as against the geometry. The terms ***geometric sector*** and ***quantity sector*** here mean the two groups of basis vectors, those of space, time and the projective dimension, and those added for the quantities. A planar algebra with all of them has the basis vectors `x+ y+ t- w0` in its geometric sector and `v0 m0 s0 n0` in its quantity sector, for volume, mass, entropy and the amount of a species, where the mark after each letter is the sign of its square. Charge already sits in the geometric sector along spacetime's time direction `-t.dual()`, while the units of volume and entropy are the duals of their basis vectors[^volume] as written below ([snowflake](https://numga.org/#snowflake), [superfluid helium](../docs/extensors.md#18-two-fluid-hydrodynamics-of-superfluid-helium)):
 
 ```python
 time = -t.dual()        # [] Antivector-
@@ -120,9 +120,9 @@ Adjoining a further null direction `u0` for internal energy lifts that doubled s
 
 Conversions between quantities, such as burning or freezing, also act among the quantity basis vectors alone. A conversion is a direction among the quantities, and a quantity that it conserves is a plane that pairs with that direction to zero, `energy & reaction == 0`, as energy does with burning in a [flame](../examples/thermodynamics/flame/flame.ipynb) example and with freezing in a [snowflake](../examples/thermodynamics/snowflake/snowflake.ipynb) example.
 
-<p align="center"><img src="../plots/snowflake.gif" alt="A seed of ice in undercooled water growing into a six-armed dendrite, its latent heat glowing into the cold water around it" width="300" /></p>
+<p align="center"><a href="https://numga.org/#snowflake"><img src="../plots/snowflake.gif" alt="A seed of ice in undercooled water growing into a six-armed dendrite, its latent heat glowing into the cold water around it" width="300" /></a></p>
 
-*Figure: a seed of ice growing into a six-armed dendrite in undercooled water, with latent heat released along the freezing direction glowing into the liquid around the tips.*
+*Figure: a seed of ice growing into a six-armed dendrite in undercooled water, with latent heat released along the freezing direction glowing into the liquid around the tips ([gallery](https://numga.org/#snowflake), [notebook](../examples/thermodynamics/snowflake/snowflake.ipynb)).*
 
 ### Planes of the joined algebra
 
@@ -160,7 +160,7 @@ The transport of charge and heat through a conductor in a magnetic field is call
 push_and_power = (magnetic + drive).commutator(parcel + valence * velocity)   # [] Antivector-
 ```
 
-The spatial part of that commutator is the push on the carrier's charge and entropy, together with the field's turning of its motion. Its temporal part is the electrical power, to which the magnetic field adds nothing. A carrier drifts where the drag of its collisions balances the push, and that balance is solved by inverting one element, a scalar plus a bivector. Each kind of carrier takes its own parcel along, and the response is the sum over the kinds, weighted by their densities, with the lattice's conduction:
+The spatial part of that commutator is the push on the carrier's charge and entropy, together with the field's turning of its motion. Its temporal part is the electrical power, to which the magnetic field adds nothing. A carrier drifts where the drag of its collisions balances the push, and that balance is solved by inverting one element, a scalar plus a bivector. Each kind of carrier takes its own parcel along, and the response is the sum over the kinds, weighted by their densities, with the lattice's conduction ([extensor gallery](../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field)):
 
 ```python
 parcels = valences * (time + entropies_per_charge * entropy)                      # [kinds] Antivector-
@@ -183,9 +183,9 @@ The top left block reads the charge that an electric drive moves, and the bottom
 
 A measured Hall resistance, Seebeck coefficient or Nernst signal follows from the response once the conditions at the conductor's boundary are imposed. In the interior of a long bar those conditions hold at every place alike, and the coefficients follow from the response at one place, as a [transport coefficients in a magnetic field](../examples/thermodynamics/magnetotransport/magnetotransport_one_place.ipynb) example computes them. For the matched electron and hole mobilities and entropies per carrier in that example, the Hall resistance vanishes where their densities balance and the Nernst signal peaks there. A bar builds up voltages across its insulating sides, and a Corbino ring lets its currents circulate; the magnetotransport example computes both over the whole conductor.
 
-<p align="center"><img src="../plots/magnetotransport.gif" alt="A bar and a Corbino ring warmed at one contact in a perpendicular magnetic field as their carrier balance sweeps from electrons only to holes only" width="375" /></p>
+<p align="center"><a href="../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field"><img src="../plots/magnetotransport.gif" alt="A bar and a Corbino ring warmed at one contact in a perpendicular magnetic field as their carrier balance sweeps from electrons only to holes only" width="375" /></a></p>
 
-*Figure: a Hall bar on the left and a Corbino ring on the right, warmed at one gold contact in the perpendicular magnetic field marked between them as the carrier balance sweeps from electrons to holes. Background colour shows temperature from blue to red, dark lines trace electrochemical equipotentials, and white and black streaks show the two carrier drifts.*
+*Figure: a Hall bar on the left and a Corbino ring on the right, warmed at one gold contact in the perpendicular magnetic field marked between them as the carrier balance sweeps from electrons to holes. Background colour shows temperature from blue to red, dark lines trace electrochemical equipotentials, and white and black streaks show the two carrier drifts ([extensor gallery](../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field), [notebook](../examples/thermodynamics/magnetotransport/magnetotransport.ipynb)).*
 
 ## Conclusion
 

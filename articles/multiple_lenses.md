@@ -6,14 +6,14 @@ From computer science, extensors arise through partial application of the produc
 
 ## 1. The computer science lens
 
-Partial application binds some arguments of a function now and takes the rest later. In projective three-space, planes are extrinsic vectors, joined lines are intrinsic antibivectors, and points are intrinsic antivectors, where `+` and `-` record how each transforms in a mirror ([Why orientation](orientation.md)). For a fixed light source, a Python function accepts a point and returns the line joining them:
+Partial application binds some arguments of a function now and takes the rest later. In the plane-based projective three-space convention used here, cutting planes are modelled as extrinsic vectors, weighted points as intrinsic antivectors, and joined lines as intrinsic antibivectors, where `+` and `-` record how each transforms in a mirror ([Why orientation](orientation.md)). For a fixed light source, a Python function accepts a point and returns the line joining them:
 
 ```python
 def ray_fn(point: Point) -> Line:
     return light & point
 ```
 
-Naming the space of points by its type `Point` builds that same map directly inside the algebra. Because the resulting extensor belongs to the algebra, further products act on its output and composition feeds one map directly into another:
+Naming the space of points by its type `Point` builds that same map directly inside the algebra. Because the resulting extensor belongs to the algebra, further products act on its output and composition feeds one map directly into another ([scenegraph](../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map), [projection](../examples/geometry/projection/projection.ipynb)):
 
 ```python
 ray = light & Point                                          # [] Antibivector- <- Antivector-
@@ -24,7 +24,7 @@ composed = intersection(ray)                                 # [] Antivector- <-
 
 `ray_fn` is a Python function, while `ray` is an extensor. Both are first-class Python objects, and `ray_fn(point)` and `ray(point)` return the same line. In the block above, `shadow` meets each ray with the ground plane directly, while `intersection` packages that meet as its own map on lines so `intersection(ray)` constructs the same shadow map by composition.
 
-A Python function hides the arithmetic inside it and supports evaluation alone. An extensor holds that linear action as an algebraic value, so evaluation is only one of the operations available on it. For a linear map `M`, `M.solve(y)` finds an input `x` satisfying `M(x) == y`, and when `M` is invertible, `M.inverse()` builds the inverse map as an extensor that composes and multiplies like any other. Reading `M` backwards across the regressive pairing gives its metric-free adjugate `M.adjugate()` for every linear map, even without a metric or an inverse. When the algebra carries a nondegenerate metric, `M.adjoint()` transfers `M` across the scalar product instead, and when input and output share one space, eigenvalues and trace are available directly on `M`. A Python function exposes none of these operations.
+A Python function hides the arithmetic inside it and supports evaluation alone. An extensor holds that linear action as an algebraic value, so evaluation is only one of the operations available on it. For a linear map `M`, `M.solve(y)` finds an input `x` satisfying `M(x) == y`, and when `M` is invertible, `M.inverse()` builds the inverse map as an extensor that composes and multiplies like any other. Reading `M` backwards across the [regressive pairing](regressive_product.md) gives its metric-free adjugate `M.adjugate()` for every linear map, even without a metric or an inverse. When the algebra carries a nondegenerate metric, `M.adjoint()` transfers `M` across the scalar product instead, and when input and output share one space, eigenvalues and trace are available directly on `M`. A Python function exposes none of these operations.
 
 ## 2. The geometric lens
 
@@ -40,9 +40,9 @@ rebuilt = Line - ((motor >> centre) & (Line ^ (motor >> plane))) / focal # [] An
 
 Because the sandwich action distributes across every product and its inverse action cancels on `Line`, `moved` and `rebuilt` are the same map, and the same identity holds when a reflection `mirror` replaces `motor`. One action moves the ray, the lens and the motion itself, and nothing in the scene is set apart from the objects it transforms.
 
-<p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D with a two-lens camera and sample sight ray on the left, and the rendered sensor image on the right" width="598" /></p>
+<p align="center"><a href="../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D with a two-lens camera and sample sight ray on the left, and the rendered sensor image on the right" width="598" /></a></p>
 
-*Figure: an articulated robot arm and a moving two-lens camera in three dimensions on the left, with the image produced on the sensor by composing the body motors, lens maps and sensor meet on the right.*
+*Figure: an articulated robot arm and a moving two-lens camera in three dimensions on the left, with the image produced on the sensor by composing the body motors, lens maps and sensor meet on the right ([extensor gallery](../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map), [notebook](../examples/geometry/scenegraph/scenegraph.ipynb)).*
 
 In tensor algebra the order is the reverse. The transformations come first, given as rotation matrices, and a tensor is defined as an array that responds to them by the tensor transformation law, such as $T' = R T R^{\mathsf T}$ for a two-index tensor, with one factor of the rotation on each of its axes. The rotation is a linear map on vectors and therefore a tensor itself, yet the definition treats it as given beforehand, standing outside as the test the other objects must pass. Here a transformation is an extensor from the start, and no object is defined by testing it against something posited outside the algebra. The tensor transformation law follows as a consequence, where the moved lens `motor >> lens(motor << Line)` reads in tensor notation as $R T R^{\mathsf T}$, the motion applied on the output and undone on the input.
 

@@ -8,14 +8,14 @@ Like the outer product, the regressive product uses no metric. Where the outer p
 
 A plane in space divides what lies in front of it from what lies behind it, so its sign chooses a side in the space around it. A weighted point holds its sign in its weight, within the point itself. A mirror that contains the point leaves it as it is, while swapping the sides of an oblique plane. Following [Why orientation](orientation.md) [[1]](#references), an element carries either an extrinsic orientation (`+`), oriented in the space around it, or an intrinsic orientation (`-`), oriented within itself.
 
-In projective three-space, an extrinsic plane has grade one and an intrinsic point has grade three, one below the four-dimensional top space, so `plane ^ point` fills a four-volume. Both `plane ^ point` and the space's intrinsic unit volume `antiscalar` live in that one-dimensional top space, so the first is a scalar multiple of the second, and that scalar is their regressive product:
+In plane-based projective three-space, planes sit at grade one and points sit at grade three, one below the four-dimensional top space, regardless of orientation. Taking an extrinsic plane and an intrinsic point, their outer product `plane ^ point` fills a four-volume. Both `plane ^ point` and the space's intrinsic unit volume `antiscalar` live in that one-dimensional top space, so the first is a scalar multiple of the second, and that scalar is their regressive product, written `&`:
 
 ```python
 offset = plane & point                   # [] Scalar+
 plane ^ point == offset * antiscalar     # [] Antiscalar-
 ```
 
-Both `plane ^ point` and the unit volume have the same intrinsic top-grade type. Under an orientation-aware reflection `mirror >> x`, both transform by the same rule and stay unchanged, so their scalar ratio `offset` stays unchanged in a mirror. Neither the outer product nor the metric contractions refer to the unit volume, and none of them pairs an extrinsic element with an intrinsic one into a mirror-even scalar.
+Both `plane ^ point` and the unit volume have the same intrinsic top-grade type. Under an orientation-aware reflection `mirror >> x`, both transform by the same rule and stay unchanged, so their scalar ratio `offset` stays unchanged in a mirror. The same defining relation applies to any pair of orientations and extends across all grades. Because `antiscalar` is intrinsic, opposite orientations give an extrinsic result and matching orientations give an intrinsic one. Pairing two elements of the same orientation therefore gives a handed scalar that reverses in a mirror, and joining two extrinsic points is defined and gives an intrinsic line, whereas intrinsic elements stay closed under repeated joins. Neither the outer product nor the metric contractions refer to the unit volume, and none of them pairs an extrinsic element with an intrinsic one into a mirror-even scalar.
 
 Because the unit volume multiplies `offset` on the right rather than dividing `plane ^ point`, this relation needs no inverse of the unit volume and no lengths along the axes. In projective space (`x+ y+ z+ w0`), Galilean spacetime and thermodynamic state spaces, null basis vectors make the unit volume square to zero, yet `plane ^ point` is still a scalar multiple of it. Putting the extrinsic factor first gives complementary basis blades (metric-free right complements) a positive sign in even and odd dimensions alike, whereas swapping the order in even dimensions negates odd-grade pairings (`point & plane == -(plane & point)`).
 
@@ -33,7 +33,7 @@ volume = a & b & c & d                   # [] Scalar-
 
 Each join in that chain stays intrinsic. The line is oriented along itself from one point to the next, the triangle's plane is oriented by the order of its corners round the triangle rather than by a positive side outside it, and in three-space `a & b & c & d` is an intrinsic scalar that changes sign in a mirror, as a [surface normals](../examples/orientation/normals/normals.ipynb) example shows.
 
-Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example:
+Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example ([extensor gallery](../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map)):
 
 ```python
 ray = light & point                      # [] Antibivector-
@@ -66,7 +66,7 @@ By associativity, `p & q` is the intrinsic line whose pairing with any two wedge
 
 ## Simplex gradients
 
-On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). At a corner of a simplex, the simplex gradient is the hyperplane that pairs to one with that corner and to zero with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds that corner gradient in closed form, as in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example:
+On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). At a corner of a simplex, the simplex gradient is the hyperplane that pairs to one with that corner and to zero with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds that corner gradient in closed form, as in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example ([gallery](https://numga.org/#gravitational-waves)):
 
 ```python
 facet = b & c & d                        # [] Antitrivector-
@@ -80,7 +80,7 @@ Because numerator and denominator are both intrinsic, their quotient `gradient_a
 
 Naming the space of an argument by its type builds a linear map directly from a product ([Extensors through multiple lenses](multiple_lenses.md)). In projective three-space, pairing any point with a fixed plane reads a scalar, multiplying a fixed output point by that readout gives a rank-one dyad, and joining any direction or point with a fixed point `p` gives a linear join map. Reading a linear map backwards across the regressive pairing defines its adjugate, keeping the extrinsic factor first on both sides so that signs remain independent of dimension.
 
-For a map preserving orientation, such as a pinhole camera projecting scene points onto an image plane, its adjugate pulls image lines back into planes through the pinhole without needing an inverse camera. Pulling an image conic polarity back through the camera and its adjugate forms a sight cone in space, as in a [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. For the partial-join map with a fixed intrinsic point, associativity and anticommutativity of the regressive product make its adjugate the partial contraction with that same point:
+For a map preserving orientation, such as a pinhole camera projecting scene points onto an image plane, its adjugate pulls image lines back into planes through the pinhole without needing an inverse camera. Pulling an image conic polarity back through the camera and its adjugate forms a sight cone in space, as in a [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. For the partial-join map with a fixed intrinsic point, associativity and anticommutativity of the regressive product make its adjugate the partial contraction with that same point ([extensor gallery](../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment)):
 
 ```python
 plane & camera(point) == camera.adjugate()(plane) & point   # [] Scalar+
@@ -92,7 +92,7 @@ For a duality map between complementary orientations, such as `cone` mapping int
 
 ## Mechanics and electrodynamics
 
-A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples:
+A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples ([gallery](https://numga.org/#tennis-racket)):
 
 ```python
 velocity = point.commutator(rate)        # [] Antivector-
@@ -102,7 +102,7 @@ energy = (rate & momentum) / 2           # [] Scalar+
 
 In three dimensions (`x+ y+ z+`), the rate has grade two while the momentum has grade one, so their inner product `rate | momentum` is a vector rather than a scalar. Because grade two and grade `n - 2` always add to `n`, `(rate & momentum) / 2` has the same form in the plane, in space and in four dimensions, and stays positive in a mirror. While that pairing uses no metric, the metric and the normalization of the mass point enter in `point.commutator(rate)` when building the momentum, so the same rate bivector carries different unit-speed weights and kinetic energies in Euclidean, elliptic and hyperbolic spaces [[2, §6.1]](#references), [[5, §§9.2–9.3]](#references).
 
-In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time direction forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. By the partial-join adjugate identity above, pulling the field back across the map that sweeps displacements with the four-current gives the Lorentz four-force `-(field & current)`, which has the same algebraic form as `(u ^ v) & p`:
+In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time direction forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. By the partial-join adjugate identity above, pulling the field back across the map that sweeps displacements with the four-current gives the Lorentz four-force `-(field & current)`, which has the same algebraic form as `(u ^ v) & p` ([dynamo](https://numga.org/#dynamo), [superconductor](https://numga.org/#superconductor)):
 
 ```python
 voltage_slope = field & (direction & time)   # [] Scalar+
