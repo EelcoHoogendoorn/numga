@@ -6,7 +6,7 @@ That algebra represents how a material's variables couple to one another, both i
 
 ## Introduction
 
-Extending an algebra by a dimension can unify what were separate descriptions. When space is extended with a time dimension to spacetime, the electric and magnetic fields can be modelled together as a single spacetime bivector. When geometry is extended with a projective dimension, rotation and translation can be modelled as one rigid motion, and one inertia relates its rate to its momentum. Extending the algebra once more, with, for instance, a direction for entropy, is a step of the same kind.
+Extending an algebra with an extra basis direction can unify what were separate descriptions. Extending the algebra of space with a time direction gives spacetime, where the electric and magnetic fields can be modelled together as a single bivector. Extending it with a degenerate projective direction represents Euclidean geometry homogeneously, so rotation and translation can be modelled as one rigid motion and one inertia relates its rate to its momentum. Extending the algebra once more with a degenerate direction for entropy is a step of the same kind.
 
 Each extension allows separate elements to be modelled as one, and laws that carry separate names to be written as one statement:
 
