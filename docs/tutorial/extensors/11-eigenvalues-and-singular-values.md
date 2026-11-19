@@ -1,6 +1,6 @@
 # 11. Eigenvalues and singular values
 
-The map `a ^ Vector` forms an oriented area with $a$. An input parallel to $a$ gives zero:
+The map `a ^ Vector` forms an oriented area with `a`. An input parallel to `a` gives zero:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -12,7 +12,7 @@ area(a)
 0
 ```
 
-For an input perpendicular to $a$, the area is the input's length times the length of $a$. Two perpendicular input directions therefore have the same scale, and the direction along $a$ has scale zero. These three scales are the singular values of the map:
+For an input perpendicular to `a`, the area is the input's length times the length of `a`. Two perpendicular input directions therefore have the same scale, and the direction along `a` has scale zero. These three scales are the singular values of the map:
 
 ```python
 area.svdvals()
@@ -35,7 +35,7 @@ stretch(z)
 3 z
 ```
 
-The map leaves $x$ and $y$ unchanged and multiplies $z$ by three. These directions are eigenvectors, and their multipliers are eigenvalues:
+The map leaves `x` and `y` unchanged and multiplies `z` by three. These directions are eigenvectors, and their multipliers are eigenvalues:
 
 ```python
 stretch.eigh()[0]
@@ -71,8 +71,12 @@ form.eigh(weight)[0]
 [1  1  1.5]
 ```
 
-The second form weights the $z$ direction by two, so the relative scale there is three divided by two. These are generalized eigenvalues: the scales of one form relative to another. Without an explicit second form, `eigh` uses the Euclidean inner product on the argument space.
+The second form weights the `z` direction by two, so the relative scale there is three divided by two. These are generalized eigenvalues: the scales of one form relative to another. Without an explicit second form, `eigh` uses the Euclidean inner product on the argument space.
 
 In matrix notation, eigenvalues of a map satisfy $M v = \lambda v$, singular values compare orthonormal input and output directions, and eigenvalues relative to a second form satisfy $M v = \lambda W v$.
 
 Example: [the modes of a body on springs](../../../examples/mechanics/modes/modes.ipynb), where the stiffness has eigenvalues relative to the body's inertia, a second form.
+
+---
+
+Previous: [10. The adjugate](10-the-adjugate.md) · [Contents](00-introduction.md) · Next: [12. Trace and contraction](12-trace-and-contraction.md)

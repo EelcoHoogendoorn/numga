@@ -51,3 +51,7 @@ y * x * z * y
 ```text
 xz
 ```
+
+---
+
+Previous: [5. The algebra of scalars and bivectors](05-the-algebra-of-scalars-and-bivectors.md) · [Contents](00-introduction.md) · Next: [7. Grades and multivectors](07-grades-and-multivectors.md)

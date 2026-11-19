@@ -1,30 +1,17 @@
 # 10. The adjugate
 
-A phase measurement on deformed positions can be read as a measurement on the positions before deformation. The adjugate carries the wavevector backward, preserving that reading for every position. Positions are intrinsic antivectors and wavevectors extrinsic vectors; their regressive product gives the phase:
+Pairing a fixed vector `c` with the output of a dyad on antivectors through the regressive product gives a scalar. For a dyad `p * (b & Antivector)` with an antivector `p`, that scalar is `b & Antivector` multiplied by `c & p`. It is therefore also the regressive product of the input with the vector `(c & p) * b`.
+
+For example:
 
 ```python
-Position = Antivector                             # Antivector-
-Wavevector = Vector                               # Vector+
-
-displacement = (1 * x + 2 * y + 3 * z).dual()
-deformation_axis = 4 * x + 5 * y + 6 * z
-deformation = Position + displacement * (deformation_axis & Position)
-wavevector = z
-
-# Find the wavevector reading the same phase on every undeformed position.
-input_wavevector = (Wavevector & Position).solve(wavevector & deformation)
-input_wavevector
-```
-
-```text
-   x   y   z
-  12  15  19
-```
-
-The pairing `Wavevector & Position` identifies a wavevector with its phase measurement. Solving through this pairing expresses the composed measurement as a wavevector on the input side. The two measurements agree:
-
-```python
-(input_wavevector & Position) - (wavevector & deformation)
+a = 1 * x + 2 * y + 3 * z
+b = 4 * x + 5 * y + 6 * z
+c = 7 * x + 8 * y + 10 * z
+p = a.dual()
+A = p * (b & Antivector)
+input_vector = (c & p) * b
+(input_vector & Antivector) - (c & A)
 ```
 
 ```text
@@ -32,13 +19,24 @@ The pairing `Wavevector & Position` identifies a wavevector with its phase measu
 1   0   0   0
 ```
 
-In particular, `wavevector & deformation(position) == 0` says that the image position lies on the zero-phase plane. The same condition on its input is `input_wavevector & position == 0`. A plane condition on the outputs has become a plane condition on the inputs.
+The two scalar-valued maps agree for every input antivector. Each vector `c` paired with the output side has a corresponding vector on the input side giving the same regressive pairing. Adding dyads adds those corresponding vectors, so the construction extends to every linear map on antivectors.
 
-The adjugate of the deformation maps each output wavevector to the input wavevector with the same phase reading:
+The corresponding vector can also be found by solving. The pairing `Vector & Antivector` identifies each vector with its scalar measurement on antivectors, so solving it against `c & A` recovers `input_vector`:
 
 ```python
-adjugate = (Wavevector & Position).solve(Wavevector & deformation)
-adjugate - deformation.adjugate()
+(Vector & Antivector).solve(c & A) - input_vector
+```
+
+```text
+  x  y  z
+  0  0  0
+```
+
+The adjugate of `A` maps each vector on the output side to the corresponding vector on the input side:
+
+```python
+adjugate = (Vector & Antivector).solve(Vector & A)
+adjugate - A.adjugate()
 ```
 
 ```text
@@ -48,14 +46,16 @@ y  0  0  0
 z  0  0  0
 ```
 
-The construction gives `adjugate(wavevector) & position == wavevector & deformation(position)` for every position and wavevector.
+The construction gives `adjugate(c) & v == c & A(v)` for every input antivector `v` and every vector `c`. In particular, `c & A(v) == 0` holds if and only if `adjugate(c) & v == 0`: an incidence condition on outputs carries back to an incidence condition on inputs.
 
-For other input and output grades, the adjugate uses the same pairing with complementary grades and opposite orientations, each pairing read with its extrinsic factor first, as `wavevector & position` is. It runs from complements of outputs to complements of inputs. Because `&` pairs every basis blade with its complement without using the inner product, the adjugate exists even when basis vectors square to zero and even when the deformation itself cannot be inverted.
+For any input and output grades, the adjugate runs from complements of outputs to complements of inputs, with each pairing read extrinsic first, as `c & v` is. Because `&` pairs every basis blade with its complement without using the inner product, the adjugate exists even when basis vectors square to zero and even when `A` itself has no inverse.
 
-In the notation of projective geometric algebra, which writes the regressive product as $\vee$, the identity reads as $\operatorname{adj} T(k) \vee p = k \vee T(p)$.
+In the notation of projective geometric algebra, which writes the regressive product as $\vee$, the identity reads as $\operatorname{adj} A(c) \vee v = c \vee A(v)$.
 
-In matrix notation, with positions in the basis $yz$, $zx$, $xy$ and wavevectors in the paired basis $x$, $y$, $z$, the coefficients of this adjugate read as $T^\mathsf{T}$.
+In matrix notation, with antivectors in the basis $yz$, $zx$, $xy$ and vectors in the paired basis $x$, $y$, $z$, the coefficients of this adjugate read as $A^T$.
 
-Example: [multi-view reconstruction](../../../examples/estimation/multiview/multiview_reconstruction.ipynb), where a camera's adjugate carries a pixel's disc of uncertainty back into a cone of sight.
+Examples: [multi-view reconstruction](../../../examples/estimation/multiview/multiview_reconstruction.ipynb), where a camera's adjugate carries a pixel's disc of uncertainty back into a cone of sight; and [crystal diffraction](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb), where solving through a deformation's adjugate carries wavevectors forward while preserving their phases on the moving atoms.
 
-Example: [crystal diffraction](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb), where solving through the deformation's adjugate carries wavevectors forward while preserving their phases on the moving atoms.
+---
+
+Previous: [9. The adjoint](09-the-adjoint.md) · [Contents](00-introduction.md) · Next: [11. Eigenvalues and singular values](11-eigenvalues-and-singular-values.md)

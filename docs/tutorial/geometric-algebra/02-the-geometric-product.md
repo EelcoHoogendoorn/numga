@@ -45,3 +45,7 @@ a * b
 ```
 
 Example: [two mirrors](../../../examples/math/reflections/kaleidoscope.ipynb), where the product of two mirror vectors is a rotor that turns by twice the angle between the mirrors.
+
+---
+
+Previous: [1. The scalar product of vectors](01-the-scalar-product.md) · [Contents](00-introduction.md) · Next: [3. The scalar product within the geometric product](03-the-scalar-product-within-the-geometric-product.md)

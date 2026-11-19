@@ -1,6 +1,6 @@
 # Internals
 
-This document describes how numga represents types and extensors internally, compiles algebraic expressions into backend array calls, and dispatches methods across types and backends. It pairs with [Extensors](extensors.md) and [Extensor syntax and methods](extensor_syntax.md).
+This document describes how numga represents types and extensors, compiles algebraic expressions into exact tables and backend contractions, dispatches extension methods, and supports sparse and custom extensor representations. It pairs with [Extensors](extensors.md) and [Extensor syntax and methods](extensor_syntax.md).
 
 Every algebraic operation is built from types as an exact integer table before any numerical array arrives, and evaluated by contracting or unrolling that table on NumPy, JAX or PyTorch arrays:
 
@@ -52,7 +52,7 @@ print(np.round(rotation.kernel, 8))
  [-0.56464247  0.82533561]]
 ```
 
-## Extensor, GAType and kernel layout
+## Types and memory layout
 
 Every `Extensor` stores three attributes (`_context`, `_gatype`, `_kernel`): a backend `Context`, a structural `GAType`, and a coefficient kernel.
 
@@ -76,9 +76,9 @@ field map    [batch..., sites..., O, I1, ..., In]
 
 Traits on constructed values (`mv.rotor(values)`) are trusted assertions rather than runtime numerical checks, and methods dispatch on them directly (`mv.rotor(values).inverse()` returns the reverse without testing coefficients). Values of unknown provenance enter as plain types (`mv.even(values)`) and acquire certified traits through operations that establish them (`mv.even(values).normalized()`).
 
-## Exact tables, binding plans and compiled calls
+## Symbolic tables and binding plans
 
-Every primitive operation table, geometric product, wedge, regressive product, inner product, reverse, involute, dual and subspace cast, is an `Extensor` in the algebra's `ExactContext` (`ga.exact`), built once per combination of input `GAType`s on `ga.operator` and cached. Its `SymbolicKernel` stores an `int8` array whose entries on basis-blade products are `-1`, `0` or `+1`. Orientation rules (such as the reflection sign on intrinsic elements in `>>` and pairing/sum checks) enter when `ga.operator` constructs the table, so every composed extensor transforms equivariantly without basis-dependent conventions.
+Every primitive operation (geometric product, wedge, regressive product, inner product, reverse, involute, dual and subspace cast) is represented as an `Extensor` in the algebra's `ExactContext` (`ga.exact`), built once per combination of input `GAType`s on `ga.operator` and cached. Its `SymbolicKernel` stores an `int8` array whose entries on basis-blade products are `-1`, `0` or `+1`. Orientation rules, such as the reflection sign on intrinsic elements in `>>` and pairing or sum checks, enter when `ga.operator` constructs the table, so every composed extensor transforms equivariantly without basis-dependent conventions.
 
 Higher-arity tables are built by binding exact tables together. In `Algebra("x+y+")`, `Rotor >> Vector` composes `Rotor * Vector`, `Vector * Rotor` and `Rotor.reverse()`:
 
@@ -101,11 +101,43 @@ An exact map's `.solve()` never calls a numerical linear solver: its integer inv
 `bind` is the single composition primitive, and everything about a bind except the arithmetic is decided from `GAType`s alone in a cached `BindingPlan`:
 
 * **Axis alignment**: per bound input, three lossless relations are applied implicitly: identical subspace, identical blades in another order or sign convention (via a signed permutation), and subset of blades (embedded with structural zeros). Dropping blades or partial overlaps are refused unless written explicitly with `.cast(...)`.
-* **Equality groups and narrowing**: passing the same Python object to two inputs (as `r >> v` passes `r` to both versor inputs) records an equality group, allowing `BindingPlan` to narrow the output subspace before contraction (keeping only the passenger's grades under a certified versor sandwich) and propagate stronger traits (`r * r` stays a certified rotor; `r >> Vector` acquires `CoefficientOrthogonal`, so `rotation.inverse()` transposes). Numerical zeros in a float array never narrow a type.
+* **Equality groups and narrowing**: passing the same Python object to two inputs (as `r >> v` passes `r` to both versor inputs) records an equality group. `BindingPlan` uses those groups to narrow the output subspace before contraction (keeping only the passenger's grades under a certified versor sandwich) and to propagate stronger traits (`r * r` stays a certified rotor; `r >> Vector` acquires `CoefficientOrthogonal`, so `rotation.inverse()` transposes). Numerical zeros in a float array never narrow a type.
+* **Field-axis binding**: when a dense extensor carries field axes (`gatype.fields`), `bind_fields` (`numga/extensor/fields.py`) treats site axes as labelled trailing batch axes. Binding a field into a blade-only axis acts site by site, while binding into a matching field axis contracts the paired site label inside the backend's `einsum`/`matmul` call without materializing per-site-pair intermediates.
+* **Cross-algebra inclusion**: `context.include_from_algebra(value)` embeds values from another algebra sharing generator names and squares using a cached inclusion plan. Extrinsic axes keep their blade names, intrinsic axes keep their complements, and coefficients are reordered and signed once (used by GPU renderers to bring spatial or spacetime values into a projective camera algebra).
 
-In `numga/expression.py`, each binary `Product` and `VersorAction` separates type construction from value execution: if any operand is a `GAType` (`Rotor * v`, `Rotor >> Vector`), it builds on `ga.operator` in `ga.exact` and calls `.bind(...)` for concrete operands; if both operands are values (`a * b`, `r >> v`), it dispatches through a `staged=True` `ExtensionMethod` to a compiled `application` closure (`numga/extensor/application.py`) keyed on `(target_type, target_context, operand_types, equality_groups)`. Warm calls run that closure directly and wrap the resulting array in the precomputed `GAType`.
+## Method dispatch and registration
 
-## Contexts and backends
+Methods such as `inverse`, `solve`, `trace`, `eigh` and `exp` are `ExtensionMethod` descriptors on `Extensor` (`numga/extension.py`) dispatching across operand `GAType`s. First-call resolution evaluates patterns and caches the chosen callable by the exact tuple of operand `GAType`s, so subsequent calls cost a single dictionary lookup.
+
+In `numga/expression.py`, each binary `Product` and `VersorAction` separates type construction from concrete execution. When any operand is a `GAType` (`Rotor * v`, `Rotor >> Vector`), it builds on `ga.operator` in `ga.exact` and calls `.bind(...)` for concrete operands. When all operands are concrete values (`a * b`, `r >> v`), it dispatches through a `staged=True` `ExtensionMethod` to a compiled `application` closure (`numga/extensor/application.py`) keyed on `(target_type, target_context, operand_types, equality_groups)`, so warm calls run the closure directly and wrap the resulting array in the precomputed `GAType`.
+
+`ExtensionMethod` supports two kinds of `.register(...)` patterns, plus staging, field and orientation declarations:
+
+* **Declarative registrations** match on algebraic meaning: a concrete `GAType` matches any subtype in that algebra (in any blade layout, carrying at least its traits), while a `GATypePattern` or `Trait` matches across all algebras. More specific registrations win and are registered before the general fallbacks they refine:
+  ```python
+  @Extensor.exp.register(PGA3D.gatype.bivector())       # any bivector subtype/layout in PGA3D
+  @Extensor.inverse.register(GATypePattern.map())       # any unary map in any algebra
+  ```
+* **Predicate registrations** take a callable on the full `GAType`s and are tried in registration order *before* declarative matches (`position=0` inserts at the front). Layout-specific closed forms in `numga.extensions.optimized` use predicates that compare `subspaces` (blade order and signs included), falling through to generic implementations on other layouts without conversion overhead:
+  ```python
+  from numga.algebras import PGA3D
+  from numga.extensor import Extensor
+
+  @Extensor.exp.register(
+      lambda t: t.algebra.description == PGA3D.description
+      and t.subspaces == (t.algebra.subspace("yz zx xy wx wy wz"),),
+      position=0,
+  )
+  def exp_pga3_fast(b: Extensor, *, n: int = 15) -> Extensor: ...
+
+  @Extensor.exp.register(lambda t: t.is_bivector and t.is_nilpotent)
+  def exp_nilpotent(b: Extensor, *, n: int = 8) -> Extensor: ...
+  ```
+* **Staging, fields and orientation**: `register(..., staged=True)` invokes the registered function once per `GAType` signature to return a specialized runtime callable, and `fields=True` opts into `GAType`s carrying field axes. Orientation declarations on `ExtensionMethod(name, takes=..., input_orientation=..., output_orientation=...)` enforce mathematical orientation rules across all implementations of a method (`input_orientation=Orientation.extrinsic` on `exp` and `square_root`; `output_orientation=Orientation.extrinsic` on `norm` and `cos`; computed naturally when omitted).
+
+`inverse` illustrates layered dispatch: unit versors invert by reversion, `CoefficientOrthogonal` maps by transposition, scalars by reciprocal, square maps by matrix inverse, 5D bivectors and trivectors by closed form, and general multivectors by self-product cancellation or subalgebra linear solve. Every numeric escape (`linalg` calls or direct kernel indexing) stays contained inside its registration and returns a typed `Extensor`.
+
+## Backends and execution
 
 An extensor's `context` determines where coefficients live and how contractions run:
 
@@ -118,7 +150,7 @@ TorchContext(ga, dtype=np.float32)          # PyTorch tensors on CPU or CUDA, wi
 
 Expressions containing bare `GAType`s start in `ga.exact`. Meeting the first array-backed operand promotes the expression to that operand's context, materializing the `SymbolicKernel` in the target `dtype` once and caching it on the symbolic kernel for the life of the process.
 
-Backend array operations go through `context.xp`, a NumPy-shaped namespace supplied directly by NumPy and JAX and adapted by `TorchNamespace` in `numga.backend.torch` (translating spellings such as `axis` to `dim` and `concatenate` to `cat`, uploading exact tables once per device and dtype, and mapping `torch.linalg.LinAlgError` to NumPy's `LinAlgError`). Generalized eigenproblems with a singular metric (such as forms on `PGA3D` motors) require a QZ solver and run on NumPy via SciPy.
+Backend array operations go through `context.xp`, a NumPy-shaped namespace supplied directly by NumPy and JAX and adapted by `TorchNamespace` in `numga.backend.torch`. `TorchNamespace` translates spellings such as `axis` to `dim` and `concatenate` to `cat`, uploads exact tables once per device and dtype, and maps `torch.linalg.LinAlgError` to NumPy's `LinAlgError`. Generalized eigenproblems with a singular metric (such as forms on `PGA3D` motors) require a QZ solver and run on NumPy via SciPy.
 
 In `JaxContext`, `Extensor` is registered as a JAX pytree with `_kernel` as its single leaf and `(gatype, context.key)` as static metadata, rebuilding the context from `context.key` on exit so mutable caches are never hashed by the tracer. Inside `jax.jit`, the exact multiplication table is a compile-time constant rather than a traced input:
 
@@ -133,13 +165,7 @@ assert "f32[2,2,2,2]" in jaxpr and "dot_general" in jaxpr
 
 Only the `f32[2]` rotor is traced as an argument; the `f32[2,2,2,2]` sandwich table enters as a constant folded by XLA across the two `dot_general` contractions.
 
-A context can also embed values from another algebra sharing generator names and squares via `context.include_from_algebra(value)`: extrinsic axes keep their blade names, intrinsic axes keep their complements, and coefficients are reordered and signed via a cached inclusion plan (used by the GPU renderers to bring spatial or spacetime values into their projective camera algebra).
-
-## Fields, SparseExtensor and performance
-
-When a dense extensor carries field axes (`gatype.fields`), `bind_fields` (`numga/extensor/fields.py`) treats site axes as labelled trailing batch axes: binding a field into a blade-only axis acts site by site, while binding into a matching field axis contracts the paired site label inside the backend's `einsum`/`matmul` call without materializing per-site-pair intermediates.
-
-`SparseExtensor` and `Sparse` (`numga/sparse/`) store `cells` of shape `[..., couplings]` alongside `rows`, `columns` and `shape == (output_sites, input_sites)` (summing duplicate `(row, column)` entries at construction). Cells may be typed `Extensor` batches or algebra-free NumPy number arrays that promote to scalars when they meet an algebra. Sparse linear solves and eigensolves assemble block-CSR matrices over `(sites * blades)` on the NumPy/SciPy path and cache each map's sparse factorization in `self.factors` on the first `solve`.
+### Dense contraction and polynomial unrolling
 
 For site-free extensors, multiplication tables are stored dense, which stays compact up to five dimensions: one of the largest tables in common use is the 5D CGA versor-trivector sandwich (`(10, 16, 10, 16)`, `25,600` `int8` entries, `1,600` nonzero terms after versor-input symmetrization). Array contexts also accept `execution="sparse"`, which unrolls only the nonzero polynomial terms (as inspected via `sandwich.to_python()`):
 
@@ -165,39 +191,16 @@ Warm calls pay a fixed Python dispatch lookup plus the array arithmetic, indepen
 | 16,384 CGA trivectors, JAX | Prebuilt `(versor >> Trivector)(x)` map |
 | 16,384 CGA trivectors, NumPy | Prebuilt `(versor >> Trivector)(x)` map, by a wider margin |
 
-## Extending numga
+## Sparse and custom representations
 
-Methods such as `inverse`, `solve`, `trace`, `eigh` and `exp` are `ExtensionMethod` descriptors on `Extensor` (`numga/extension.py`), dispatching across operand `GAType`s. First-call resolution evaluates patterns and caches the chosen callable by the exact tuple of operand `GAType`s, so subsequent calls cost a single dictionary lookup.
+Not every extensor stores a dense `[sites..., O, I...]` array. Two mechanisms bypass dense storage while preserving the algebraic interface.
 
-`ExtensionMethod` supports two kinds of `.register(...)` patterns, plus staging and orientation declarations:
+`SparseExtensor` and `Sparse` (`numga/sparse/`) store sparse site couplings as `cells` of shape `[..., couplings]` alongside `rows`, `columns` and `shape == (output_sites, input_sites)`, summing duplicate `(row, column)` entries at construction. Cells may be typed `Extensor` batches or algebra-free NumPy number arrays that promote to scalars when they meet an algebra. Sparse linear solves and eigensolves assemble block-CSR matrices over `(sites * blades)` on the NumPy/SciPy path and cache each map's sparse factorization in `self.factors` on the first `solve`.
 
-* **Declarative registrations** match on algebraic meaning: a concrete `GAType` matches any subtype in that algebra (in any blade layout, carrying at least its traits), while a `GATypePattern` or `Trait` matches across all algebras. More specific registrations win and are registered before the general fallbacks they refine:
-  ```python
-  @Extensor.exp.register(PGA3D.gatype.bivector())       # any bivector subtype/layout in PGA3D
-  @Extensor.inverse.register(GATypePattern.map())       # any unary map in any algebra
-  ```
-* **Predicate registrations** take a callable on the full `GAType`s and are tried in registration order *before* declarative matches (`position=0` inserts at the front). Layout-specific closed forms in `numga.extensions.optimized` use predicates that compare `subspaces` (blade order and signs included), falling through to generic implementations on other layouts without conversion overhead:
-  ```python
-  from numga.algebras import PGA3D
-  from numga.extensor import Extensor
-
-  @Extensor.exp.register(
-      lambda t: t.algebra.description == PGA3D.description
-      and t.subspaces == (t.algebra.subspace("yz zx xy wx wy wz"),),
-      position=0,
-  )
-  def exp_pga3_fast(b: Extensor, *, n: int = 15) -> Extensor: ...
-
-  @Extensor.exp.register(lambda t: t.is_bivector and t.is_nilpotent)
-  def exp_nilpotent(b: Extensor, *, n: int = 8) -> Extensor: ...
-  ```
-* **Staging, fields and orientation**: `register(..., staged=True)` invokes the registered function once per `GAType` signature to return a specialized runtime callable; `fields=True` opts into `GAType`s carrying field axes; and `ExtensionMethod(name, takes=..., input_orientation=..., output_orientation=...)` enforces mathematical orientation rules across all implementations of a method (`input_orientation=Orientation.extrinsic` on `exp` and `square_root`; `output_orientation=Orientation.extrinsic` on `norm` and `cos`; computed naturally when omitted).
-
-`inverse` illustrates layered dispatch: unit versors invert by reversion, `CoefficientOrthogonal` maps by transposition, scalars by reciprocal, square maps by matrix inverse, 5D bivectors and trivectors by closed form, and general multivectors by self-product cancellation or subalgebra linear solve. Every numeric escape (`linalg` calls or direct kernel indexing) stays contained inside its registration and returns a typed `Extensor`.
-
-Dense arrays are not required by `Extensor`'s contract either. `PrincipalInertiaPGA3` in `numga.extensions.optimized` stores a principal-frame rigid-body inertia (`Antibivector- <- Bivector+` in `PGA3D`) as four numbers, one mass and three principal moments, while behaving as an `Extensor` everywhere:
+Custom `Extensor` subclasses can also specialize storage for structured dense maps. `PrincipalInertiaPGA3` in `numga.extensions.optimized` stores a principal-frame rigid-body inertia (`Antibivector- <- Bivector+` in `PGA3D`) as four numbers, one mass and three principal moments, while behaving as an `Extensor` everywhere:
 
 ```python
+from numga.algebras import PGA3D
 from numga.extensions.optimized import principal_inertia_pga3
 
 mv3 = NumpyContext(PGA3D).multivector

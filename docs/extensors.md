@@ -1,6 +1,6 @@
 # Extensors
 
-In mathematical terms, an extensor is a multilinear map from multivectors to a multivector. Tensors are a special case of extensors, restricted to inner products of 1-vectors.
+In mathematical terms, an extensor is a multilinear map from multivectors to a multivector ([ca-to-gc](#ref-ca-to-gc)). Tensors are a special case of extensors, restricted to inner products of 1-vectors.
 
 In programming terms, maps are written directly as geometric expressions. On the blackboard one moves freely between a specific vector and the space of all vectors; in numga lowercase names denote values and capitalized names denote spaces in the same algebra, so `v ^ w` is one bivector and `v ^ Vector` is the map from vectors to bivectors.
 
@@ -11,14 +11,15 @@ Geometric relationships are first-class objects alongside the objects they relat
 ## Further reading
 
 * [Tutorials](tutorial/extensors/00-introduction.md): step-by-step introduction to [geometric algebra](tutorial/geometric-algebra/00-introduction.md) and [extensors](tutorial/extensors/00-introduction.md).
-* [`multiple_lenses.md`](../articles/multiple_lenses.md): the three perspectives developed in detail, from maps built from expressions to their geometric meaning and multilinear structure.
-* [`extensor_syntax.md`](extensor_syntax.md): syntax and extension methods as a reference sheet.
-* [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
-* [Complete index of 184 worked examples](../examples/README.md).
+* [Multiple lenses](../articles/multiple_lenses.md): the three perspectives developed in detail, from maps built from expressions to their geometric meaning and multilinear structure.
+* [Extensor syntax and methods](extensor_syntax.md): syntax and extension methods as a reference sheet.
+* [Internals](internals.md): what the library builds from an expression, and what runs when values are supplied.
+* [Documentation index](README.md): orientation, fields, simplicial topologies, WebGPU rendering and conventions.
+* [Complete index of over 200 worked examples](../examples/README.md).
 
 ---
 
-## 1. Multi-View Reconstruction and Camera Alignment
+## 1. Multi-view reconstruction and camera alignment
 
 **Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
 
@@ -38,7 +39,7 @@ curvature = (cones(motion) & motion).sum(axis=0)           # [cameras] Scalar+ <
 
 ---
 
-## 2. Light Past a Rotating Black Hole
+## 2. Light past a rotating black hole
 
 **Notebook**: [`examples/relativity/kerr/kerr.ipynb`](../examples/relativity/kerr/kerr.ipynb)
 
@@ -60,7 +61,7 @@ overlap_gradient = geometry.null_gradient.adjugate()(momentum)                 #
 
 ---
 
-## 3. Snowflake Growth
+## 3. Snowflake growth
 
 **Notebook**: [`examples/thermodynamics/snowflake/snowflake.ipynb`](../examples/thermodynamics/snowflake/snowflake.ipynb)
 
@@ -80,7 +81,7 @@ push = absolute_melting * cells * (entropy_slope & freezing) * held_slope       
 
 ---
 
-## 4. A Rotating Bose–Einstein Condensate
+## 4. A rotating Bose–Einstein condensate
 
 **Notebook**: [`examples/quantum/condensate/condensate.ipynb`](../examples/quantum/condensate/condensate.ipynb)
 
@@ -99,7 +100,7 @@ turns = (ends[..., 0] * ends[..., 1]).normalized().log()                     # T
 
 ---
 
-## 5. Potential Flow past a Joukowski Wing
+## 5. Potential flow past a Joukowski wing
 
 **Notebook**: [`examples/fluids/wing/wing.ipynb`](../examples/fluids/wing/wing.ipynb)
 
@@ -118,7 +119,7 @@ potential_gradient = velocity.dot(Point)(jacobian.inverse())                    
 
 ---
 
-## 6. A Dynamo in a Planet's Core
+## 6. A dynamo in a planet's core
 
 **Notebook**: [`examples/electromagnetism/dynamo/dynamo.ipynb`](../examples/electromagnetism/dynamo/dynamo.ipynb)
 
@@ -136,7 +137,7 @@ kinetic = circulating.adjugate()(momentum(circulating))           # (Amount- <- 
 
 ---
 
-## 7. The Rattleback
+## 7. The rattleback
 
 **Notebook**: [`examples/mechanics/rattleback/rattleback.ipynb`](../examples/mechanics/rattleback/rattleback.ipynb)
 
@@ -156,7 +157,7 @@ effective = pullback(inertia(rolling))                                 # [] Angu
 
 ---
 
-## 8. Gravitational Waves of a Closed Universe
+## 8. Gravitational waves of a closed universe
 
 **Notebook**: [`examples/relativity/gravitational_waves/waves.ipynb`](../examples/relativity/gravitational_waves/waves.ipynb)
 
@@ -165,20 +166,20 @@ effective = pullback(inertia(rolling))                                 # [] Angu
 <p align="center"><img src="../plots/gravitational_waves_quadrupole.gif" alt="A gravitational wave travelling around a closed universe, its stretch drawn on a sphere, deforming triangles of test masses and deflecting light rays" width="300" /></p>
 
 ```python
-ramps = faces / (faces & corners)                                                     # [corners] Plane+[cells]
+gradients = facets / (facets & corners)                                               # [corners] Plane+[cells]
 cone = radial * (radial & Point) + cone_map * squared_lengths                         # (Plane+ <- Point-)[cells]
-pairings = ramps[:, None] & cone.batch().inverse().field()(ramps[None, :])            # [corners, corners] Scalar+[cells]
+pairings = gradients[:, None] & cone.batch().inverse().field()(gradients[None, :])    # [corners, corners] Scalar+[cells]
 restoring = onto_waves(masses.solve(stiffness(strains)))                              # Scalar+[edges]
 strains = (cell_frames.inverse() >> (cone_map * changes)(frame_steps)).cast(Strain)   # (Plane+ <- Point-)[cells]
 ```
 
-* In Regge calculus on curved tetrahedra, each tetrahedron's metric is a map from points to planes, `cone`, and the angles between its faces are its ramps paired through that map's inverse.
+* In Regge calculus on curved tetrahedra, each tetrahedron's metric is a map from points to planes, `cone`, and the angles between its faces are its simplex gradients paired through that map's inverse.
 * The kinetic term is the inertia of space, `masses`, a map from the rates of the squared lengths to their momenta.
 * The closed universe carries a frame everywhere at once. Read in it, a wave is a strain field, and a stretch is the strain read against the metric it changes, `strain(step) & step`.
 
 ---
 
-## 9. Edge States of a Graphene Flake
+## 9. Edge states of a graphene flake
 
 **Notebook**: [`examples/quantum/kane_mele/kane_mele.ipynb`](../examples/quantum/kane_mele/kane_mele.ipynb)
 
@@ -198,7 +199,7 @@ spins = (states * amplitudes).sum(axis=0) >> up_spin                          # 
 
 ---
 
-## 10. Beltrami Fields
+## 10. Beltrami fields
 
 **Notebook**: [`examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb`](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb)
 
@@ -219,7 +220,7 @@ helicity = (raw_helicity + raw_helicity.adjugate()) / 2                 # (Amoun
 
 ---
 
-## 11. Rubber Band Heat Engine
+## 11. Rubber band heat engine
 
 **Notebook**: [`examples/thermodynamics/rubber_band/rubber_band.ipynb`](../examples/thermodynamics/rubber_band/rubber_band.ipynb)
 
@@ -239,7 +240,7 @@ potentials = temperatures * mv.s - forces                                       
 
 ---
 
-## 12. A Scenegraph, a Robot Arm and a Camera, as One Map
+## 12. A scenegraph, a robot arm and a camera, as one map
 
 **Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
 
@@ -259,7 +260,7 @@ local_to_pixel = world_to_pixel(bodies_to_world)                                
 
 ---
 
-## 13. As Rigid As Possible
+## 13. As rigid as possible
 
 **Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
 
@@ -278,7 +279,7 @@ vertices = handle_laplacian.solve(~T10 * H1 * turned_edges + P * targets)  # Poi
 
 ---
 
-## 14. Bending and Twisting of Thin-Walled Beams
+## 14. Bending and twisting of thin-walled beams
 
 **Notebook**: [`examples/mechanics/bending/bending.ipynb`](../examples/mechanics/bending/bending.ipynb)
 
@@ -297,7 +298,7 @@ strains = stiffness.solve(-loads_at_stations(loads, stations))                  
 
 ---
 
-## 15. Magnetic Skyrmions
+## 15. Magnetic skyrmions
 
 **Notebook**: [`examples/quantum/skyrmions/skyrmions.ipynb`](../examples/quantum/skyrmions/skyrmions.ipynb)
 
@@ -318,7 +319,7 @@ charges = -2 * (holonomy.log() & first) / (4 * np.pi)                           
 
 ---
 
-## 16. Twistors and Linked Light
+## 16. Twistors and linked light
 
 **Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
 
@@ -336,7 +337,7 @@ light_rays = ray_readout(twistors, twistors)         # [cases] Ray-
 
 ---
 
-## 17. The Meissner Effect
+## 17. The Meissner effect
 
 **Notebook**: [`examples/electromagnetism/superconductor/superconductor.ipynb`](../examples/electromagnetism/superconductor/superconductor.ipynb)
 
@@ -355,7 +356,7 @@ kinetic = penetration ** 2 * (in_ring_areas * (currents & inertia(currents))).si
 
 ---
 
-## 18. Two-Fluid Hydrodynamics of Superfluid Helium
+## 18. Two-fluid hydrodynamics of superfluid helium
 
 **Notebook**: [`examples/fluids/superfluid/superfluid.ipynb`](../examples/fluids/superfluid/superfluid.ipynb)
 
@@ -377,7 +378,7 @@ flux = velocities.regressive(liquid_parcels).sum(axis=-1)            # Flux-[fac
 
 ---
 
-## 19. Charge and Heat in a Magnetic Field
+## 19. Charge and heat in a magnetic field
 
 **Notebook**: [`examples/thermodynamics/magnetotransport/magnetotransport.ipynb`](../examples/thermodynamics/magnetotransport/magnetotransport.ipynb)
 
@@ -397,7 +398,7 @@ carrying = (densities * drifting.regressive(parcels)).sum(axis=-1)       # [...]
 
 ---
 
-## 20. Laplacian Eigenfunction Fluids
+## 20. Laplacian eigenfunction fluids
 
 **Notebook**: [`examples/fluids/eigen_fluids/eigen_fluids.ipynb`](../examples/fluids/eigen_fluids/eigen_fluids.ipynb)
 
@@ -418,7 +419,7 @@ advection = structure(stream, vorticity)                                        
 
 ---
 
-## 21. Induced Surface Charge
+## 21. Induced surface charge
 
 **Notebook**: [`examples/electromagnetism/induced_charge/induced_charge.ipynb`](../examples/electromagnetism/induced_charge/induced_charge.ipynb)
 
@@ -438,7 +439,7 @@ charge = charge - substep_dt * (outflow_map * potential)                        
 
 ---
 
-## 22. Nematic Liquid Crystals
+## 22. Nematic liquid crystals
 
 **Notebook**: [`examples/fluids/liquid_crystals/liquid_crystals.ipynb`](../examples/fluids/liquid_crystals/liquid_crystals.ipynb)
 
@@ -457,7 +458,7 @@ turned = rotor >> order(rotor << Point)                                       # 
 
 ---
 
-## 23. Quantum Process Tomography in the Projective Bloch Ball
+## 23. Quantum process tomography in the projective Bloch ball
 
 **Notebook**: [`examples/quantum/process_tomography/process_tomography.ipynb`](../examples/quantum/process_tomography/process_tomography.ipynb)
 
@@ -479,7 +480,7 @@ learned_channel = (recovered_outputs * (preparation_dual & Point)).sum(axis=-1) 
 
 ---
 
-## 24. Euler Elastica
+## 24. Euler elastica
 
 **Notebook**: [`examples/mechanics/elastica/elastica.ipynb`](../examples/mechanics/elastica/elastica.ipynb)
 
@@ -500,7 +501,7 @@ load = load - deviation.commutator(load) / 2 + deviation.commutator(deviation.co
 
 ---
 
-## 25. Piezoelectric Bimorph
+## 25. Piezoelectric bimorph
 
 **Notebook**: [`examples/electromagnetism/piezoelectric/piezoelectric.ipynb`](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)
 
@@ -519,7 +520,7 @@ mixed = movement.adjugate()(coupling(voltage))                         # (Plane+
 
 ---
 
-## 26. Black Polarization Sandwiches
+## 26. Black polarization sandwiches
 
 **Notebook**: [`examples/optics/black_sandwich/black_sandwich.ipynb`](../examples/optics/black_sandwich/black_sandwich.ipynb)
 
@@ -540,7 +541,7 @@ double_stack = sandwich(sandwich)                                # [frames] Fiel
 
 ---
 
-## 27. Gravitational-Wave Antenna Patterns
+## 27. Gravitational-wave antenna patterns
 
 **Notebook**: [`examples/relativity/ligo/ligo.ipynb`](../examples/relativity/ligo/ligo.ipynb)
 
@@ -558,7 +559,7 @@ rings = ring + strain_shown * overhead[:, None](ring).dual()                 # [
 
 ---
 
-## 28. Moving Charges
+## 28. Moving charges
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -575,7 +576,7 @@ field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bi
 
 ---
 
-## 29. Magnetic Resonance
+## 29. Magnetic resonance
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -593,7 +594,7 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State+
 
 ---
 
-## 30. Jeffery Orbits
+## 30. Jeffery orbits
 
 **Notebook**: [`examples/fluids/jeffery/jeffery.ipynb`](../examples/fluids/jeffery/jeffery.ipynb)
 
@@ -612,7 +613,7 @@ spin = (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)
 
 ---
 
-## 31. Slip in Metal Crystals
+## 31. Slip in metal crystals
 
 **Notebook**: [`examples/mechanics/slip_systems/slip_systems.ipynb`](../examples/mechanics/slip_systems/slip_systems.ipynb)
 
@@ -633,7 +634,7 @@ axis = (axis.commutator(move) / 2).exp() >> axis                                
 
 ---
 
-## 32. Boiling at Fixed Pressure
+## 32. Boiling at fixed pressure
 
 **Notebook**: [`examples/thermodynamics/phase_change/phase_change.ipynb`](../examples/thermodynamics/phase_change/phase_change.ipynb)
 
@@ -653,7 +654,7 @@ state = state - derivative(gap)(state).solve(gap(state))                        
 
 ---
 
-## 33. Vibration Modes of a Suspended Plate
+## 33. Vibration modes of a suspended plate
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
@@ -672,7 +673,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 34. The Most Likely Trajectory from Odometry
+## 34. The most likely trajectory from odometry
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -690,7 +691,7 @@ residual = residual - direction_forques * step                                # 
 
 ---
 
-## 35. Area Transport through a Collapse
+## 35. Area transport through a collapse
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -707,7 +708,7 @@ adjugate = areas.adjugate()                # [frames] Flux+ <- Flux+
 
 ---
 
-## 36. Satellite Navigation
+## 36. Satellite navigation
 
 **Notebook**: [`examples/relativity/gps/gps.ipynb`](../examples/relativity/gps/gps.ipynb)
 

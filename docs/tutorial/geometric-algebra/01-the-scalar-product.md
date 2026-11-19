@@ -41,3 +41,7 @@ a.scalar_product(b)
 ```text
 32
 ```
+
+---
+
+Previous: [0. Introduction](00-introduction.md) · Next: [2. The geometric product of vectors](02-the-geometric-product.md)

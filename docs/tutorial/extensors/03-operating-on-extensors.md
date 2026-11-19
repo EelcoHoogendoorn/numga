@@ -16,7 +16,7 @@ y   3   0  -1
 z  -2   1   0
 ```
 
-Taking the outer product of the map `a ^ Vector` with a further vector $b$ gives a map from vectors to trivectors:
+Taking the outer product of the map `a ^ Vector` with a further vector `b` gives a map from vectors to trivectors:
 
 ```python
 b = 4 * x + 5 * y + 6 * z
@@ -28,7 +28,7 @@ b = 4 * x + 5 * y + 6 * z
 xyz  3  -6  3
 ```
 
-Bound to a vector $c$, it gives the same as the outer product written out:
+Bound to a vector `c`, it gives the same as the outer product written out:
 
 ```python
 c = 7 * x + 8 * y + 10 * z
@@ -47,7 +47,7 @@ a ^ c ^ b
 3 xyz
 ```
 
-The product of the map `a ^ Vector` with itself takes two vector arguments. Evaluating it on $c$ twice gives the square of $a \wedge c$:
+The product of the map `a ^ Vector` with itself takes two vector arguments. Evaluating it on `c` twice gives the square of `a ^ c`:
 
 ```python
 ((a ^ Vector) * (a ^ Vector))(c, c)
@@ -68,3 +68,7 @@ The product of the map `a ^ Vector` with itself takes two vector arguments. Eval
 In matrix notation, a linear operation $D$ on the output of a map $A$ reads as the product $D A$, taking $v$ to $D(A v)$.
 
 Example: [light's wave surface in a crystal](../../../examples/electromagnetism/fresnel/fresnel.ipynb), where `k ^ material(k ^ Vector)` is the wave map from the potential to the current.
+
+---
+
+Previous: [2. Binding](02-binding.md) · [Contents](00-introduction.md) · Next: [4. Sums of extensors](04-sums-of-extensors.md)

@@ -69,11 +69,19 @@ Extensor(extrinsic vector[4], shape=())
 Extensor(extrinsic vector[4] <- extrinsic vector[4], shape=())
 ```
 
-Binding a field into a field axis sums over the paired input sites so each output site receives every input site's contribution. Composition sums along every path through the shared sites, and `solve` solves the coupled system across all sites and blades at once; solving against a map preserves its inputs, so `stiffness.solve(stiffness)` is the identity on `Vector+[4]`.
+Binding a field into a field axis sums over the paired input sites so each output site receives every input site's contribution. Composition sums along every path through the shared sites, and `.solve()` solves the coupled system across all sites and blades at once; solving against a map preserves its inputs, so `stiffness.solve(stiffness)` is the identity on `Vector+[4]`.
 
 `stiffness.adjoint()` takes each block's adjoint and exchanges output and input sites so the scalar product summed over sites carries over, and `.adjugate()` does the same with `&` read extrinsic first. A map with sites on only one axis maps into or out of a single field: the adjoint of `Vector+[4] <- Vector+` (which spreads one vector across four sites) is `Vector+ <- Vector+[4]` (which sums them back). Independent maps at each site use a batch axis (`.batch()`), whereas `maps.on_diagonal()` places a field of maps `Vector+[4] <- Vector+` along the site diagonal as `Vector+[4] <- Vector+[4]`.
 
-Values and maps without sites act identically at every site: `stiffness.solve(-mv.z)` computes the sag under a uniform load on every bead, `stiffness + Vector` adds `Vector` along the site diagonal (`(stiffness + Vector)(loads) == stiffness(loads) + loads`), `metric.solve(slope)` solves `Scalar+ <- Bivector+[n]` site by site against `metric`, `(turn >> Vector)(stiffness)` turns every output block, and `turn >> stiffness(turn << Vector)` transports the coupled stiffness into the turned frame.
+Values and maps without sites broadcast identically across every site:
+
+| Expression | Meaning |
+| --- | --- |
+| `stiffness.solve(-mv.z)` | solves for the sag under a uniform load at every bead |
+| `stiffness + Vector` | adds `Vector` along the site diagonal (`(stiffness + Vector)(loads) == stiffness(loads) + loads`) |
+| `metric.solve(slope)` | solves `Scalar+ <- Bivector+[n]` site by site against `metric` |
+| `(turn >> Vector)(stiffness)` | turns every output block |
+| `turn >> stiffness(turn << Vector)` | transports the coupled stiffness into the turned frame |
 
 Dense field maps support the full linear-algebra interface across all blocks at once: `lstsq` and `pinv` (leaving singular gauge directions at zero), `inverse`, `det`, `trace`, `cholesky`, `eigh` and `eig` (including against a metric field form, returning modes as a batch of fields), and `svd`. Symmetric forms over fields likewise support `eigh`, `lstsq` and `cholesky`.
 
@@ -113,7 +121,7 @@ Because `energy` is quadratic, a single Newton step recovers `springs.solve(pull
 
 ## Sparse storage
 
-Across a simplicial topology or a lattice, most site pairs do not interact directly: a bead couples to its neighbours and a vertex to its incident edges. `Sparse` stores plain-number couplings (such as incidence signs on a simplicial `Topology`, [Simplicial topologies](topology.md), transposed via `.adjugate()`), while `SparseExtensor` stores typed `Extensor` cells, each linking an input site (`columns[k]`) to an output site (`rows[k]`), and acts on the same fields as a dense field map:
+Across a simplicial topology or a lattice, most site pairs do not interact directly: a bead couples to its neighbours and a vertex to its incident edges. `Sparse` stores plain-number couplings (such as incidence signs on a simplicial `Topology`, [Simplicial topologies](topology.md), transposed via `.adjugate()`), while `SparseExtensor` stores typed `Extensor` cells linking each input site (`columns[k]`) to an output site (`rows[k]`), acting on the same fields as a dense field map:
 
 ```python
 from numga.sparse import Sparse, SparseExtensor, spdiag
@@ -131,9 +139,9 @@ print((sparse_stiffness.solve(loads) - displacements).norm().batch().max() < 1e-
 True
 ```
 
-`cells` has shape `[..., couplings]`, with any leading axes indexing separate sparse maps that share one sparsity pattern (`S[..., None]`), and `shape` is `(output_sites, input_sites)`. Plain-number `Sparse` maps belong to no algebra until they meet a field, a `GAType` or a `SparseExtensor`, where their weights become `Scalar` cells of that algebra. Adding a field or a site-free map/value to a square sparse map adds along the diagonal: `(Vector - S)(f) == f - S(f)` and `(~ends * ends + anchors) * f == ~ends * ends * f + anchors * f`.
+`cells` has shape `[..., couplings]`, with any leading axes indexing separate sparse maps that share one sparsity pattern (`S[..., None]`), and `shape` is `(output_sites, input_sites)`. Plain-number `Sparse` maps carry no algebra until they meet a field, a `GAType` or a `SparseExtensor`, where their weights promote to `Scalar` cells of that algebra. Adding a field or a site-free value or map to a square sparse map adds along the diagonal: `(Vector - S)(f) == f - S(f)` and `(~ends * ends + anchors) * f == ~ends * ends * f + anchors * f`.
 
-A sparse map couples sites through whichever product an expression writes: `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` multiply each cell with the element at its column and sum at the rows, while a field on the left (`stretches * ends`) pairs with the rows. Two sparse maps multiply their cells along shared sites, and multiplying by a `GAType` (`(~ends * ends) * Vector`) produces map cells that apply (`sparse_stiffness(positions)`) and compose. Calling a field of maps `maps` (`Vector+[4] <- Vector+`) on a sparse map (`maps(sparse_stiffness)`) composes each site's map with that row's cells.
+A sparse map couples sites through whichever product an expression writes: `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` multiply each cell with the element at its column and sum at the rows, while a field on the left (`stretches * ends`) pairs with the rows. Two sparse maps multiply their cells along shared sites, multiplying by a `GAType` (`(~ends * ends) * Vector`) produces map cells that apply and compose, and calling a field of maps (`maps(sparse_stiffness)`) composes each site's map with that row's cells.
 
 Operations that reverse product order transpose the couplings from rows to columns; all other elementwise operations act cell by cell:
 
@@ -145,6 +153,16 @@ Operations that reverse product order transpose the couplings from rows to colum
 
 Because `~(a * b) == ~b * ~a`, reversing a multivector-celled product swaps the coupled index (`~(ends * positions) == ~positions * ~ends`), so `~ends * ends` builds the string's graph Laplacian and `d0.adjugate() * spdiag(edge_weights) * d0` builds a weighted Laplacian from plain-number coboundary differences `d0` and per-edge weights. On map cells, `~` reverses each cell's output while keeping its row and column, whereas `.adjoint()` and `.adjugate()` reverse composition and transpose the couplings.
 
-`spdiag(field)` (alias for `SparseExtensor.from_diagonal(field)`, with `maps.on_diagonal()` on a field of maps) places each site's value or map on its own diagonal cell for products, solves or inverses (`maps.on_diagonal().solve(f)`), `.diagonal()` extracts the diagonal back as a field, `Sparse.selection(indices, size)` builds a plain-number sparse gather from an index array, and `.to_dense()` materializes the dense `Out[rows] <- In[cols]` extensor. Sparse `solve`, `lstsq` and `eigh` take map cells and multivector fields and dispatch through SciPy on the NumPy backend, with `eigh` returning modes as a batch of fields.
+Common sparse constructors and conversions:
+
+| Helper / method | Result |
+| --- | --- |
+| `spdiag(field)` | places each site's value or map on its own diagonal cell (alias for `SparseExtensor.from_diagonal(field)`) |
+| `maps.on_diagonal()` | diagonal sparse or dense map from a field of maps (`maps.on_diagonal().solve(f)`) |
+| `sparse.diagonal()` | extracts the diagonal cells back as a field |
+| `Sparse.selection(indices, size)` | plain-number sparse gather from an index array |
+| `sparse.to_dense()` | materializes the dense `Out[rows] <- In[cols]` extensor |
+
+Sparse `solve`, `lstsq` and `eigh` take map cells and multivector fields and dispatch through SciPy on the NumPy backend, with `eigh` returning modes as a batch of fields.
 
 In block-matrix notation a sparse extensor of multivector cells is a sparse matrix over the geometric algebra, and its reverse is the conjugate transpose with reversion as the conjugation.

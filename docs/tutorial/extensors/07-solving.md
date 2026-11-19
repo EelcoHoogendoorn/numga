@@ -2,7 +2,7 @@
 
 Applying a map gives the output for a known input. Solving finds the input that gives a known output.
 
-For example, applying `A` to a vector $b$ gives an output $w$:
+For example, applying `A` to a vector `b` gives an output `w`:
 
 ```python
 b = 4 * x + 5 * y + 6 * z
@@ -10,7 +10,7 @@ A = Vector + (Vector | (x ^ y))
 w = A(b)
 ```
 
-Solving `A` for $w$ gives back $b$:
+Solving `A` for `w` gives back `b`:
 
 ```python
 A.solve(w) - b
@@ -38,7 +38,7 @@ y  0  0  0
 z  0  0  0
 ```
 
-Binding $w$ into it gives $b$:
+Binding `w` into it gives `b`:
 
 ```python
 A.solve(Vector)(w) - b
@@ -70,3 +70,7 @@ z   0   0   0
 In matrix notation, solving reads as the linear system $A v = w$, solved for $v$. The inverse is $A^{-1}$, and solving against a matrix $B$ gives $A^{-1} B$.
 
 Example: [induced dipoles in a cluster of atoms](../../../examples/electromagnetism/induced_dipoles/induced_dipoles.ipynb), where the dipoles of all the atoms, each driven by the fields of the others, follow from one solve.
+
+---
+
+Previous: [6. Composition](06-composition.md) · [Contents](00-introduction.md) · Next: [8. Moving maps](08-moving-maps.md)

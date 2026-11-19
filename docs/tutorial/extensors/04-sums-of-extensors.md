@@ -62,3 +62,7 @@ xy  0   0  0
 In matrix notation, the sum reads as $A + B$, with $(A + B) v = A v + B v$.
 
 Example: [Loop subdivision of weighted points](../../../examples/surfaces/projective_loop/projective_loop.ipynb), where a perspective is the identity map plus one more term, `Point + centre * (axis & Point) * strength`.
+
+---
+
+Previous: [3. Operating on extensors](03-operating-on-extensors.md) · [Contents](00-introduction.md) · Next: [5. Dyads](05-dyads.md)

@@ -14,3 +14,7 @@ The products of the eight basis elements of three-dimensional space, $1$, $x$, $
 | $xyz$   | $xyz$   | $yz$    | $-xz$   | $xy$    | $-z$    | $y$     | $-x$    | $-1$    |
 
 Every entry is one of the eight, up to sign. The products of basis vectors never lead to anything new: the eight are closed under the geometric product, and form the whole algebra of three-dimensional space. Each is a basis element of that algebra, and every element of it is a sum of the eight with coefficients.
+
+---
+
+Previous: [7. Grades and multivectors](07-grades-and-multivectors.md) · [Contents](00-introduction.md) · Next: [9. Summary](09-summary.md)

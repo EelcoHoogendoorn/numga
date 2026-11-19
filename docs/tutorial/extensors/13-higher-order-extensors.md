@@ -8,7 +8,7 @@ For example, a map from three vectors to a vector:
 T = 2 * Vector * (Vector | Vector) + 2 * (Vector | Vector) * Vector - (Vector | (Vector ^ Vector))
 ```
 
-Binding $z$ as its first and third arguments gives a map from vectors to vectors:
+Binding `z` as its first and third arguments gives a map from vectors to vectors:
 
 ```python
 T(z, Vector, z)
@@ -21,7 +21,7 @@ y  0  1  0
 z  0  0  4
 ```
 
-Binding $x + y$ as the same two arguments gives another map:
+Binding `x + y` as the same two arguments gives another map:
 
 ```python
 T(x + y, Vector, x + y)
@@ -44,7 +44,7 @@ T(x + y, Vector, x + y).eigh()[0]
 [2  2  8]
 ```
 
-`T(x, y, Vector)` is the linear map taking $v$ to `T(x, y, v)`:
+`T(x, y, Vector)` is the linear map taking `v` to `T(x, y, v)`:
 
 ```python
 T(x, y, Vector)
@@ -60,3 +60,7 @@ z  0  0  0
 In index notation, a map taking three vector arguments reads as a tensor with four indices, $T^i{}_{jkl}$, and binding a vector as contracting it with the corresponding index.
 
 Examples: [elastic waves in crystals](../../../examples/mechanics/crystal_waves/crystal_waves.ipynb), where binding a heading to the stiffness gives the map whose eigenvalues determine wave speeds; [gravitational wave curvature](../../../examples/relativity/curvature/curvature.ipynb), where binding an observer's velocity to spacetime curvature gives the tidal stretching of a ring of beads; and [bending of a composite strip](../../../examples/mechanics/composite_strip/composite_strip.ipynb), where the laminate's strain is a function of its state.
+
+---
+
+Previous: [12. Trace and contraction](12-trace-and-contraction.md) · [Contents](00-introduction.md) · Next: [14. Outermorphisms and the determinant](14-outermorphisms-and-the-determinant.md)
