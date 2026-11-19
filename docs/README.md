@@ -1,6 +1,6 @@
 # Documentation
 
-This directory holds the tutorials, user guides and reference pages for `numga`. For the conceptual motivation behind orientation, the regressive product, complementarity, discrete differential geometric algebra and coupled thermodynamics, see the [articles](../articles/README.md); for runnable models across geometry and physics, see the [examples](../examples/README.md).
+This directory holds the tutorials, user guides and reference pages for numga. For the conceptual motivation behind orientation, the regressive product, complementarity, discrete differential geometric algebra and coupled thermodynamics, see the [articles](../articles/README.md); for runnable models across geometry and physics, see the [examples](../examples/README.md).
 
 ## Overview and tutorials
 
@@ -10,10 +10,10 @@ This directory holds the tutorials, user guides and reference pages for `numga`.
 
 ## Guides and reference
 
-* [Extensor syntax and operations](extensor_syntax.md): algebras, subspaces, `GAType`, partial application, composition, linear algebra solvers and backend contexts.
+* [Extensor syntax and methods](extensor_syntax.md): algebras, subspaces, `GAType`, partial application, composition, linear algebra solvers and backend contexts.
 * [Orientation in numga](orientation.md): how intrinsic (`-`) and extrinsic (`+`) orientations are typed, propagated and statically checked.
-* [Conventions](conventions.md): the identities defining products, duals, norms, maps, forms and solvers.
 * [Fields and field maps](fields.md): site axes on extensors, pointwise and coupled maps, and `Sparse` operators.
 * [Simplicial topologies](topology.md): combinatorial simplicial complexes and their incidence, boundary, coboundary and dual operators.
 * [WebGPU shaders and rendering](rendering.md): compiling `Extensor` kernels to WGSL compute shaders and rendering 2D and 3D geometry on the GPU.
-* [Internals](internals.md): symbolic kernel compilation, subspace registries, binding plans and backend dispatch.
+* [Conventions](conventions.md): the identities defining products, duals, norms, maps, forms and solvers.
+* [Internals](internals.md): type layout, symbolic compilation, method dispatch, backends and custom extensor representations.

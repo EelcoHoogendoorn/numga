@@ -29,3 +29,7 @@ xz
 ```
 
 Example: [fractals of the even subalgebra](../../../examples/math/fractals/fractals.ipynb), where a scalar plus a multiple of $xy$ multiplies as a complex number, since $xy$ squares to $-1$, and squaring it over and over draws the Mandelbrot set.
+
+---
+
+Previous: [3. The scalar product within the geometric product](03-the-scalar-product-within-the-geometric-product.md) · [Contents](00-introduction.md) · Next: [5. The algebra of scalars and bivectors](05-the-algebra-of-scalars-and-bivectors.md)

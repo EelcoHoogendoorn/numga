@@ -49,3 +49,7 @@ The form `Vector | moment` takes two vectors, and its contraction pairs them thr
 In index notation, the trace reads as an index repeated between an upper and a lower position, $M^i{}_i$, and the contraction of two lower indices as one through the metric, $g^{ij} F_{ij}$.
 
 Example: [vortices in a plane of fluid](../../../examples/fluids/vortices/vortices.ipynb), where the trace and the contraction of the flow's derivative read off how it spreads and how it turns.
+
+---
+
+Previous: [11. Eigenvalues and singular values](11-eigenvalues-and-singular-values.md) · [Contents](00-introduction.md) · Next: [13. Higher-order extensors](13-higher-order-extensors.md)

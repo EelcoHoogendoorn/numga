@@ -11,7 +11,7 @@ The tutorial is an entry point, not an exhaustive treatment. It covers the opera
 5. Geometric calculus, in which the derivative is a vector, and its geometric product with a field gives the divergence and the curl together.
 6. Extensors, linear maps written in the algebra, which the [extensor tutorial](../extensors/00-introduction.md) takes up from here.
 
-The definitions numga uses for these operations, the regressive product and the dual among them, are collected in the [conventions](../../conventions.md).
+The definitions numga uses for these operations, the regressive product and the dual among them, are collected in [Conventions](../../conventions.md), and [Orientation in numga](../../orientation.md) sets out how intrinsic and extrinsic orientations are typed and checked. The [conceptual articles](../../../articles/README.md) develop the motivation behind orientation, the regressive product and complementarity in depth.
 
 Applications run from geometry and mechanics to relativity and quantum physics. A few runnable examples that stay close to the algebra itself:
 
@@ -30,3 +30,7 @@ The [index of examples](../../../examples/README.md) lists the rest. The books b
 - C. Gunn and S. De Keninck, *Geometric Algebra for Computer Graphics*, SIGGRAPH course, 2019, and [bivector.net](https://bivector.net). Projective geometric algebra for points, lines, planes and rigid motions.
 - A. Macdonald, *Linear and Geometric Algebra*, 2010. Geometric algebra alongside the linear algebra of a first course.
 - D. Hestenes and G. Sobczyk, *Clifford Algebra to Geometric Calculus*, Reidel, 1984. The full mathematical account, including calculus and linear functions of multivectors.
+
+---
+
+Previous: [16. Signature](16-signature.md) · [Contents](00-introduction.md)

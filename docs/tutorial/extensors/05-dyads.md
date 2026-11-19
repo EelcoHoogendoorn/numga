@@ -1,6 +1,6 @@
 # 5. Dyads
 
-A linear map is determined by its outputs on a basis. The scalar map `x | Vector` picks out the coefficient of $x$; multiplying it by a chosen output assigns that output to $x$. For example:
+A linear map is determined by its outputs on a basis. The scalar map `x | Vector` picks out the coefficient of `x`; multiplying it by a chosen output assigns that output to `x`. For example:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -14,7 +14,7 @@ y  2  0  0
 z  3  0  0
 ```
 
-The map sends $x$ to $a$, and $y$ and $z$ to zero. Adding contributions for $y$ and $z$ assigns their outputs independently:
+The map sends `x` to `a`, and `y` and `z` to zero. Adding contributions for `y` and `z` assigns their outputs independently:
 
 ```python
 b = 4 * x + 5 * y + 6 * z
@@ -30,7 +30,7 @@ y  2  5   8
 z  3  6  10
 ```
 
-The map `A` sends $x$ to $a$, $y$ to $b$ and $z$ to $c$. Linearity determines its output for every other input. For example:
+The map `A` sends `x` to `a`, `y` to `b` and `z` to `c`. Linearity determines its output for every other input. For example:
 
 ```python
 A(2 * x - y + z) - (2 * a - b + c)
@@ -41,10 +41,14 @@ A(2 * x - y + z) - (2 * a - b + c)
   0  0  0
 ```
 
-The outputs $a$, $b$ and $c$ can be chosen freely, so this construction can give any linear map on vectors. They can also have any grade: multiplying linear scalar measurements by multivectors and adding the resulting maps builds every linear map from vectors to multivectors.
+The outputs `a`, `b` and `c` can be chosen freely, so this construction can give any linear map on vectors. They can also have any grade: multiplying linear scalar measurements by multivectors and adding the resulting maps builds every linear map from vectors to multivectors.
 
 Each term in the sum has one fixed output, scaled by a scalar product with the input. Such a one-direction map is a dyad: every output lies along its fixed output element, and sums of dyads build any linear map. The scalar factor can come from the inner product or from the regressive product `&` with a complementary grade.
 
 In matrix notation, the first dyad is $a e_x^T$, where $e_x^T$ extracts the first input coordinate. The sum $A$ has the columns $a$, $b$ and $c$.
 
 Examples: [tides on a star cluster](../../../examples/mechanics/tides/tides.ipynb), where the stars' spread is a sum of dyads of their offsets; [bending of a beam](../../../examples/mechanics/bending/bending.ipynb), where each fibre contributes a dyad `fibre * (Strain & fibre)` and their sum is the beam's stiffness; and [the cone of a rational Bézier curve](../../../examples/geometry/bezier/bezier.ipynb), where the conic's polarity map is built from dyads of the control triangle's planes.
+
+---
+
+Previous: [4. Sums of extensors](04-sums-of-extensors.md) · [Contents](00-introduction.md) · Next: [6. Composition](06-composition.md)

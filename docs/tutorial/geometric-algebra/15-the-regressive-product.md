@@ -1,8 +1,6 @@
 # 15. The regressive product
 
-An element and an element of complementary grade can together fill the volume. The regressive product reads how much of the unit volume they span.
-
-Numga writes it as `&`:
+Two elements of complementary grades fill the volume together, and their regressive product reads how much of the unit volume they span. In numga it is written `&`:
 
 ```python
 direction = x.dual()
@@ -13,13 +11,13 @@ x & direction
 1
 ```
 
-The pairing is a scalar because the grades add to the algebra's dimension. Here an extrinsic vector defines a linear measurement on intrinsic directions; positions and wavevectors use this pairing for phase, and displacements and forces for work.
+Because the grades add to the algebra's dimension, the result is a scalar: an extrinsic vector defines a linear measurement on intrinsic antivectors.
 
-For other grades the regressive product takes the outer product of the volume complements and takes the inverse complement of the result. If $C$ is the right volume complement, chosen on each basis blade $e$ so that $e \wedge C(e)$ is the positive unit volume, the definition is
+For general grades, the regressive product takes the outer product of the volume complements and applies the inverse complement to the result. Writing $C$ for the right volume complement, chosen on each basis blade $e$ so that $e \wedge C(e)$ is the positive unit volume, the definition is
 
-$$A \vee B = C^{-1}\big(C(A) \wedge C(B)\big).$$
+$$A \vee B = C^{-1}\big(C(A) \wedge C(B)\big)$$
 
-In this tutorial's positive Euclidean signature, `.dual()` is that complement. For $xy$ and $yz$:
+In the positive Euclidean signature of this tutorial, `.dual()` agrees with that complement. For $xy$ and $yz$:
 
 ```python
 ((x ^ y).dual() ^ (y ^ z).dual()).dual_inverse()
@@ -29,7 +27,7 @@ In this tutorial's positive Euclidean signature, `.dual()` is that complement. F
 y
 ```
 
-The same construction written directly:
+The same product written directly:
 
 ```python
 (x ^ y) & (y ^ z)
@@ -39,7 +37,7 @@ The same construction written directly:
 y
 ```
 
-The regressive product of $xy$ and $yz$ is $y$, the basis vector the two share. The same for the bivectors $a \wedge b$ and $b \wedge d$:
+The regressive product of $xy$ and $yz$ is $y$, the basis vector the two share. For the bivectors $a \wedge b$ and $b \wedge d$:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -54,6 +52,10 @@ d = 7 * x + 8 * y + 10 * z
 
 The result is $-3 b$, a multiple of $b$, the vector the two bivectors share.
 
-The volume complement needs neither lengths nor an inverse metric, so `&` has the same definition in a spacetime or projective algebra. A metric dual can have different signs from the volume complement; the formula using `.dual()` above relies on the Euclidean signature.
+Because the volume complement uses neither lengths nor an inverse metric, `&` keeps the same definition in spacetime and projective algebras alike. A metric dual can differ from the volume complement by signs, so the formula using `.dual()` above relies on the positive Euclidean signature.
 
 Example: [a pose from a point, a line and a plane](../../../examples/geometry/three_point_pose/three_point_pose.ipynb), where the joins of three marker points into a line and a plane recover a rigid motion.
+
+---
+
+Previous: [14. Duality](14-duality.md) · [Contents](00-introduction.md) · Next: [16. Signature](16-signature.md)

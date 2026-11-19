@@ -23,7 +23,9 @@ print((V, E, F), sheet.elements[2][0].tolist())
 
 ## Sub-simplex incidences
 
-On each simplex, plain-number `Sparse` maps select either its sub-simplices (`incidence[n, m]`) or the vertices that lie opposite each sub-simplex (`off[n, m]`). Calling a `Sparse` map on a NumPy array gathers values along its columns and sums into its rows, while multiplying two `Sparse` maps (`S * T`) composes them. Above dimension one, facet `i` omits corner `i`, so corner values gathered by `incidence[-1, 0]` align column for column with the opposite-facet vertices gathered by `off[-1, 0]`:
+On each simplex, plain-number `Sparse` maps select either its sub-simplices (`incidence[n, m]`) or the vertices that lie opposite each sub-simplex (`off[n, m]`). Calling a `Sparse` map on a NumPy array gathers values along its columns and sums into its rows, while multiplying two `Sparse` maps (`S * T`) composes them.
+
+Above dimension one, facet `i` omits corner `i`, so corner values gathered by `incidence[-1, 0]` align column for column with the opposite-facet vertices gathered by `off[-1, 0]`:
 
 ```python
 labels = np.arange(float(V))
@@ -38,11 +40,11 @@ print(opposite[:, :, 0].astype(int).tolist())
 [[1, 0, 0], [4, 4, 1]]
 ```
 
-On triangle `0` (`[0, 1, 4]`), corner `0` stands opposite edge `[1, 4]`, corner `1` opposite `[0, 4]`, and corner `4` opposite `[0, 1]`. Two companion maps track global simplex storage. `on[n, m]` reads each sub-simplex's vertices in increasing global index order, and `oriented[n, m]` weights each incidence by `+1` or `-1` according to whether the local sub-simplex agrees with its stored orientation in `elements[m]`.
+On triangle `0` (`[0, 1, 4]`), corner `0` stands opposite edge `[1, 4]`, corner `1` opposite `[0, 4]`, and corner `4` opposite `[0, 1]`. Two companion maps track global simplex storage: `on[n, m]` reads each sub-simplex's vertices in increasing global index order, and `oriented[n, m]` weights each incidence by `+1` or `-1` according to whether the local sub-simplex agrees with its stored orientation in `elements[m]`.
 
 ## Boundaries, exterior derivatives and subsets
 
-Each `(k + 1)`-simplex induces `+1` and `-1` orientations on its facets (`-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding and `-1` against it, and `+1` on outward tetrahedron faces). Those signed facet incidences live on `boundary[k + 1, k]`, and summing across the local facets gives the discrete exterior derivative `d[k] = boundary[k + 1, k].sum(axis=0)`, which satisfies `d[k + 1] * d[k] == 0` because every shared ridge cancels around the boundary of a boundary:
+Each `(k + 1)`-simplex induces `+1` and `-1` orientations on its facets: `-1` at an edge's tail and `+1` at its head, `+1` along a triangle's winding and `-1` against it, and `+1` on outward tetrahedron faces. Those signed facet incidences live on `boundary[k + 1, k]`. Summing across local facets gives the discrete exterior derivative `d[k] = boundary[k + 1, k].sum(axis=0)`, which satisfies `d[k + 1] * d[k] == 0` because every shared ridge cancels around the boundary of a boundary:
 
 ```python
 d0, d1 = sheet.d
@@ -69,7 +71,9 @@ print(free.adjugate()(np.array([99.0])).astype(int).tolist())
 
 ## The combinatorial dual
 
-Every simplicial complex has a combinatorial dual (`sheet.dual`) that reverses simplex grading by codimension. Each top simplex becomes a dual vertex, each facet becomes a dual edge (`dual.incidence[1, 0]`), each codimension-two ridge becomes a dual face, and each primal vertex becomes a dual cell. Because dual elements above edges are general polytopes with variable face counts rather than simplices, `DualTopology` carries coboundary operators directly as the adjugates of the complementary primal coboundaries (`dual.d[k] == sheet.d[n_dim - 1 - k].adjugate()`):
+Every simplicial complex has a combinatorial dual (`sheet.dual`) that reverses simplex grading by codimension: each top simplex becomes a dual vertex, each facet becomes a dual edge (`dual.incidence[1, 0]`), each codimension-two ridge becomes a dual face, and each primal vertex becomes a dual cell.
+
+Because dual elements above edges are general polytopes with variable face counts rather than simplices, `DualTopology` carries coboundary operators directly as the adjugates of the complementary primal coboundaries (`dual.d[k] == sheet.d[n_dim - 1 - k].adjugate()`):
 
 ```python
 dual = sheet.dual

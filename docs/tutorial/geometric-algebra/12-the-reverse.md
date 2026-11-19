@@ -43,3 +43,7 @@ b = 4 * x + 5 * y + 6 * z
 The product of a product of vectors with its reverse is a scalar, the product of the squares of the vectors.
 
 Example: [close Kepler passages](../../../examples/mechanics/kepler/kepler.ipynb), where a spinor times its reverse is the distance from the attracting centre, and its sandwich places the orbiting body.
+
+---
+
+Previous: [11. The inner products](11-the-inner-products.md) · [Contents](00-introduction.md) · Next: [13. Inverses](13-inverses.md)

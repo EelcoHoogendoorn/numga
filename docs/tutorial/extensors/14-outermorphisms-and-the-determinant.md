@@ -1,6 +1,6 @@
 # 14. Outermorphisms and the determinant
 
-A map on vectors extends to every grade by mapping each factor of an outer product. The extension is the outermorphism: on bivectors it takes $a \wedge c$ to $A(a) \wedge A(c)$, and on the pseudoscalar, which has one dimension, it is a multiple of the identity, the determinant. Of all maps on bivectors, the outermorphism is the one the map on vectors determines.
+A map on vectors extends to every grade by mapping each factor of an outer product. The extension is the outermorphism: on bivectors it takes `a ^ c` to `A(a) ^ A(c)`, and on the pseudoscalar, which has one dimension, it is a multiple of the identity, the determinant. Of all maps on bivectors, the outermorphism is the one the map on vectors determines.
 
 For example, for the map `A` below, the outermorphism on bivectors maps the outer product of two vectors to the outer product of their images:
 
@@ -79,3 +79,7 @@ The outermorphism acts on extrinsic wedges `a ^ c`, while the adjugate acts on t
 In matrix notation, with each bivector named by the basis vector it lacks, the outermorphism on bivectors reads as the cofactor matrix $C$ of $A$, the outermorphism on the pseudoscalar as $\det A$, and the relation with the adjugate as Cramer's rule, $\det(A)\, C^{-1} = A^T$.
 
 Example: [areas and volume through a deformation](../../../examples/mechanics/area_transport/area_transport.ipynb), where the outermorphism carries oriented areas, and the determinant the volume, through a deformation that may collapse space flat.
+
+---
+
+Previous: [13. Higher-order extensors](13-higher-order-extensors.md) · [Contents](00-introduction.md) · Next: [15. Further reading](15-further-reading.md)

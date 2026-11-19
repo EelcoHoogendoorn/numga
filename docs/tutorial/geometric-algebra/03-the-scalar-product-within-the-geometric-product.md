@@ -45,3 +45,7 @@ The bivector part is what is discarded:
 ```
 
 The algebraic structure of the scalar product is therefore all still there. Everything that can be done with the scalar product can be done with the geometric product, by discarding its bivector part: vector algebra is a subset of geometric algebra.
+
+---
+
+Previous: [2. The geometric product of vectors](02-the-geometric-product.md) · [Contents](00-introduction.md) · Next: [4. Products of bivectors](04-products-of-bivectors.md)

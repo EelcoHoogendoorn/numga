@@ -1,6 +1,6 @@
 # 14. Duality
 
-Each basis blade has a complementary blade: the directions it lacks to fill the whole space. In three dimensions, a vector's complement is a bivector, a bivector's complement a vector. Numga's dual takes an element into that complementary space:
+Each basis blade has a complementary blade, built from the basis vectors it lacks to fill the whole space. In three dimensions, a vector's complement is a bivector and a bivector's complement is a vector. In numga, `.dual()` maps an element into that complementary space:
 
 ```python
 x.dual()
@@ -10,7 +10,7 @@ x.dual()
 yz
 ```
 
-The sign of a complement matters. In the Euclidean algebra of this tutorial, each unit basis blade followed by its dual in the outer product gives the positive unit volume:
+The sign of a complement is fixed by the unit volume. In the Euclidean algebra of this tutorial, each unit basis blade followed by its dual in the outer product gives the positive unit volume $xyz$:
 
 ```python
 y.dual()
@@ -28,7 +28,7 @@ y ^ y.dual()
 xyz
 ```
 
-The dual acts linearly on sums and takes grade $k$ to grade $n-k$ in an algebra of dimension $n$. The complementary blade of $xy$ is $z$, with its sign set by the order $x,y,z$:
+The dual acts linearly on sums and sends grade $k$ to grade $n - k$ in an algebra of dimension $n$. For $xy$, the complementary blade is $z$:
 
 ```python
 (x ^ y).dual()
@@ -38,7 +38,7 @@ The dual acts linearly on sums and takes grade $k$ to grade $n-k$ in an algebra 
 z
 ```
 
-There is also a change of orientation. The basis vector `x` is extrinsic; `x.dual()` is intrinsic. In three dimensions this intrinsic grade-two element is an antivector. Complementary grade and complementary orientation are both part of its type. [Why orientation](../../../articles/orientation.md) shows the geometric distinction through reflections.
+Taking the dual also flips orientation: the basis vector `x` is extrinsic, while `x.dual()` is intrinsic, an antivector of grade two in three dimensions. Both grade and orientation are tracked in the type ([Orientation in numga](../../orientation.md), [Why orientation](../../../articles/orientation.md)).
 
 The inverse dual returns to the starting element:
 
@@ -51,8 +51,10 @@ direction.dual_inverse() - x
 0
 ```
 
-Complementarity determines which spaces pair; a dual map chooses how a particular element is sent into the complementary space. In a nondegenerate algebra, numga's `.dual()` is the metric dual, carrying the metric's signs as well as the blade complement. With the positive Euclidean signature used here, it agrees with the volume complement. In the standard projective algebras, whose metric is degenerate, `.dual()` remains invertible as a blade complement; it does not invert the degenerate metric. The [signature chapter](16-signature.md) introduces these other algebras.
-
-The [regressive product](15-the-regressive-product.md) uses volume complements to pair elements without needing a metric.
+In a nondegenerate algebra, `.dual()` is the metric dual, carrying the metric's signs together with the blade complement. In the positive Euclidean signature used here, it agrees with the volume complement; in projective algebras with a degenerate metric, `.dual()` remains invertible as a blade complement without inverting the metric.
 
 Example: [a crystal's diffraction peaks under a deformation](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb), where positions are intrinsic antivectors and wavevectors are extrinsic vectors, paired into phases.
+
+---
+
+Previous: [13. Inverses](13-inverses.md) · [Contents](00-introduction.md) · Next: [15. The regressive product](15-the-regressive-product.md)

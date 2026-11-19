@@ -39,3 +39,7 @@ Selecting a grade keeps the part of a multivector of that grade and discards the
 ```text
 -3 xyz
 ```
+
+---
+
+Previous: [6. The basis elements of three-dimensional space](06-the-basis-elements-of-three-dimensional-space.md) · [Contents](00-introduction.md) · Next: [8. The multiplication table of three-dimensional space](08-the-multiplication-table-of-three-dimensional-space.md)

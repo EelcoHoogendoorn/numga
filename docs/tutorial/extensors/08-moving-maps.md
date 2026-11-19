@@ -22,7 +22,7 @@ moved(rotor >> c) - (rotor >> A(c))
   0  0  0
 ```
 
-Rotating an input back into the frame of $A$, applying $A$ there, and rotating its output forward gives the same moved map:
+Rotating an input back into the frame of `A`, applying `A` there, and rotating its output forward gives the same moved map:
 
 ```python
 (rotor >> A(rotor << Vector)) - moved
@@ -35,7 +35,7 @@ y  0  0  0
 z  0  0  0
 ```
 
-The map `rotor >> Vector` rotates vectors. Moving $A$ is therefore a composition of three maps:
+The map `rotor >> Vector` rotates vectors. Moving `A` is therefore a composition of three maps:
 
 ```python
 rotation = rotor >> Vector
@@ -68,3 +68,7 @@ Rotations and the maps they move are built in the same way: a map both acts on i
 In matrix notation, for a map from vectors to vectors, rotating both sides reads as $R A R^{-1}$. Rotating only the output reads as $R A$, and rotating only the input back as $A R^{-1}$.
 
 Example: [rigid bodies on a sphere](../../../examples/quadrics/elliptic_physics/s2_physics.ipynb), where every body's shape, a map between points and planes, is placed by its motor.
+
+---
+
+Previous: [7. Solving](07-solving.md) · [Contents](00-introduction.md) · Next: [9. The adjoint](09-the-adjoint.md)

@@ -1,6 +1,6 @@
 # WebGPU shaders and rendering
 
-This document introduces WebGPU shaders and scene rendering in numga. Algebraic expressions compile directly into GPU shaders, and cameras read geometric objects in their own algebra, so the examples draw 2D figures and 3D scenes without unpacking coordinates in Python.
+This document introduces WebGPU shaders and scene rendering in numga. Algebraic expressions compile directly into GPU shaders, and cameras read geometric objects in their own algebra, so figures and 3D scenes render without unpacking coordinates in Python.
 
 ```python
 import numpy as np
@@ -10,8 +10,8 @@ from numga.algebras import PGA2D
 from numga.wgsl import Shader
 
 mv = NumpyContext(PGA2D).multivector
-Plane, Point = PGA2D.gatype.vector(), PGA2D.gatype.antivector()
-Motor = PGA2D.gatype.rotor()
+Plane, Point = PGA2D.gatype.vector(), PGA2D.gatype.antivector()          # Plane+, Point-
+Motor = PGA2D.gatype.rotor()                                             # Motor+
 Quadric = PGA2D.gatype((Plane, Point))                                   # Plane+ <- Point-
 
 source = """
@@ -32,7 +32,7 @@ fn step(@builtin(global_invocation_id) id: vec3<u32>) {
 
 shader = Shader(source, PGA2D, dict(Point=Point, Motor=Motor, Quadric=Quadric), {})
 turn = (0.4 * mv.xy + 0.2 * mv.xw).exp()                                 # [] Motor+
-unit_disk = mv.x * (mv.x & Point) + mv.y * (mv.y & Point) - mv.w * (mv.w & Point)
+unit_disk = mv.x * (mv.x & Point) + mv.y * (mv.y & Point) - mv.w * (mv.w & Point)  # [] Plane+ <- Point-
 pts = mv.point([[0.0, 0.0], [1.0, 0.0], [0.0, 2.0]])                     # [3] Point-
 
 out = shader((len(pts),), motor=turn, disk=unit_disk, points=pts)
@@ -45,21 +45,23 @@ Extensor(intrinsic bivector, shape=(3,))
 [-0.848  0.869  3.758]
 ```
 
-## The `numga` WGSL dialect
+## The numga WGSL dialect
 
-`Shader(source, algebra, types, constants)` maps each entry in `types` to a generated `WGSL` struct holding that `GAType`'s blade coefficients in `float32`, checks orientations and grades at compile time under numga's own rules ([Orientation](orientation.md)), and lowers products (`*`, `^`, `&`, `|`, `>>`, `<<`), map calls (`disk(p)`), `~`, `.involute()`, `.dual()`, `.adjugate()`, `.inverse()`, `.norm()`, `.antinorm()` and `.exp()` into exact polynomial functions (`shader.code` inspects the emitted `WGSL`).
+`Shader(source, algebra, types, constants)` maps each entry in `types` to a generated WGSL struct holding that `GAType`'s blade coefficients in `float32`, checking orientations and grades at compile time under numga's own rules ([Orientation in numga](orientation.md)). Products (`*`, `^`, `&`, `|`, `>>`, `<<`), map calls (`disk(p)`), `~`, `.involute()`, `.dual()`, `.adjugate()`, `.inverse()`, `.norm()`, `.antinorm()` and `.exp()` lower into exact polynomial functions (`shader.code` inspects the emitted WGSL).
 
-Calling `shader(shape, ...)` packs `Extensor` uniforms and input storage arrays, allocates and zero-clears any unprovided `read_write` storage arrays to `shape`, dispatches all `@compute` entry points, and unpacks non-scalar `GAType` outputs back into `float64` `Extensor` batches (`f32` and vector outputs return NumPy arrays). `Resident` keeps buffers on the GPU across frames without host round trips, and `numga.wgsl.page` bundles compiled `WGSL` and packed buffers into standalone browser `.html` applications such as [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr_webgpu.html) and [gravitational waves](../examples/relativity/gravitational_waves/gravitational_waves_webgpu.html).
+Calling `shader(shape, ...)` packs `Extensor` uniforms and input storage arrays, allocates and zero-clears any omitted `read_write` storage arrays to `shape`, and dispatches every `@compute` entry point. Non-scalar `GAType` outputs unpack back into `float64` `Extensor` batches, while `f32` and vector outputs return NumPy arrays.
+
+For multi-frame simulations and interactive pages, `Resident` keeps buffers on the GPU across frames without host round trips, and `numga.wgsl.page` bundles compiled WGSL and packed buffers into standalone browser `.html` applications such as [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr_webgpu.html) and [gravitational waves](../examples/relativity/gravitational_waves/gravitational_waves_webgpu.html).
 
 ## Cameras pair in the scene's own algebra
 
-In the examples, values cross into `render.py` in their own algebra, at their own grade and orientation. A `Camera` declares the planes (`across`, `up`, `toward`) and affine weight (`weight`, `unit`) that read scene elements through the regressive product `&` with the extrinsic factor placed first, evaluating `(across & point) / (weight & point + unit)`.
+Values pass to `numga.render` in their own algebra, at their own grade and orientation. A `Camera` declares the planes (`across`, `up`, `toward`) and affine weight (`weight`, `unit`) that read scene elements through the regressive product `&` with the extrinsic factor placed first, evaluating `(across & point) / (weight & point + unit)`.
 
 Because `&` uses no metric, the same shaders draw projective points (`weight=mv.w, unit=0.0`), vector offsets (`weight=0 * mv.x, unit=1.0`), spin bivectors (`across=mv.yz, up=mv.zx`), or states in an algebra extended with null thermodynamic directions (`x+ y+ w0 i0 h0`), without converting elements into points or unpacking coordinates first. Callers name `weight` explicitly because metric signature alone does not distinguish the projective plane `w` from a null extensive quantity such as entropy.
 
 ## 2D marks and `Draw` passes
 
-Rendering separates into two layers. Marks (`quadrics`, `simplices`, `contours`, `flow`) take algebraic geometry, a `Camera` and visual styling and return GPU `Draw` passes; `drawing.composited` rasterizes them at subpixel resolution and returns a straight-RGBA `[rows, columns, 4]` image, so pixel arrays appear only at the final output:
+Rendering separates into two layers. Marks (`quadrics`, `simplices`, `contours`, `flow`) take algebraic geometry, a `Camera` and visual styling and return GPU `Draw` passes; `composited` rasterizes them at subpixel resolution into a straight-RGBA `[rows, columns, 4]` image, so pixel arrays appear only at the final output:
 
 ```python
 from numga.render import Camera, composited, quadrics, simplices
@@ -72,7 +74,7 @@ camera = Camera(
     across=mv.x, up=mv.y, toward=0 * mv.x, weight=mv.w, unit=0.0,
     middle=np.zeros(2), half=np.array([1.3, 1.0]), pixels=240,
 )
-ellipse = 0.7 * mv.x * (mv.x & Point) + 1.6 * mv.y * (mv.y & Point) - mv.w * (mv.w & Point)
+ellipse = 0.7 * mv.x * (mv.x & Point) + 1.6 * mv.y * (mv.y & Point) - mv.w * (mv.w & Point)  # [] Plane+ <- Point-
 turns = (mv.xy * np.linspace(0, np.pi, 5, endpoint=False)).exp()         # [5] Motor+
 pentagon = turns >> mv.point([0.92, 0.0])                                # [5] Point-
 
@@ -91,11 +93,25 @@ print(rgba.shape)
 
 <p align="center"><img src="../plots/rendering_2d.png" alt="A translucent blue implicit ellipse and its anti-aliased boundary curve behind a five-sided copper polygon with dark vertex markers" width="240" /></p>
 
-`quadrics.regions` shades intersections where every bounding quadric satisfies `quadric(point) & point < 0`, while `quadrics.curves` and `quadrics.flats` anti-alias zero contours to uniform pixel width via screen-space derivatives `fwidth`. `contours.picture` shades scalar fields and level lines across a `Topology` ([Simplicial topologies](topology.md)), and `flow.layer` traces line-integral convolution streaks along vector or alignment fields. In example figures (`examples/util/panels.py`), `panel(ax, mv.x, mv.y, mv.w)` and `offset_panel(ax, ...)` size a `Camera` to a Matplotlib `Axes` and `overlay` pins the composited image onto whole canvas pixels without resampling.
+| Mark module | What it draws |
+| --- | --- |
+| `quadrics.regions` | intersections where every bounding quadric satisfies `quadric(point) & point < 0` |
+| `quadrics.curves`, `quadrics.flats` | zero contours anti-aliased to uniform pixel width via screen-space derivatives `fwidth` |
+| `simplices.strokes`, `simplices.markers` | polygonal curves, edges and vertex markers over a `Topology` |
+| `contours.picture` | shaded scalar fields and level lines across a `Topology` ([Simplicial topologies](topology.md)) |
+| `flow.layer` | line-integral convolution streaks along vector or alignment fields |
+
+In Matplotlib figures (`examples/util/panels.py`), `panel(ax, mv.x, mv.y, mv.w)` and `offset_panel(ax, ...)` size a `Camera` to an `Axes`, and `overlay` pins the composited image onto whole canvas pixels without resampling.
 
 ## 3D scenes
 
-In `PGA3D`, `solids` ray-traces intersections of quadrics and oriented half-spaces analytically per subpixel (`solids.ball`, `solids.ellipsoid`, `solids.rods`, `solids.boxes`, `solids.plates`, `solids.polyhedra`), while `meshes.samples` and `simplices.tubes` rasterize triangulated surfaces and 3D curves into per-sample colour and depth slots. `Scene` caches static surface slots on the GPU across animation frames and composites moving and static solids, surface inks (`Ink`) and triangulated surfaces in depth order:
+In `PGA3D`, 3D scenes combine analytic quadric ray tracing with rasterized surfaces and curves under one `Scene` compositor:
+
+| Component | Role |
+| --- | --- |
+| `solids` (`ball`, `ellipsoid`, `rods`, `boxes`, `plates`, `polyhedra`) | ray-traces intersections of quadrics and oriented half-spaces analytically per subpixel |
+| `meshes.samples`, `simplices.tubes` | rasterizes triangulated surfaces and 3D curves into per-sample colour and depth buffers |
+| `Scene` | caches static surface samples on the GPU across animation frames and composites moving and static solids, surface inks (`Ink`) and triangulated surfaces in depth order |
 
 ```python
 from numga.render import meshes, solids
@@ -126,4 +142,4 @@ print(rgb.shape)
 
 <p align="center"><img src="../plots/rendering_3d.png" alt="A smooth triangulated torus swept by PGA3D motors with a ray-traced slate rod capped by copper spheres threaded through its hole" width="260" /></p>
 
-`meshes.smooth` sums the joined tangent planes (`a & b & c`) of incident triangles around each vertex so lighting operates directly on intrinsic `Patch-` planes paired against the camera's screen frame, sharing identical key-lamp, sky-ground fill, headlight and specular shading across analytic quadrics and triangulated surfaces.
+`meshes.smooth` sums the joined tangent planes (`a & b & c`) of incident triangles around each vertex so lighting operates directly on intrinsic tangent planes paired against the camera's screen frame. Analytic quadrics and triangulated surfaces therefore share identical key-lamp, sky-ground fill, headlight and specular shading.

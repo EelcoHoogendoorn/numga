@@ -6,7 +6,7 @@ This document is the reference for building, calling and solving extensors in nu
 * **Arity 1**: unary linear maps (`Output <- Input`).
 * **Arity n**: multilinear maps and forms (`Output <- (Input1, ..., Inputn)`).
 
-Every algebraic operation acts on an extensor's output type and keeps its inputs, so maps are built with the same products as multivectors. [Conventions](conventions.md) states the defining identities, and [Orientation in numga](orientation.md) covers `+` and `-` orientation propagation.
+Every algebraic operation acts on an extensor's output type and keeps its inputs, so maps are built with the same products as multivectors. Capitalized names such as `Point` and `Potential` are types acting as identity maps on their spaces, while lowercase names are concrete values. [Conventions](conventions.md) states the defining identities, and [Orientation in numga](orientation.md) covers `+` and `-` orientation propagation.
 
 ```python
 # Sending each point along its ray from the light to the ground plane builds a projection map.
@@ -76,7 +76,7 @@ For an arity-1 extensor, the trailing kernel axes match the output and input bla
 
 ### Calling and partial binding
 
-Calling an extensor on multivectors binds its inputs in order. Supplying fewer arguments than the arity binds the leading inputs and returns a map on the remaining inputs, while passing a `GAType` passes its identity map (or restricts that input's domain to a subtype):
+Calling an extensor on multivectors binds its inputs in order. Supplying fewer arguments than the arity binds the leading inputs and returns a map on the remaining inputs, while passing a `GAType` passes its identity map or restricts that input's domain to a subtype:
 
 ```python
 join_map = Point & Point                                     # [] Line- <- (Point-, Point-)
@@ -135,13 +135,39 @@ stiffness = spring_stiffness.sum(axis=0)                                # [] For
 acceleration = response[:, :, None](reference)                          # [times, 3, beads] Vector+
 ```
 
-Where batch axes hold independent copies, a field axis (`Type[sites]`, created from the trailing batch axis by `.field()` and unpacked by `.batch()`) holds one coupled object across sites such as surface vertices or chain links, and dense or sparse field maps (`Out[rows] <- In[cols]`) sum over paired sites when called or solved. See [Fields and field maps](fields.md).
+When sites are coupled rather than independent (such as surface vertices or chain links), a field axis (`Type[sites]`, toggled by `.field()` and `.batch()`) puts site connectivity inside the type so dense or sparse field maps (`Out[rows] <- In[cols]`) sum over paired sites when called or solved. See [Fields and field maps](fields.md).
 
 ## Extension methods
 
+### Multivectors and scalars
+
+* **Elementwise scalar math and predicates**: `.abs()`, `.clip()`, `.square_root()`, `.inverse_square_root()`, `.exp()`, `.log()`, trigonometric and hyperbolic functions (`.sin()`, `.cos()`, `.tan()`, `.arcsin()`, `.arccos()`, `.arctan()`, `.sinh()`, `.cosh()`, `.tanh()`, `.arcsinh()`, `.arccosh()`, `.arctanh()`), and predicates (`.isnan()`, `.isfinite()`, `.isinf()`) chain directly on `Scalar` extensors. Predicates and comparisons (`<`, `<=`, `>`, `>=`) return backend boolean arrays directly.
+* **Scalar reductions and array readout**: `.min()`, `.max()`, `.argmin()`, `.argmax()`, `.argsort()` and `.to_array()` operate on `Scalar` extensors, with index reductions returning backend integer arrays directly:
+  ```python
+  frequencies = eigenvalues.clip(0, np.inf).square_root() / (2 * np.pi)  # [modes] Scalar+
+  best_speed = speeds[residuals.argmin()]                                # [] float
+  raw_array = frequencies.to_array()                                     # [modes] ndarray
+  ```
+* **`.real()`**: takes the real part of every coefficient in a real context, on an extensor of any arity, for results of `.eig()` known to be real.
+* **Bivectors, rotors and motors**:
+  * `bivector.exp()` / `motor.log()`: exponential and logarithm between generators and versors, with low-order approximations `.exp_linear()`, `.exp_linear_normalized()`, `.exp_quadratic()` / `.exp_cayley()`, `.log_linear()`, `.log_linear_normalized()`, `.log_quadratic()` and `.log_pade()`.
+  * `bivector.exp_derivative()`: right-trivialized derivative of `exp` at `bivector`, a map `Bivector+ <- Bivector+` satisfying `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`; calling `.solve()` on it differentiates `log`.
+  * `rotor.square_root()` / `rotor.geometric_mean(other)`: principal rotor or Study square root, and normalized bisector `(rotor + other).normalized()`.
+  * `bivector.decompose_polar()` / `bivector.decompose_invariant()`: factors `b == direction * scale` with Study `scale`, and splits a bivector whose square is a Study number into commuting simple bivectors `(b_plus, b_minus)`.
+  * `motor.motor_translator()`, `motor.motor_rotor()`, `motor.motor_split(origin)`: splits a motor into translation and rotation about the canonical origin, or about a supplied `origin` antivector (`translator, rotor = motor.motor_split(origin)`).
+* **`.dot(other)`**: symmetric metric pairing between two operands of the same orientation (`Scalar+`), using the signature on extrinsic values and dualizing intrinsic values (`a.dual().dot(b.dual())`). On types it builds the metric form:
+  ```python
+  length_form = Point.dot(Point)                             # [] Scalar+ <- (Point-, Point-)
+  ```
+* **`.norm()`, `.normalized()`, `.antinorm()`, `.study_norm()`**: `.norm()` takes the root of `x * ~x` (giving a projective point's weight, so `.normalized()` sets unit weight or unit versor normalization `v * ~v == 1`), `.antinorm()` takes the root of `x.dot(x)` (giving a direction's length and a projective point's bulk), and `.study_norm()` computes the norm of a Study number:
+  ```python
+  length = (head - tail).antinorm()                          # [] Scalar+
+  ```
+* **`.inverse()` and `.power(n)`**: geometric-product inverse (`x * x.inverse() == 1`, with explicit formulas `.inverse_shirokov()`, `.inverse_factor()`, `.inverse_hitzer()`) and integer power `x ** n`.
+
 ### Unary maps
 
-* **`.solve(rhs)`**: solves `T(x) == rhs` for `x`, the inverse of composing into `T`'s input (`T.solve(T(x)) == x`). Any inputs on `rhs` are preserved on the solution (`T.solve(T(Y)) == Y`).
+* **`.solve(rhs)`**: solves `T(x) == rhs` for `x`, the inverse of composing into `T`'s input (`T.solve(T(x)) == x`). Any inputs on `rhs` are preserved on the solution (`T.solve(T(Y)) == Y`):
   ```python
   step = stiffness.solve(forque)                             # [] Twist+
   ```
@@ -151,7 +177,7 @@ Where batch axes hold independent copies, a field axis (`Type[sites]`, created f
   moment = Point.regressive(Plane.dual().commutator(Bivector)).lstsq(inertia)  # [] Point- <- Plane+
   ```
 * **`.inverse()`**: composition inverse of a map between spaces of equal dimension, swapping input and output types (`T.inverse()(T)` is the identity on `T`'s input). On a batch of multivectors the same method computes each element's geometric-product inverse, not a reciprocal frame.
-* **`.pinv(rcond=1e-15)`**: Moore-Penrose pseudoinverse, swapping input and output spaces and discarding singular values at or below `rcond` times the largest:
+* **`.pinv(rcond=1e-15)`**: Moore–Penrose pseudoinverse, swapping input and output spaces and discarding singular values at or below `rcond` times the largest:
   ```python
   compliance = stiffness.pinv()                              # [] Twist+ <- Forque-
   ```
@@ -189,13 +215,11 @@ Where batch axes hold independent copies, a field axis (`Type[sites]`, created f
   _, _, potentials = wave.svd()                              # [speeds, 4] Vector+
   mode = potentials[..., -1]                                 # [speeds] Vector+
   ```
-* **`.eig()` / `.eigvals()`** and **`.eigh()` / `.eigvalsh()`**: general or symmetric spectrum of an endomorphism (`Space <- Space`). `.eig()` and `.eigvals()` return complex `[..., n] Scalar+` eigenvalues (and `[..., n] Space` eigenvectors):
+* **`.eig()` / `.eigvals()`** and **`.eigh()` / `.eigvalsh()`**: general or symmetric spectrum of an endomorphism (`Space <- Space`). `.eig()` and `.eigvals()` return complex `[..., n] Scalar+` eigenvalues and `[..., n] Space` eigenvectors:
   ```python
   eigenvalues = (rotor >> Vector).eigvals()                  # [3] Scalar+
   ```
-* **`.cholesky()`**: Cholesky factor of a positive-definite endomorphism or square form.
-
-  In matrix notation this reads as the lower-triangular factor $L$ satisfying $A = L L^\top$.
+* **`.cholesky()`**: lower-triangular Cholesky factor of a positive-definite endomorphism or square form.
 
 ### Bilinear and quadratic forms
 
@@ -215,8 +239,8 @@ A form `Scalar+ <- (Space, Space)` has two inputs, so its spectrum, determinant 
   ```
 
   In matrix notation this reads as $K v = \lambda M v$, solved without forming $M^{-1} K$.
-* **`.eig()` / `.eigvals()`**: general eigensolve against `Space`'s metric (or a supplied `metric` form); directions unmeasured by a singular metric go to infinity.
-* **`.det()` / `.det(metric)`**: determinant of the form relative to `Space`'s metric or `metric` (which must be invertible).
+* **`.eig()` / `.eigvals()`**: general eigensolve against `Space`'s metric or a supplied `metric` form; directions unmeasured by a singular metric go to infinity.
+* **`.det()` / `.det(metric)`**: determinant of the form relative to `Space`'s metric or an invertible `metric`.
 
   In matrix notation this reads as $\det(G^{-1} A)$ for metric $G$ and form $A$.
 * **`.contract()` and `.trace()`**: `.contract()` raises one input with `Space`'s invertible metric and traces; `.trace()` pairs two inputs of complementary spaces through `&`. A form has no singular values because its coefficient matrix depends on basis scaling; evaluate `form(a, b)` to test whether it vanishes.
@@ -235,28 +259,3 @@ Multilinear maps (`Output <- (In1, ..., Inn)`) allow any output type, bind leadi
 ```python
 tidal = Vector.commutator(R(Vector ^ Vector))                # [] Vector+ <- (Vector+, Vector+, Vector+)
 ```
-
-### Multivectors and scalars
-
-* **Scalars (`Scalar+`, `Scalar-`)**: elementwise math (`.abs()`, `.clip()`, `.square_root()`, `.inverse_square_root()`, `.exp()`, `.log()`, `.sin()`, `.cos()`, `.tan()`, `.arcsin()`, `.arccos()`, `.arctan()`, `.sinh()`, `.cosh()`, `.tanh()`, `.arcsinh()`, `.arccosh()`, `.arctanh()`), predicates (`.isnan()`, `.isfinite()`, `.isinf()`), reductions (`.min()`, `.max()`, `.argmin()`, `.argmax()`, `.argsort()`), and `.to_array()` chain directly on `Scalar` extensors; predicates, comparisons (`<`, `<=`, `>`, `>=`) and index reductions return backend boolean or integer arrays directly:
-  ```python
-  frequencies = eigenvalues.clip(0, np.inf).square_root() / (2 * np.pi)  # [modes] Scalar+
-  best_speed = speeds[residuals.argmin()]                                # [] float
-  raw_array = frequencies.to_array()                                     # [modes] ndarray
-  ```
-* **`.real()`**: takes the real part of every coefficient in a real context, on an extensor of any arity, for results of `.eig()` known to be real.
-* **Bivectors, rotors and motors**:
-  * `bivector.exp()` / `motor.log()`: exponential and logarithm between generators and versors (with low-order approximations `.exp_linear()`, `.exp_linear_normalized()`, `.exp_quadratic()` / `.exp_cayley()`, `.log_linear()`, `.log_linear_normalized()`, `.log_quadratic()`, `.log_pade()`).
-  * `bivector.exp_derivative()`: right-trivialized derivative of `exp` at `bivector`, a map `Bivector+ <- Bivector+` satisfying `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`; `.solve()` on it differentiates `log`.
-  * `rotor.square_root()` / `rotor.geometric_mean(other)`: principal rotor or Study square root, and normalized bisector `(rotor + other).normalized()`.
-  * `bivector.decompose_polar()` / `bivector.decompose_invariant()`: factors `b == direction * scale` with Study `scale`, and splits a bivector whose square is a Study number into commuting simple bivectors `(b_plus, b_minus)`.
-  * `motor.motor_translator()`, `motor.motor_rotor()`, `motor.motor_split(origin)`: splits a motor into translation and rotation about the canonical origin, or about a supplied `origin` antivector (`translator, rotor = motor.motor_split(origin)`).
-* **`.dot(other)`**: symmetric metric pairing between two operands of the same orientation (`Scalar+`), using the signature on extrinsic values and dualizing intrinsic values (`a.dual().dot(b.dual())`). On types it builds the metric form:
-  ```python
-  length_form = Point.dot(Point)                             # [] Scalar+ <- (Point-, Point-)
-  ```
-* **`.norm()`, `.normalized()`, `.antinorm()`, `.study_norm()`**: `.norm()` takes the root of `x * ~x` (giving a projective point's weight, so `.normalized()` sets unit weight or unit versor normalization `v * ~v == 1`), `.antinorm()` takes the root of `x.dot(x)` (giving a direction's length and a projective point's bulk), and `.study_norm()` computes the norm of a Study number:
-  ```python
-  length = (head - tail).antinorm()                          # [] Scalar+
-  ```
-* **`.inverse()` and `.power(n)`**: Clifford product inverse (`x * x.inverse() == 1`, with explicit formulas `.inverse_shirokov()`, `.inverse_factor()`, `.inverse_hitzer()`) and integer power `x ** n`.

@@ -113,3 +113,7 @@ In matrix notation, the coefficient of $xyz$ in $a \wedge b \wedge d$ reads as t
 $$\det \begin{pmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 10 \end{pmatrix} = -3$$
 
 Example: [paper folding](../../../examples/geometry/origami/origami.ipynb), where the outer product of a crease plane and the sheet plane is the hinge line about which the paper folds.
+
+---
+
+Previous: [9. Summary](09-summary.md) · [Contents](00-introduction.md) · Next: [11. The inner products](11-the-inner-products.md)
