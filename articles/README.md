@@ -1,6 +1,6 @@
 # Articles
 
-These articles explore the conceptual consequences of geometric algebra and extensors, the multilinear maps between multivector spaces, across geometry, calculus and physics. All assume basic geometric algebra, and the list follows a suggested reading order.
+These articles explore the conceptual consequences of geometric algebra and extensors, the multilinear maps between multivector spaces, across geometry, calculus and physics. All assume basic geometric algebra, and the list follows a suggested reading order. Runnable simulations paired with their code live in a [video gallery at numga.org](https://numga.org/), in [illustrated extensor examples](../docs/extensors.md) and across [example notebooks](../examples/README.md).
 
 1. [Extensors through multiple lenses](multiple_lenses.md): extensors viewed as partial applications of products, as geometric objects that transform with their parts, and as multilinear maps.
 2. [Why orientation](orientation.md): intrinsic and extrinsic orientation in geometric algebra, motivated by what a mirror does to geometric constructions and to physical observables such as kinetic energy.

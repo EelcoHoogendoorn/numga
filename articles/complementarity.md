@@ -36,7 +36,7 @@ pulled = T.adjugate()(duality(T))              # [] pullback across T
 pushed = T(duality(T.adjugate()))              # [] pushforward across T
 ```
 
-Camera sight cones, discrete conductance matrices, articulated joint inertias, Kalman covariance updates and Onsager transport responses all take one of these two congruence forms.
+[Camera sight cones](../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment), [discrete conductance matrices](https://numga.org/#rubber-band), [articulated joint inertias](../examples/mechanics/articulated/articulated.ipynb), [Kalman covariance updates](../examples/estimation/kalman/kalman.ipynb) and [Onsager transport responses](../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field) all take one of these two congruence forms.
 
 ## A spinning wheel
 
@@ -52,9 +52,9 @@ power = rate & torque                                                 # [] Scala
 
 The same five lines serve a wheel in the plane and a wheel in space. For three rim masses totaling 3 at unit radius, turning at angular speed 3 under a tangential push of 1.5, the planar momentum is one number, 9, while for the same wheel tilted in space it has three components of magnitude 9; in both algebras the kinetic energy is 13.5 and the power is 4.5. Rebuilding the wheel from its mirrored ingredients `mirror >> points`, `mirror >> rate` and `mirror >> push` reverses the momentum and the torque, since the mirror image turns the other way, while keeping the kinetic energy and the power at 13.5 and 4.5.
 
-<p align="center"><img src="../plots/spinning_wheel_plane.gif" alt="A wheel of three masses turning under a push at its rim, beside its mirror image turning the other way" width="420" /></p>
+<p align="center"><a href="../examples/orientation/spinning_wheel/spinning_wheel.ipynb"><img src="../plots/spinning_wheel_plane.gif" alt="A wheel of three masses turning under a push at its rim, beside its mirror image turning the other way" width="420" /></a></p>
 
-*Figure: a wheel of three masses, left, and its mirror image, right, with the mirror as the dashed line. Coloured arrows are the masses' velocities, and the dark arrow is the push.*
+*Figure: a wheel of three masses, left, and its mirror image, right, with the mirror as the dashed line. Coloured arrows are the masses' velocities, and the dark arrow is the push ([notebook](../examples/orientation/spinning_wheel/spinning_wheel.ipynb)).*
 
 In the vector notation of introductory and classical mechanics, turning planes in three-space are dualized into axle vectors pointed by the right-hand rule, writing rotational kinetic energy and mechanical power with Euclidean dot and cross products as $K = \tfrac{1}{2}\boldsymbol{\omega}\cdot(I\boldsymbol{\omega})$, with $I_{ij} = \sum_a m_a(r_a^2\delta_{ij} - r_{ai}r_{aj})$, and $P = (\mathbf{r}\times\mathbf{F})\cdot\boldsymbol{\omega}$ [[1, §52-5]](#references), [[2, Ch. 4–5]](#references). Because the cross product exists only in three dimensions, planar rotation is treated separately with signed scalars ($L = I\omega$, $P = \tau\omega$), while in space reflecting every vector as $M\mathbf{v}$ negates $(\mathbf{r}\times\mathbf{F})\cdot\boldsymbol{\omega}$ unless $\boldsymbol{\omega}$, $\mathbf{L}$ and $\boldsymbol{\tau}$ carry an extra $\det(M)M$ axial-vector rule [[1, §52-5]](#references). Screw theory recovers a metric-free pairing for rigid motion by separating twists in $\mathfrak{se}(3)$ from wrenches in the dual space $\mathfrak{se}(3)^*$ [[3, Ch. 2 §5, Ch. 4]](#references), though it stays restricted to proper three-dimensional flat motions apart from reflections, points and planes. Projective geometric-algebra mechanics formulates that dual pairing between rate axes and momentum spears across Cayley–Klein spaces, retaining translational kinetic energy where a projective inner product drops it [[4, §§2.2, 6]](#references), [[5, Ch. 9]](#references), [[6, §2.7]](#references), [[7, §8.6.1]](#references).
 
@@ -72,9 +72,9 @@ moved_phase = moved_wavevector & moved_displacement                      # [] Sc
 
 The pairing `wavevector & displacement` uses no metric, so the same line counts phase across the three bonds of a honeycomb sheet in the plane, across a crystal in space, and across an event in spacetime, where time squares to minus one. Under any linear map `deformation` on displacements, its adjugate pulls a wavevector back so that `deformation.adjugate()(wavevector) & displacement == wavevector & deformation(displacement)`, even when `deformation` flattens a volume onto a plane and has no inverse. When an invertible stretch, shear and turn deforms a crystal, solving forward through `deformation.adjugate()` carries each reciprocal-lattice wavevector so that its phase at every displaced atom stays unchanged; doubling the spacing along x halves the wavevector component along x.
 
-<p align="center"><img src="../plots/crystal_diffraction.png" alt="A square crystal layer, stretched along x, and stretched, sheared and turned, above the scattered intensity and reciprocal lattice peaks of each" width="318" /></p>
+<p align="center"><a href="../examples/optics/crystal_diffraction/crystal_diffraction.ipynb"><img src="../plots/crystal_diffraction.png" alt="A square crystal layer, stretched along x, and stretched, sheared and turned, above the scattered intensity and reciprocal lattice peaks of each" width="318" /></a></p>
 
-*Figure: a square layer of atoms (top left), stretched along x (top centre), and stretched, sheared and turned (top right), above the scattered intensity of each; circles mark the reciprocal wavevectors carried by solving through the deformation's adjugate.*
+*Figure: a square layer of atoms (top left), stretched along x (top centre), and stretched, sheared and turned (top right), above the scattered intensity of each; circles mark the reciprocal wavevectors carried by solving through the deformation's adjugate ([notebook](../examples/optics/crystal_diffraction/crystal_diffraction.ipynb)).*
 
 In the vector notation of wave optics and relativity, plane-wave phase is written as a metric inner product, $\delta\phi = \mathbf{k}\cdot\delta\mathbf{r}$ in space or $\omega t - \mathbf{k}\cdot\mathbf{r}$ in spacetime [[8, §34-7]](#references). Placing $\mathbf{k}$ and $\delta\mathbf{r}$ in one metric vector space means that pushing both forward by a twofold stretch multiplies $\mathbf{k}\cdot\delta\mathbf{r}$ by four instead of preserving the wavefront count, while in spacetime the Minkowski metric's minus sign enters only to undo the sign introduced by raising the wave covector into a four-vector. Solid-state physics restores deformation invariance by introducing a separate reciprocal lattice defined by $\mathbf{a}_i \cdot \mathbf{b}_j = 2\pi\delta_{ij}$ [[9, Ch. 5]](#references), though its standard construction $\mathbf{b}_1 = 2\pi(\mathbf{a}_2\times\mathbf{a}_3)/[\mathbf{a}_1\cdot(\mathbf{a}_2\times\mathbf{a}_3)]$ is three-dimensional only (forcing planar crystals such as graphene to invent an out-of-plane axis) and inserts the Euclidean metric twice only to cancel it. Geometric treatments of relativity separate wave 1-forms $\langle\tilde{\mathbf{k}}, \delta\mathbf{x}\rangle$ counting pierced phase surfaces without a metric [[10, Ch. 2]](#references), in an exterior calculus apart from rotors and spatial geometry.
 
@@ -151,7 +151,7 @@ This appendix applies the ansatz across geometry, mechanics, fields and state sp
 
 #### Surface normals and area transport
 
-A surface's positive side, oriented across the surface, and a surface patch joined from edges, oriented within the surface, respond differently to reflections and deformations, as [surface normals](../examples/orientation/normals/normals.ipynb), [area transport](../examples/mechanics/area_transport/area_transport.ipynb) and [freeform elasticity](../examples/mechanics/freeform/freeform.ipynb) examples develop. Under a linear deformation, an intrinsic patch is carried forward by the deformation's outermorphism while an extrinsic flux density pulls back by its adjugate, remaining defined even when `deformation` flattens a volume onto a plane:
+A surface's positive side, oriented across the surface, and a surface patch joined from edges, oriented within the surface, respond differently to reflections and deformations, as [surface normals](../examples/orientation/normals/normals.ipynb), [area transport](../examples/mechanics/area_transport/area_transport.ipynb) and [freeform elasticity](../examples/mechanics/freeform/freeform.ipynb) examples develop. Under a linear deformation, an intrinsic patch is carried forward by the deformation's outermorphism while an extrinsic flux density pulls back by its adjugate, remaining defined even when `deformation` flattens a volume onto a plane ([extensor gallery](../docs/extensors.md#35-area-transport-through-a-collapse)):
 
 ```python
 areas = deformation.outermorphism(Antibivector)  # [] Antibivector- <- Antibivector-
@@ -162,7 +162,7 @@ In three-dimensional vector calculus and computer graphics, both a cutting plane
 
 #### Projective cameras and multiview geometry
 
-A pinhole camera is a projective map from scene points to sensor points that collapses depth onto the sensor plane, and each pixel's measurement uncertainty is a polarity on that sensor. Although the camera has no inverse, its adjugate pulls each pixel polarity back through the pinhole into a sight cone on scene points in any dimension and signature, without dividing by homogeneous coordinates, in [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb), [projective cameras and shadows](../examples/geometry/projection/projection.ipynb), [lens camera](../examples/optics/lens_camera/lens_camera.ipynb) and [rendering on the three-sphere](../examples/quadrics/s3_raytracer/s3_raytracer.ipynb) examples:
+A pinhole camera is a projective map from scene points to sensor points that collapses depth onto the sensor plane, and each pixel's measurement uncertainty is a polarity on that sensor. Although the camera has no inverse, its adjugate pulls each pixel polarity back through the pinhole into a sight cone on scene points in any dimension and signature, without dividing by homogeneous coordinates, in [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb), [projective cameras and shadows](../examples/geometry/projection/projection.ipynb), [lens camera](../examples/optics/lens_camera/lens_camera.ipynb) and [rendering on the three-sphere](../examples/quadrics/s3_raytracer/s3_raytracer.ipynb) examples ([extensor gallery](../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment)):
 
 ```python
 cones = camera.adjugate()(discs(camera))         # [] Vector+ <- Antivector-
@@ -188,7 +188,7 @@ In analytic geometry and linear algebra, an ellipsoid or quadratic form is commo
 
 #### Rigid-body mechanics and inertia
 
-A rigid body's rate of motion is an extrinsic bivector carrying turns and slides together in projective space, inducing the velocity `points.commutator(Rate)` at each mass point. Joining each mass point with its mass-weighted velocity sums the inertia, and pairing the rate with the momentum gives the kinetic energy in [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb), [mechanical work in a mirror](../examples/orientation/mechanical_work/mechanical_work.ipynb), [spinning top](../examples/mechanics/spinning_top/spinning_top.ipynb), [robot arm kinematics](../examples/mechanics/robot_arm/robot_arm.ipynb), [stiffness and normal modes](../examples/mechanics/modes/modes.ipynb) and [flexible bodies, rigidly joined](../examples/mechanics/modal_xpbd/modal_xpbd.ipynb) examples:
+A rigid body's rate of motion is an extrinsic bivector carrying turns and slides together in projective space, inducing the velocity `points.commutator(Rate)` at each mass point. Joining each mass point with its mass-weighted velocity sums the inertia, and pairing the rate with the momentum gives the kinetic energy in [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb), [mechanical work in a mirror](../examples/orientation/mechanical_work/mechanical_work.ipynb), [spinning top](../examples/mechanics/spinning_top/spinning_top.ipynb), [robot arm kinematics](../examples/mechanics/robot_arm/robot_arm.ipynb), [stiffness and normal modes](../examples/mechanics/modes/modes.ipynb) and [flexible bodies, rigidly joined](../examples/mechanics/modal_xpbd/modal_xpbd.ipynb) examples ([gallery](https://numga.org/#tennis-racket), [extensor gallery](../docs/extensors.md#33-vibration-modes-of-a-suspended-plate)):
 
 ```python
 inertia = points.regressive(points.commutator(Rate) * masses).sum()  # [] Antibivector- <- Bivector+
@@ -227,7 +227,7 @@ In Cartesian engineering elasticity and seismology, all indices are lowered and 
 
 #### Simplicial topologies and finite elements
 
-On a simplicial topology, dividing each corner's opposing boundary facet by its pairing with that corner gives the potential's simplex gradient ([Discrete differential geometric algebra](ddga.md)) directly from `&` and scalar division, without a metric inverse, and pulling conductivity back through the assembled `gradient` via `.adjugate()` forms the discrete conductance operator in [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb), [eddy-current braking](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb), [projective sphere flow](../examples/fluids/projective_sphere_flow/projective_sphere_flow.ipynb), [Stokes flow on a triangulated surface](../examples/fluids/dec_stokes/dec_stokes.ipynb) and [force-free Beltrami fields](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb) examples:
+On a simplicial topology, dividing each corner's opposing boundary facet by its pairing with that corner gives the potential's simplex gradient ([Discrete differential geometric algebra](ddga.md)) directly from `&` and scalar division, without a metric inverse, and pulling conductivity back through the assembled `gradient` via `.adjugate()` forms the discrete conductance operator in [Whitney forms](../examples/surfaces/whitney_forms/whitney_forms.ipynb), [eddy-current braking](../examples/electromagnetism/eddy_brake/eddy_brake.ipynb), [projective sphere flow](../examples/fluids/projective_sphere_flow/projective_sphere_flow.ipynb), [Stokes flow on a triangulated surface](../examples/fluids/dec_stokes/dec_stokes.ipynb) and [force-free Beltrami fields](../examples/electromagnetism/beltrami_fields/beltrami_fields.ipynb) examples ([gallery](https://numga.org/#beltrami)):
 
 ```python
 gradient_a = (b & c) / (a & b & c)                                   # [] Vector+
@@ -240,7 +240,7 @@ In standard finite-element formulations, shape-function gradients are computed t
 
 #### Fluid vorticity and circulation
 
-In an ideal fluid, velocity is an intrinsic tangent rate while vorticity is an extrinsic bivector whose pairing with an intrinsic patch reads Kelvin's circulation, and meeting each mode's simplex gradient with a triangle patch gives metric-free Lie–Poisson advection couplings on curved surfaces in [Laplacian eigenfunction fluids](../examples/fluids/eigen_fluids/eigen_fluids.ipynb), [leapfrogging vortices](../examples/fluids/vortices/vortices.ipynb), [smoke rings](../examples/fluids/smoke_rings/smoke_rings.ipynb) and [Kirchhoff's equations](../examples/fluids/kirchhoff/kirchhoff.ipynb) examples:
+In an ideal fluid, velocity is an intrinsic tangent rate while vorticity is an extrinsic bivector whose pairing with an intrinsic patch reads Kelvin's circulation, and meeting each mode's simplex gradient with a triangle patch gives metric-free Lie–Poisson advection couplings on curved surfaces in [Laplacian eigenfunction fluids](../examples/fluids/eigen_fluids/eigen_fluids.ipynb), [leapfrogging vortices](../examples/fluids/vortices/vortices.ipynb), [smoke rings](../examples/fluids/smoke_rings/smoke_rings.ipynb) and [Kirchhoff's equations](../examples/fluids/kirchhoff/kirchhoff.ipynb) examples ([gallery](https://numga.org/#eigen-fluids)):
 
 ```python
 circulation = vorticity & patch                                           # [] Scalar+
@@ -266,7 +266,7 @@ In introductory wave physics and relativity, plane-wave phase is written as a me
 
 #### Electrodynamics and crystal optics
 
-In spacetime (`x+ y+ z+ t-`), the electromagnetic field is an extrinsic bivector read across a swept worldsheet plane `bond & time_direction` ([Electric and magnetic fields](#electric-and-magnetic-fields)), while a vacuum (`Bivector.dual()`) or crystal medium is a constitutive duality map to the intrinsic excitation in [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb), [Fresnel wave surfaces](../examples/electromagnetism/fresnel/fresnel.ipynb), [second-harmonic generation](../examples/electromagnetism/second_harmonic/second_harmonic.ipynb) and [piezoelectric bimorph](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb) examples:
+In spacetime (`x+ y+ z+ t-`), the electromagnetic field is an extrinsic bivector read across a swept worldsheet plane `bond & time_direction` ([Electric and magnetic fields](#electric-and-magnetic-fields)), while a vacuum (`Bivector.dual()`) or crystal medium is a constitutive duality map to the intrinsic excitation in [constitutive media](../examples/electromagnetism/constitutive/constitutive.ipynb), [Fresnel wave surfaces](../examples/electromagnetism/fresnel/fresnel.ipynb), [second-harmonic generation](../examples/electromagnetism/second_harmonic/second_harmonic.ipynb) and [piezoelectric bimorph](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb) examples ([extensor gallery](../docs/extensors.md#25-piezoelectric-bimorph)):
 
 ```python
 reading = field & (bond & time_direction)  # [] Scalar+
@@ -277,7 +277,7 @@ In standard three-dimensional electrodynamics, vacuum field energy is written wi
 
 #### Spin precession and chiral media
 
-A spin or magnetic moment is an intrinsic angular-momentum patch whereas the magnetic field that turns it is an extrinsic rate ([Spin](#spin)), and pairing two intrinsic quantities such as nuclear spin and electron emission direction produces a handed scalar that multiplies a handed coupling constant in [magnetic resonance](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb), [Wu experiment](../examples/orientation/wu_experiment/wu_experiment.ipynb), [optical rotation](../examples/orientation/optical_rotation/optical_rotation.ipynb), [two spins](../examples/quantum/two_spins/two_spins.ipynb), [material symmetry](../examples/mechanics/symmetry/symmetry.ipynb) and [superconductivity](../examples/quantum/superconductivity/superconductivity.ipynb) examples:
+A spin or magnetic moment is an intrinsic angular-momentum patch whereas the magnetic field that turns it is an extrinsic rate ([Spin](#spin)), and pairing two intrinsic quantities such as nuclear spin and electron emission direction produces a handed scalar that multiplies a handed coupling constant in [magnetic resonance](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb), [Wu experiment](../examples/orientation/wu_experiment/wu_experiment.ipynb), [optical rotation](../examples/orientation/optical_rotation/optical_rotation.ipynb), [two spins](../examples/quantum/two_spins/two_spins.ipynb), [material symmetry](../examples/mechanics/symmetry/symmetry.ipynb) and [superconductivity](../examples/quantum/superconductivity/superconductivity.ipynb) examples ([gallery](https://numga.org/#skyrmions), [extensor gallery](../docs/extensors.md#29-magnetic-resonance)):
 
 ```python
 zeeman_energy = field & spin                        # [] Scalar+
@@ -290,7 +290,7 @@ In quantum mechanics and magnetic resonance, Zeeman coupling is written as the E
 
 #### Gravitational waves and spacetime curvature
 
-In general relativity, restricting the Riemann duality map by an observer's clock direction gives the spatial tidal map, which in weak-field linearized gravity shares the type of gravitational-wave metric strain without a metric conversion between them, in [gravitational-wave curvature](../examples/relativity/curvature/curvature.ipynb), [LIGO antenna patterns](../examples/relativity/ligo/ligo.ipynb), [gravitational waves of a closed universe](../examples/relativity/gravitational_waves/waves.ipynb), [Hopf-projected gravitational waves](../examples/relativity/gravitational_waves/hopf_projection.ipynb), [Regge calculus](../examples/surfaces/regge_calculus/regge_calculus.ipynb) and [satellite navigation](../examples/relativity/gps/gps.ipynb) examples:
+In general relativity, restricting the Riemann duality map by an observer's clock direction gives the spatial tidal map, which in weak-field linearized gravity shares the type of gravitational-wave metric strain without a metric conversion between them, in [gravitational-wave curvature](../examples/relativity/curvature/curvature.ipynb), [LIGO antenna patterns](../examples/relativity/ligo/ligo.ipynb), [gravitational waves of a closed universe](../examples/relativity/gravitational_waves/waves.ipynb), [Hopf-projected gravitational waves](../examples/relativity/gravitational_waves/hopf_projection.ipynb), [Regge calculus](../examples/surfaces/regge_calculus/regge_calculus.ipynb) and [satellite navigation](../examples/relativity/gps/gps.ipynb) examples ([gallery](https://numga.org/#gravitational-waves)):
 
 ```python
 arm_reading = (strain(arm) & arm) / 2           # [] Scalar+
@@ -305,7 +305,7 @@ In standard general-relativity presentations, geodesic deviation raises an index
 
 #### State changes and conjugate potentials
 
-In [rubber band](../examples/thermodynamics/rubber_band/rubber_band.ipynb) and [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb) examples, an equilibrium state combines intrinsic quantities such as position or volume with entropy while its conjugate potential combines minus force or pressure with temperature (`work = potential & change`). Allowing states and potentials to vary independently doubles the space, and on two variations `(state_a, potential_a)` and `(state_b, potential_b)` the cross-pairing splits into an alternating symplectic two-form `omega` and a split-signature bilinear form `symmetric`:[^symmetric-affine]
+In [rubber band](../examples/thermodynamics/rubber_band/rubber_band.ipynb) and [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb) examples, an equilibrium state combines intrinsic quantities such as position or volume with entropy while its conjugate potential combines minus force or pressure with temperature (`work = potential & change`). Allowing states and potentials to vary independently doubles the space, and on two variations `(state_a, potential_a)` and `(state_b, potential_b)` the cross-pairing splits into an alternating symplectic two-form `omega` and a split-signature bilinear form `symmetric`[^symmetric-affine] ([gallery](https://numga.org/#rubber-band)):
 
 ```python
 omega = (potential_b & state_a) - (potential_a & state_b)            # [] Scalar+
@@ -334,7 +334,7 @@ In standard optimal control, linear-quadratic regulators write costs and value f
 
 #### Uncertainty, principal components and gradient descent
 
-In estimation and statistical optics, covariance maps a linear readout to its associated state variation while precision or Fisher information maps a variation back to a readout, pushing forward across any linearized map `shift` with no metric in [Kalman pose filter](../examples/estimation/kalman/kalman.ipynb), [Gaussian fitting](../examples/quadrics/gaussian/gaussian.ipynb), [odometry](../examples/estimation/odometry/odometry.ipynb), [station keeping](../examples/estimation/pose_diffusion/station_keeping.ipynb) and [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr.ipynb) examples:
+In estimation and statistical optics, covariance maps a linear readout to its associated state variation while precision or Fisher information maps a variation back to a readout, pushing forward across any linearized map `shift` with no metric in [Kalman pose filter](../examples/estimation/kalman/kalman.ipynb), [Gaussian fitting](../examples/quadrics/gaussian/gaussian.ipynb), [odometry](../examples/estimation/odometry/odometry.ipynb), [station keeping](../examples/estimation/pose_diffusion/station_keeping.ipynb) and [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr.ipynb) examples ([gallery](https://numga.org/#kerr), [extensor gallery](../docs/extensors.md#34-the-most-likely-trajectory-from-odometry)):
 
 ```python
 variance = readout & covariance(readout)                     # [] Scalar+
@@ -346,7 +346,7 @@ In optimization and multivariate statistics, gradient descent $\mathbf{x} - \alp
 
 #### Thermodynamics and heat transport
 
-In a thermodynamic state space with null basis squares (`a0 b0` or `t0 v0`), extensive variables such as energy, entropy and volume share no unit and admit no inner product, yet an Onsager mobility (`Antivector- <- Vector+`) and a Ruppeiner fluctuation metric (`Vector+ <- Antivector-`) evaluate entropy production and fluctuation curvature directly, while a magnetic field makes the transport response non-symmetric with field reversal given by `response.adjugate()` (joining spacetime in [magnetotransport](../examples/thermodynamics/magnetotransport/magnetotransport.ipynb); see [Geometry and quantities](thermodynamics.md)) in [entropy production](../examples/thermodynamics/entropy_production/entropy_production.ipynb), [critical fluctuations](../examples/thermodynamics/ruppeiner/ruppeiner.ipynb), [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb) and [damping as heating](../examples/thermodynamics/generic/generic.ipynb) examples:
+In a thermodynamic state space with null basis squares (`a0 b0` or `t0 v0`), extensive variables such as energy, entropy and volume share no unit and admit no inner product, yet an Onsager mobility (`Antivector- <- Vector+`) and a Ruppeiner fluctuation metric (`Vector+ <- Antivector-`) evaluate entropy production and fluctuation curvature directly, while a magnetic field makes the transport response non-symmetric with field reversal given by `response.adjugate()` (joining spacetime in [magnetotransport](../examples/thermodynamics/magnetotransport/magnetotransport.ipynb); see [Geometry and quantities](thermodynamics.md)) in [entropy production](../examples/thermodynamics/entropy_production/entropy_production.ipynb), [critical fluctuations](../examples/thermodynamics/ruppeiner/ruppeiner.ipynb), [constrained heat capacity](../examples/thermodynamics/state_space/state_space.ipynb) and [damping as heating](../examples/thermodynamics/generic/generic.ipynb) examples ([extensor gallery](../docs/extensors.md#19-charge-and-heat-in-a-magnetic-field)):
 
 ```python
 entropy_production = entropy_gradient & mobility(entropy_gradient)  # [] Scalar+
@@ -357,7 +357,7 @@ In linear irreversible thermodynamics, fluxes and affinities are paired by a dot
 
 #### Quantum states and measurements
 
-Modelling a qubit state as a unit-weight projective point (`w & state == 1`) and a measurement outcome as a plane ([States and effects](#states-and-effects)) writes Born's rule as `effect & state`, while a noisy channel maps states forward and its adjugate pulls effects back in [quantum process tomography in the projective Bloch ball](../examples/quantum/process_tomography/process_tomography.ipynb) and [Bloch-vector companion](../examples/quantum/process_tomography/process_tomography_bloch.ipynb) examples:
+Modelling a qubit state as a unit-weight projective point (`w & state == 1`) and a measurement outcome as a plane ([States and effects](#states-and-effects)) writes Born's rule as `effect & state`, while a noisy channel maps states forward and its adjugate pulls effects back in [quantum process tomography in the projective Bloch ball](../examples/quantum/process_tomography/process_tomography.ipynb) and [Bloch-vector companion](../examples/quantum/process_tomography/process_tomography_bloch.ipynb) examples ([extensor gallery](../docs/extensors.md#23-quantum-process-tomography-in-the-projective-bloch-ball)):
 
 ```python
 probability = effect & device(preparation)  # [] Scalar+
@@ -413,7 +413,7 @@ In three-dimensional vector notation, torque $\boldsymbol{\tau} = \mathbf{r} \ti
 
 ### Electric and magnetic fields
 
-An electric field accelerates charges at rest along a spatial direction, sweeping a plane along the observer's time; a magnetic field turns moving charges in a plane of space. Both generate a charge's motion in spacetime (`x+ y+ z+ t-`), so both inhabit one extrinsic bivector space, and a spatial direction swept along the observer's clock, `direction & time`, reads the electric part across that worldsheet patch:
+An electric field accelerates charges at rest along a spatial direction, sweeping a plane along the observer's time; a magnetic field turns moving charges in a plane of space. Both generate a charge's motion in spacetime (`x+ y+ z+ t-`), so both inhabit one extrinsic bivector space, and a spatial direction swept along the observer's clock, `direction & time`, reads the electric part across that worldsheet patch ([dynamo](https://numga.org/#dynamo), [moving charges](../docs/extensors.md#28-moving-charges)):
 
 ```python
 time = -mv.t.dual()                                               # [] Antivector-
@@ -429,7 +429,7 @@ In three-dimensional vector notation, $\mathbf{E}$ is a polar vector and $\mathb
 
 ### Spin
 
-A spin or magnetic moment is an angular momentum, the intrinsic patch of the plane its current or phase circulates in, so like every angular momentum it is an intrinsic antibivector, at grade n − 2: grade 1 in three-dimensional space, and grade 2 in four-dimensional spacetime. An isospin or pseudospin has the same representation in its state space. The magnetic field that turns it is an extrinsic plane of turning, the Zeeman energy is `field & spin`, and Larmor precession is `spin.commutator(field)`, in [magnetic resonance](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb), [superconductivity](../examples/quantum/superconductivity/superconductivity.ipynb), [neutrino oscillations](../examples/quantum/neutrino_isospin/neutrino_isospin.ipynb), [graphene](../examples/quantum/graphene/graphene.ipynb), [Thomas precession](../examples/relativity/thomas_precession/thomas_precession.ipynb) and [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr.ipynb) examples:
+A spin or magnetic moment is an angular momentum, the intrinsic patch of the plane its current or phase circulates in, so like every angular momentum it is an intrinsic antibivector, at grade n − 2: grade 1 in three-dimensional space, and grade 2 in four-dimensional spacetime. An isospin or pseudospin has the same representation in its state space. The magnetic field that turns it is an extrinsic plane of turning, the Zeeman energy is `field & spin`, and Larmor precession is `spin.commutator(field)`, in [magnetic resonance](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb), [superconductivity](../examples/quantum/superconductivity/superconductivity.ipynb), [neutrino oscillations](../examples/quantum/neutrino_isospin/neutrino_isospin.ipynb), [graphene](../examples/quantum/graphene/graphene.ipynb), [Thomas precession](../examples/relativity/thomas_precession/thomas_precession.ipynb) and [Kerr black-hole ray tracing](../examples/relativity/kerr/kerr.ipynb) examples ([gallery](https://numga.org/#skyrmions), [extensor gallery](../docs/extensors.md#29-magnetic-resonance)):
 
 ```python
 spin = mv.yz.dual() + mv.xy.dual() * 0.5                          # [] Antibivector-: x + 0.5*z
@@ -485,7 +485,7 @@ In the tensor and vector notations of weak-interaction physics and electrodynami
 
 ### States and effects
 
-A qubit's state fixes the outcome probabilities of every measurement on it, and a statistical mixture of states mixes those probabilities linearly. Because an affine function on three-dimensional space is a projective plane, including a projective weight w represents a qubit state as an intrinsic point of unit weight and a measurement outcome as an extrinsic plane, paired by `effect & state`, in a [quantum process tomography in the projective Bloch ball](../examples/quantum/process_tomography/process_tomography.ipynb) example:
+A qubit's state fixes the outcome probabilities of every measurement on it, and a statistical mixture of states mixes those probabilities linearly. Because an affine function on three-dimensional space is a projective plane, including a projective weight w represents a qubit state as an intrinsic point of unit weight and a measurement outcome as an extrinsic plane, paired by `effect & state`, in a [quantum process tomography in the projective Bloch ball](../examples/quantum/process_tomography/process_tomography.ipynb) example ([extensor gallery](../docs/extensors.md#23-quantum-process-tomography-in-the-projective-bloch-ball)):
 
 ```python
 centre = mv.point([0, 0, 0])                                      # [] Antivector-
@@ -503,7 +503,7 @@ In textbook operator notation, a qubit state is written as $\rho = \tfrac12(\mat
 
 ### Extensive quantities and potentials
 
-Extensive thermodynamic amounts such as entropy, volume and mass share no unit with space or with one another, so they are modelled along added null basis vectors (`s0`, `v0`, `m0`) whose squares vanish. An extensive state or carrier parcel is an intrinsic antivector (grade n − 1), while its conjugate potentials, such as temperature and minus pressure, form an extrinsic vector (grade 1). Joining those null directions with space and time places spatial slopes of potentials and the electromagnetic field into one extrinsic bivector `drive`, and pairs a carrier's velocity with its parcel into one intrinsic antibivector `flux` ([Geometry and quantities](thermodynamics.md)):
+Extensive thermodynamic amounts such as entropy, volume and mass share no unit with space or with one another, so they are modelled along added null basis vectors (`s0`, `v0`, `m0`) whose squares vanish. An extensive state or carrier parcel is an intrinsic antivector (grade n − 1), while its conjugate potentials, such as temperature and minus pressure, form an extrinsic vector (grade 1). Joining those null directions with space and time places spatial slopes of potentials and the electromagnetic field into one extrinsic bivector `drive`, and pairs a carrier's velocity with its parcel into one intrinsic antibivector `flux` ([Geometry and quantities](thermodynamics.md), [rubber band](https://numga.org/#rubber-band), [snowflake](https://numga.org/#snowflake)):
 
 ```python
 work = potentials & change                        # [] Scalar+

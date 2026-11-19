@@ -13,7 +13,7 @@ def ray_fn(point: Point) -> Line:
     return light & point
 ```
 
-Naming the space of points by its type `Point` builds that same map directly inside the algebra. Because the resulting extensor belongs to the algebra, further products act on its output and composition feeds one map directly into another:
+Naming the space of points by its type `Point` builds that same map directly inside the algebra. Because the resulting extensor belongs to the algebra, further products act on its output and composition feeds one map directly into another ([scenegraph](../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map), [projection](../examples/geometry/projection/projection.ipynb)):
 
 ```python
 ray = light & Point                                          # [] Antibivector- <- Antivector-
@@ -40,9 +40,9 @@ rebuilt = Line - ((motor >> centre) & (Line ^ (motor >> plane))) / focal # [] An
 
 Because the sandwich action distributes across every product and its inverse action cancels on `Line`, `moved` and `rebuilt` are the same map, and the same identity holds when a reflection `mirror` replaces `motor`. One action moves the ray, the lens and the motion itself, and nothing in the scene is set apart from the objects it transforms.
 
-<p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D with a two-lens camera and sample sight ray on the left, and the rendered sensor image on the right" width="598" /></p>
+<p align="center"><a href="../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D with a two-lens camera and sample sight ray on the left, and the rendered sensor image on the right" width="598" /></a></p>
 
-*Figure: an articulated robot arm and a moving two-lens camera in three dimensions on the left, with the image produced on the sensor by composing the body motors, lens maps and sensor meet on the right.*
+*Figure: an articulated robot arm and a moving two-lens camera in three dimensions on the left, with the image produced on the sensor by composing the body motors, lens maps and sensor meet on the right ([extensor gallery](../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map), [notebook](../examples/geometry/scenegraph/scenegraph.ipynb)).*
 
 In tensor algebra the order is the reverse. The transformations come first, given as rotation matrices, and a tensor is defined as an array that responds to them by the tensor transformation law, such as $T' = R T R^{\mathsf T}$ for a two-index tensor, with one factor of the rotation on each of its axes. The rotation is a linear map on vectors and therefore a tensor itself, yet the definition treats it as given beforehand, standing outside as the test the other objects must pass. Here a transformation is an extensor from the start, and no object is defined by testing it against something posited outside the algebra. The tensor transformation law follows as a consequence, where the moved lens `motor >> lens(motor << Line)` reads in tensor notation as $R T R^{\mathsf T}$, the motion applied on the output and undone on the input.
 

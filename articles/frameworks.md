@@ -21,7 +21,7 @@ These inclusions keep the constructions of the smaller frameworks intact while e
 
 ## Matrices and linear algebra
 
-Every linear map between finite-dimensional multivector spaces is a linear extensor, and every such map can be built from geometric-algebra products, whether it acts from vectors to vectors, between different grades, or on mixed-grade spaces. A scalar readout multiplied by a fixed output gives a rank-one map. In projective space, a plane's reading of a point scales a fixed direction:
+Every linear map between finite-dimensional multivector spaces is a linear extensor, and every such map can be built from geometric-algebra products, whether it acts from vectors to vectors, between different grades, or on mixed-grade spaces. A scalar readout multiplied by a fixed output gives a rank-one map. In projective space, a plane's reading of a point scales a fixed direction ([thin-walled beams](../docs/extensors.md#14-bending-and-twisting-of-thin-walled-beams), [vibration modes](../docs/extensors.md#33-vibration-modes-of-a-suspended-plate)):
 
 ```python
 dyad = direction * (plane & Point)                                # [] Antivector- <- Antivector-
@@ -33,7 +33,7 @@ Abstract linear algebra applies to multivector spaces as it does to any vector s
 
 ### Pairings and adjoints
 
-In matrix calculations, a transpose often reverses the direction of a map while standing for two distinct operations. An adjoint transfers a map across a nondegenerate inner product, whereas a dual map pulls measurements of the output back to measurements of the input. For an orientation-preserving map `A` on intrinsic elements and an extrinsic measurement `c`, their defining equations separate the two pairings:
+In matrix calculations, a transpose often reverses the direction of a map while standing for two distinct operations. An adjoint transfers a map across a nondegenerate inner product, whereas a dual map pulls measurements of the output back to measurements of the input. For an orientation-preserving map `A` on intrinsic elements and an extrinsic measurement `c`, their defining equations separate the two pairings ([area transport](../docs/extensors.md#35-area-transport-through-a-collapse), [multiview reconstruction](../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment)):
 
 ```python
 A.adjoint()(b).scalar_product(a) == b.scalar_product(A(a))        # [] Scalar+
@@ -52,7 +52,7 @@ An ordinary eigenvalue problem compares a map's output directly with its input, 
 
 A tensor on a vector space acts multilinearly on vectors and covectors, and geometric calculus extends tensors to multilinear functions on Clifford algebras [[4]](#references). Carrying that multilinear-map view across oriented and mixed-grade subspaces places ordinary tensors inside extensors as a special case. In an inner-product space, `a.dot(Vector)` gives a covector readout by pairing one-vectors; through the complementary pairing, a plane reads a point as `plane & point` and `plane & Point` is the linear form, which stays available when the metric is degenerate. Multiplying scalar-valued maps on independent arguments builds tensor products, multiplying by a fixed output gives a map with that output type, and binding arguments, composing maps and contracting paired arguments keep their standard meanings.
 
-Because an extensor's arguments can belong to any subspace of the algebra, a multilinear map can also act directly on mixed-grade elements such as rotors (`Scalar+ + Bivector+`). Sandwiching rest-shape edge directions with the rotor identity map `Rotor` places `Rotor` on both sides of the product and forms a symmetric bilinear map on pairs of rotors:
+Because an extensor's arguments can belong to any subspace of the algebra, a multilinear map can also act directly on mixed-grade elements such as rotors (`Scalar+ + Bivector+`). Sandwiching rest-shape edge directions with the rotor identity map `Rotor` places `Rotor` on both sides of the product and forms a symmetric bilinear map on pairs of rotors ([as rigid as possible](../docs/extensors.md#13-as-rigid-as-possible)):
 
 ```python
 edge_forms = edges.dot(Rotor >> rest_edges)                       # [edges] Scalar+ <- (Rotor+, Rotor+)
@@ -70,7 +70,7 @@ Symmetric tensors stay symmetric multi-argument maps rather than forming a new g
 
 Tensor algebra usually starts from a bare vector space and supplies a metric as a separate bilinear form, whereas a geometric algebra builds a metric into its geometric product. That built-in metric need not be the physical metric of a model, because a position-dependent physical metric can be supplied as an extensor while the algebra's product stays fixed. With a fixed nondegenerate reference metric defining the dot product, any physical metric on a direction space `Direction` can be written as `Direction.dot(metric_map)` for a self-adjoint `metric_map`, or kept as a duality map from directions to planes evaluated through the regressive product, which rests on a unit of volume alone. Norms and rotors built from the algebra's own product belong to the reference metric.
 
-Kerr black-hole examples put both choices side by side. A [metric formulation](../examples/relativity/kerr/kerr_metric.ipynb) example represents the curved metric as a duality map `Vector+ <- Antivector-` together with its Levi-Civita connection. Following the gauge-theory formulation of gravity in spacetime algebra [[7, §§1, 5.3]](#references), a [gauge formulation](../examples/relativity/kerr/kerr.ipynb) example instead represents the geometry by a position-dependent frame map `Antivector- <- Antivector-` and a bivector connection over flat Minkowski space. Both evaluate the same squared proper interval along a direction:
+Kerr black-hole examples put both choices side by side. A [metric formulation](../examples/relativity/kerr/kerr_metric.ipynb) example represents the curved metric as a duality map `Vector+ <- Antivector-` together with its Levi-Civita connection. Following the gauge-theory formulation of gravity in spacetime algebra [[7, §§1, 5.3]](#references), a [gauge formulation](../examples/relativity/kerr/kerr.ipynb) example instead represents the geometry by a position-dependent frame map `Antivector- <- Antivector-` and a bivector connection over flat Minkowski space. Both evaluate the same squared proper interval along a direction ([gallery](https://numga.org/#kerr)):
 
 ```python
 metric_interval = metric(geometry)(direction) & direction         # [] Scalar+

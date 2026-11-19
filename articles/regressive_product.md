@@ -33,7 +33,7 @@ volume = a & b & c & d                   # [] Scalar-
 
 Each join in that chain stays intrinsic. The line is oriented along itself from one point to the next, the triangle's plane is oriented by the order of its corners round the triangle rather than by a positive side outside it, and in three-space `a & b & c & d` is an intrinsic scalar that changes sign in a mirror, as a [surface normals](../examples/orientation/normals/normals.ipynb) example shows.
 
-Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example:
+Joins and meets work together whenever a spanned element meets a plane. The line joined from a light source to a scene point meets a ground plane at the shadow point on the ground, as in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example ([extensor gallery](../docs/extensors.md#12-a-scenegraph-a-robot-arm-and-a-camera-as-one-map)):
 
 ```python
 ray = light & point                      # [] Antibivector-
@@ -66,7 +66,7 @@ By associativity, `p & q` is the intrinsic line whose pairing with any two wedge
 
 ## Simplex gradients
 
-On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). At a corner of a simplex, the simplex gradient is the hyperplane that pairs to one with that corner and to zero with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds that corner gradient in closed form, as in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example:
+On a simplex, dividing boundary joins by the volume join gives a discrete derivative without a metric ([Discrete differential geometric algebra](ddga.md)). At a corner of a simplex, the simplex gradient is the hyperplane that pairs to one with that corner and to zero with the corners opposite. On a tetrahedron with unit-weight corners, dividing the opposite facet join `b & c & d` by the volume join `(b & c & d) & a` builds that corner gradient in closed form, as in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example ([gallery](https://numga.org/#gravitational-waves)):
 
 ```python
 facet = b & c & d                        # [] Antitrivector-
@@ -80,7 +80,7 @@ Because numerator and denominator are both intrinsic, their quotient `gradient_a
 
 Naming the space of an argument by its type builds a linear map directly from a product ([Extensors through multiple lenses](multiple_lenses.md)). In projective three-space, pairing any point with a fixed plane reads a scalar, multiplying a fixed output point by that readout gives a rank-one dyad, and joining any direction or point with a fixed point `p` gives a linear join map. Reading a linear map backwards across the regressive pairing defines its adjugate, keeping the extrinsic factor first on both sides so that signs remain independent of dimension.
 
-For a map preserving orientation, such as a pinhole camera projecting scene points onto an image plane, its adjugate pulls image lines back into planes through the pinhole without needing an inverse camera. Pulling an image conic polarity back through the camera and its adjugate forms a sight cone in space, as in a [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. For the partial-join map with a fixed intrinsic point, associativity and anticommutativity of the regressive product make its adjugate the partial contraction with that same point:
+For a map preserving orientation, such as a pinhole camera projecting scene points onto an image plane, its adjugate pulls image lines back into planes through the pinhole without needing an inverse camera. Pulling an image conic polarity back through the camera and its adjugate forms a sight cone in space, as in a [multiview reconstruction](../examples/estimation/multiview/multiview_reconstruction.ipynb) example. For the partial-join map with a fixed intrinsic point, associativity and anticommutativity of the regressive product make its adjugate the partial contraction with that same point ([extensor gallery](../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment)):
 
 ```python
 plane & camera(point) == camera.adjugate()(plane) & point   # [] Scalar+
@@ -92,7 +92,7 @@ For a duality map between complementary orientations, such as `cone` mapping int
 
 ## Mechanics and electrodynamics
 
-A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples:
+A mechanical model can represent a body's turning rate as an extrinsic bivector at grade two, and a moving mass's angular momentum as the intrinsic join `point & velocity` two grades below the top space ([Complementarity](complementarity.md#appendix-representations)). Half the pairing of the rate with the momentum is then the kinetic energy, as in [tennis racket](../examples/mechanics/tennis_racket/tennis_racket.ipynb) and [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) examples ([gallery](https://numga.org/#tennis-racket)):
 
 ```python
 velocity = point.commutator(rate)        # [] Antivector-
@@ -102,7 +102,7 @@ energy = (rate & momentum) / 2           # [] Scalar+
 
 In three dimensions (`x+ y+ z+`), the rate has grade two while the momentum has grade one, so their inner product `rate | momentum` is a vector rather than a scalar. Because grade two and grade `n - 2` always add to `n`, `(rate & momentum) / 2` has the same form in the plane, in space and in four dimensions, and stays positive in a mirror. While that pairing uses no metric, the metric and the normalization of the mass point enter in `point.commutator(rate)` when building the momentum, so the same rate bivector carries different unit-speed weights and kinetic energies in Euclidean, elliptic and hyperbolic spaces [[2, §6.1]](#references), [[5, §§9.2–9.3]](#references).
 
-In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time direction forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. By the partial-join adjugate identity above, pulling the field back across the map that sweeps displacements with the four-current gives the Lorentz four-force `-(field & current)`, which has the same algebraic form as `(u ^ v) & p`:
+In spacetime (`x+ y+ z+ t-`), electrodynamics can model the electromagnetic field as an extrinsic bivector and the electric four-current as an intrinsic antivector. Joining a wire step with an observer's time direction forms the worldsheet patch `direction & time`, and pairing the field with that patch reads the voltage per unit length along the wire. By the partial-join adjugate identity above, pulling the field back across the map that sweeps displacements with the four-current gives the Lorentz four-force `-(field & current)`, which has the same algebraic form as `(u ^ v) & p` ([dynamo](https://numga.org/#dynamo), [superconductor](https://numga.org/#superconductor)):
 
 ```python
 voltage_slope = field & (direction & time)   # [] Scalar+

@@ -21,9 +21,9 @@ step = curvature.lstsq(-slope, rcond=1e-4)                        # [cameras] Bi
 
 Evaluating the cone directly keeps its measurement weighting intact instead of squaring it or imposing a coordinate norm on planes, and leaves the local curvature and slope ready for the linear solve. In the joint problem, stepping cameras by extrinsic twists and landmarks by intrinsic spatial directions keeps each landmark block three-dimensional and nonsingular, so eliminating the landmarks in the Schur complement uses a direct solve rather than a pseudoinverse over homogeneous coordinates.
 
-<p align="center"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligning step by step, with their sight cones and the splat ellipsoids they fuse into" width="300" /></p>
+<p align="center"><a href="../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligning step by step, with their sight cones and the splat ellipsoids they fuse into" width="300" /></a></p>
 
-*Figure: three cameras aligning step by step from image measurements, showing their back-projected sight cones and the orange landmark ellipsoids formed by summing those cones across views.*
+*Figure: three cameras aligning step by step from image measurements, showing their back-projected sight cones and the orange landmark ellipsoids formed by summing those cones across views ([extensor gallery](../docs/extensors.md#1-multi-view-reconstruction-and-camera-alignment), [notebook](../examples/estimation/multiview/multiview_reconstruction.ipynb)).*
 
 In matrix notation, a cone cost $x^{\mathsf T}Qx$ composed with a point-motion Jacobian $M$ gives the Gauss–Newton Hessian $M^{\mathsf T}QM$, whereas treating the polar plane $Qx$ as a Euclidean residual gives $M^{\mathsf T}Q^{\mathsf T}QM$ with a squared copy of $Q$.
 
@@ -58,9 +58,9 @@ flux_pullback = areas.adjugate()                                  # [] Bivector+
 
 As algebraic maps, both `areas` and `flux_pullback` stay defined when a deformation becomes singular, extending cofactor area transport beyond the regular regime where a physical Cauchy stress is defined. For a regular deformation, stress conversions follow by composition. Composing a Cauchy traction map from current patches to current forces with `areas` gives the first Piola–Kirchhoff map on reference patches, and pulling the force output back through the inverse deformation gives the second Piola–Kirchhoff map, with each factor's domain and codomain explicit.
 
-<p align="center"><img src="../plots/area_transport.gif" alt="A cube sheared and flattened to zero volume on the left, with bars tracking its three face areas and volume on the right" width="600" /></p>
+<p align="center"><a href="../docs/extensors.md#35-area-transport-through-a-collapse"><img src="../plots/area_transport.gif" alt="A cube sheared and flattened to zero volume on the left, with bars tracking its three face areas and volume on the right" width="600" /></a></p>
 
-*Figure: a cube sheared and flattened onto a horizontal plane on the left, while the bars on the right track its three face areas and its volume through the collapse to zero volume.*
+*Figure: a cube sheared and flattened onto a horizontal plane on the left, while the bars on the right track its three face areas and its volume through the collapse to zero volume ([extensor gallery](../docs/extensors.md#35-area-transport-through-a-collapse), [notebook](../examples/mechanics/area_transport/area_transport.ipynb)).*
 
 In the matrix notation of continuum mechanics, for a regular orientation-preserving deformation $F$ with Jacobian determinant $J$, deformed and reference area vectors satisfy $n\,da=J F^{-\mathsf T}N\,dA$ [[5, §1.7]](#references), and for Cauchy traction $t=\sigma n$ the first and second Piola–Kirchhoff stresses read $P=J\sigma F^{-\mathsf T}$ and $S=F^{-1}P$ [[6, §2.2]](#references).
 
@@ -68,7 +68,7 @@ In the matrix notation of continuum mechanics, for a regular orientation-preserv
 
 In numerical mechanics, a stiffness or inertia matrix written between dual coordinate conventions can fail to look symmetric on its raw array entries. Averaging such a matrix with its transpose changes the operator, while forming normal equations squares its singular values and condition number. When symmetry belongs to an energy pairing between complementary spaces, pairing the map exposes that symmetry directly.
 
-A vibration mode is a motion rate for which elastic and inertial loads stay proportional. A [normal modes](../examples/mechanics/modes/modes.ipynb) example sums spring stiffnesses and point-mass inertias as maps from twists to forques, and pairs both with a second twist to form symmetric quadratic energy maps:
+A vibration mode is a motion rate for which elastic and inertial loads stay proportional. A [normal modes](../examples/mechanics/modes/modes.ipynb) example sums spring stiffnesses and point-mass inertias as maps from twists to forques, and pairs both with a second twist to form symmetric quadratic energy maps ([extensor gallery](../docs/extensors.md#33-vibration-modes-of-a-suspended-plate)):
 
 ```python
 pe_form = Twist & stiffness                                       # [] Scalar+ <- (Bivector+, Bivector+)
@@ -84,7 +84,7 @@ In matrix notation, structural modal analysis solves $Ku=\omega^2Mu$ for a real 
 
 Fitting a rigid rotation between corresponding vectors by the Kabsch–Umeyama algorithm takes a singular-value decomposition of their cross-covariance matrix and branches on the factor determinants to rule out improper reflections [[8]](#references), as used per cell in as-rigid-as-possible surface deformation [[9, §2.1]](#references).
 
-In a [surface deformation](../examples/surfaces/arap/arap.ipynb) example, each vertex instead maximizes edge alignment directly as a quadratic form on four-component Euclidean rotors (`Scalar+ + Bivector+`). That reproduces the unit-quaternion eigenvector solution of absolute orientation from photogrammetry [[10]](#references) directly from the sandwich product rather than a hand-assembled four-by-four matrix:
+In a [surface deformation](../examples/surfaces/arap/arap.ipynb) example, each vertex instead maximizes edge alignment directly as a quadratic form on four-component Euclidean rotors (`Scalar+ + Bivector+`). That reproduces the unit-quaternion eigenvector solution of absolute orientation from photogrammetry [[10]](#references) directly from the sandwich product rather than a hand-assembled four-by-four matrix ([extensor gallery](../docs/extensors.md#13-as-rigid-as-possible)):
 
 ```python
 alignment = (weights * edges.dot(Rotor >> rest_edges)).sum(axis=0)  # [] Scalar+ <- (Rotor+, Rotor+)
@@ -114,7 +114,7 @@ These cases concern quantities that tensor formulations pack into coordinate arr
 
 ### Inertia, vorticity and curvature
 
-Three-dimensional vector mechanics represents angular velocity by an axial arrow along its rotation axis so a three-by-three inertia matrix can map it to an angular-momentum arrow, or assembles angular and linear parts into a six-by-six generalized inertia matrix [[2, Ch. 4, §2.2]](#references), relying on grade two and grade one sharing three components. A [spinning top](../examples/mechanics/spinning_top/spinning_top.ipynb) example instead builds inertia directly on motion rates by joining each mass point with its velocity:
+Three-dimensional vector mechanics represents angular velocity by an axial arrow along its rotation axis so a three-by-three inertia matrix can map it to an angular-momentum arrow, or assembles angular and linear parts into a six-by-six generalized inertia matrix [[2, Ch. 4, §2.2]](#references), relying on grade two and grade one sharing three components. A [spinning top](../examples/mechanics/spinning_top/spinning_top.ipynb) example instead builds inertia directly on motion rates by joining each mass point with its velocity ([tennis racket](https://numga.org/#tennis-racket), [rattleback](https://numga.org/#rattleback)):
 
 ```python
 inertia = points.regressive(points.commutator(Rate) * masses).sum()  # [] Antibivector- <- Bivector+
@@ -172,9 +172,9 @@ Spatial-vector dynamics packages rigid-body velocities and forces into dual moti
 
 Vector electrodynamics transforms electric and magnetic fields under a Lorentz boost through separate parallel and transverse three-vector formulas [[19, §26-3, Table 26-4]](#references), whereas spacetime algebra boosts a single spacetime bivector directly by `boost >> field` [[20, §§III–IV, VI]](#references), as in a [moving charge](../examples/electromagnetism/moving_charge/moving_charge.ipynb) example.
 
-<p align="center"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling near the speed of light, sending a spiral wave of boosted electromagnetic field outward" width="300" /></p>
+<p align="center"><a href="../docs/extensors.md#28-moving-charges"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling near the speed of light, sending a spiral wave of boosted electromagnetic field outward" width="300" /></a></p>
 
-*Figure: a point charge circling near the speed of light, with its boosted electromagnetic field spiralling outward from the retarded worldline.*
+*Figure: a point charge circling near the speed of light, with its boosted electromagnetic field spiralling outward from the retarded worldline ([extensor gallery](../docs/extensors.md#28-moving-charges), [notebook](../examples/electromagnetism/moving_charge/moving_charge.ipynb)).*
 
 Successive non-collinear boosts compose into a pure boost plus a spatial Wigner rotation whose low-speed accumulation gives the Thomas correction that halves the naive spin–orbit term [[21, §§VII.C–VII.D]](#references). In a [Thomas precession](../examples/relativity/thomas_precession/thomas_precession.ipynb) example, multiplying boost rotors keeps velocity and frame rotation in one product, and factoring out the pure boost back to the laboratory frame reads off the accumulated rotation directly.
 

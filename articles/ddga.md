@@ -19,7 +19,7 @@ gradient & directions == simplex.d[0] * potential   # Scalar+[edges]
 
 This is a discrete statement of the fundamental theorem of geometric calculus, read on edges: the gradient read on a chain is the potential read on the chain's boundary. The boundary of a path of edges is its two ends, so the same holds on every path through the topology. The topology and its coboundaries are those of discrete differential geometry [[1]](#references).
 
-For the potential that is one at a single corner and nothing at the others, the simplex gradient reads one along every edge toward that corner and nothing along the facet across from it, and any potential's simplex gradient is the sum of these, each times the potential at its corner. In the projective plane, where a triangle's corners `a`, `b` and `c` are points of weight one, the regressive quotient writes the gradient at `a` in closed form:
+For the potential that is one at a single corner and nothing at the others, the simplex gradient reads one along every edge toward that corner and nothing along the facet across from it, and any potential's simplex gradient is the sum of these, each times the potential at its corner. In the projective plane, where a triangle's corners `a`, `b` and `c` are points of weight one, the regressive quotient writes the gradient at `a` in closed form ([rubber band](https://numga.org/#rubber-band), [gravitational waves](https://numga.org/#gravitational-waves)):
 
 ```python
 gradient_a = (b & c) / (a & b & c)    # [] Vector+
@@ -31,7 +31,7 @@ The operators that carry geometry are built from these gradients, while the topo
 
 ## The derivative one degree up
 
-A field can also be given one degree up, on the edges, as each edge reads it by the geometric product into its flux across the edge and its circulation along it. In the plane, for a triangle with corners `a`, `b` and `c`, the fundamental theorem of geometric calculus defines the field's derivative on the face by multiplying by its oriented area and summing the edge readings around the boundary:
+A field can also be given one degree up, on the edges, as each edge reads it by the geometric product into its flux across the edge and its circulation along it. In the plane, for a triangle with corners `a`, `b` and `c`, the fundamental theorem of geometric calculus defines the field's derivative on the face by multiplying by its oriented area and summing the edge readings around the boundary ([Dirac–Kähler](../examples/surfaces/dirac_kahler/dirac_kahler.ipynb)):
 
 ```python
 area = ((b - a) & (c - a)) / 2                     # [] Scalar-
@@ -42,7 +42,7 @@ Because the product is geometric, the derivative holds both parts. For an extrin
 
 ## The pullback of a material
 
-The Laplacian of a potential is its gradient, weighed by a material, gathered back into the vertices. The material maps each simplex's gradient to the flux on that simplex, and the gathering is the [adjugate](complementarity.md#claims) of the gradient, reading the gradient backwards across the regressive pairing:
+The Laplacian of a potential is its gradient, weighed by a material, gathered back into the vertices. The material maps each simplex's gradient to the flux on that simplex, and the gathering is the [adjugate](complementarity.md#claims) of the gradient, reading the gradient backwards across the regressive pairing ([eigen fluids](https://numga.org/#eigen-fluids), [superconductor](https://numga.org/#superconductor)):
 
 ```python
 laplacian = gradient.adjugate()(material(gradient))    # (Antiscalar- <- Scalar+)[vertices <- vertices]
@@ -68,9 +68,9 @@ The same holds for other values. A rotor field blended and differentiated across
 
 Every such value carries an extrinsic or intrinsic [orientation](orientation.md) and pairs across the regressive product with its [complement](complementarity.md) without a metric or a mirror sign change.
 
-<p align="center"><img src="../plots/arap_bending.gif" alt="A triangulated bar clamped at one end and bent upward through a right angle while keeping its cross-section" width="400" /></p>
+<p align="center"><a href="../docs/extensors.md#13-as-rigid-as-possible"><img src="../plots/arap_bending.gif" alt="A triangulated bar clamped at one end and bent upward through a right angle while keeping its cross-section" width="400" /></a></p>
 
-*Figure: a triangulated bar clamped at one end and bent upward through a right angle in as-rigid-as-possible deformation, alternating local rotor eigenvectors at the vertices with a global linear solve.*
+*Figure: a triangulated bar clamped at one end and bent upward through a right angle in as-rigid-as-possible deformation, alternating local rotor eigenvectors at the vertices with a global linear solve ([extensor gallery](../docs/extensors.md#13-as-rigid-as-possible), [notebook](../examples/surfaces/arap/arap.ipynb)).*
 
 Discrete differential geometry represents rotations by angles or by matrices, writing a connection as transport angles on edges relative to local tangent frames [[5]](#references), a direction field as complex numbers on those frames, and a local best rotation from the singular value decomposition of a covariance matrix sign-corrected where its determinant is negative [[6]](#references). The electromagnetic field is held as differential forms on the edges and faces of a complex, Whitney's edge elements, or as vector proxies of them.
 
@@ -86,9 +86,9 @@ advection = Point * (gradients & Point)    # [corners] (Antivector- <- (Antivect
 
 An operator read backwards across the regressive pairing is its adjugate, and a coupling and its adjugate are one map. The piezoelectric coupling that turns a voltage into forces on a body, read backwards, turns the body's motion into charge in a [piezoelectric bimorph](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb) example. In an [electrokinetics](../examples/fluids/electrokinetics/electrokinetics.ipynb) example, one coupling turns a pressure drop into a current and an electric field into a flow, so streaming current and electro-osmosis are reciprocal by construction. Bilinear forms of two arguments assemble in the same way, as when kinetic energy and enstrophy of a dynamo's flows are solved against each other as an eigenproblem in a [dynamo](../examples/electromagnetism/dynamo/dynamo.ipynb) example.
 
-<p align="center"><img src="../plots/piezoelectric.gif" alt="A clamped two-layer piezoelectric strip bent up and down at its free tip, strained near its root while a voltage builds along its floating electrode" width="525" /></p>
+<p align="center"><a href="../docs/extensors.md#25-piezoelectric-bimorph"><img src="../plots/piezoelectric.gif" alt="A clamped two-layer piezoelectric strip bent up and down at its free tip, strained near its root while a voltage builds along its floating electrode" width="525" /></a></p>
 
-*Figure: a clamped two-layer piezoelectric strip bent at its free tip, with opposite layer polings marked by grey arrows, interior axial strain shaded in blue and copper, and the induced voltage colouring the outer electrodes.*
+*Figure: a clamped two-layer piezoelectric strip bent at its free tip, with opposite layer polings marked by grey arrows, interior axial strain shaded in blue and copper, and the induced voltage colouring the outer electrodes ([extensor gallery](../docs/extensors.md#25-piezoelectric-bimorph), [notebook](../examples/electromagnetism/piezoelectric/piezoelectric.ipynb)).*
 
 In vector calculus and finite elements, fluid advection is written as $(\mathbf{u}\cdot\nabla)\mathbf{u}$, an elastic material is held as a fourth-order tensor $C_{ijkl}$ flattened to a matrix in Voigt's notation or formulated through a variant Hilbert complex for elasticity with weak symmetry [[7, §7]](#references), and a coupled multiphysics problem is assembled as a block matrix whose off-diagonal blocks are wired by numbering the degrees of freedom. Reciprocity across those blocks, such as Maxwell–Betti's in elasticity, Saxén's in electrokinetics, or Onsager's for coupled transport under reversal of time-reversal-breaking fields [[8, §I]](#references), is imposed as a transpose relation between them.
 
@@ -96,11 +96,11 @@ In vector calculus and finite elements, fluid advection is written as $(\mathbf{
 
 Small waves of the geometry of a closed universe run on the 600-cell, a tetrahedral topology on the three-sphere, in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example. The geometry is given by the squared lengths of the edges, Regge's variables, and the wave step combines higher-grade values with higher-arity maps.
 
-<p align="center"><img src="../plots/gravitational_waves_quadrupole.gif" alt="The three-sphere projected along its Hopf circles onto a sphere: a quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays" width="300" /></p>
+<p align="center"><a href="https://numga.org/#gravitational-waves"><img src="../plots/gravitational_waves_quadrupole.gif" alt="The three-sphere projected along its Hopf circles onto a sphere: a quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays" width="300" /></a></p>
 
-*Figure: the three-sphere projected along its Hopf circles onto a sphere. A quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays.*
+*Figure: the three-sphere projected along its Hopf circles onto a sphere. A quadrupole gravitational wave travels around it, deforming triangles of spring-coupled test masses and deflecting a fan of light rays ([gallery](https://numga.org/#gravitational-waves), [notebook](../examples/relativity/gravitational_waves/waves.ipynb)).*
 
-On each tetrahedron, minus half the symmetric product of the simplex gradients at an edge's two corners reads one on that edge's displacement and zero on every other edge of the tetrahedron:
+On each tetrahedron, minus half the symmetric product of the simplex gradients at an edge's two corners reads one on that edge's displacement and zero on every other edge of the tetrahedron ([gravitational waves](https://numga.org/#gravitational-waves)):
 
 ```python
 edge_basis = -(gradient_a * (gradient_b & Point) + gradient_b * (gradient_a & Point)) / 2   # [] Vector+ <- Antivector-
@@ -133,7 +133,7 @@ gradients = frame.solve(simplex.d[0].adjugate() * directions)    # Vector+[verti
 
 In the projective plane, an edge is the difference of two points of weight one and has no part along w, so the edge readings leave a simplex gradient's w component free. Fixing the gradient to read the potential at the corners themselves supplies that component and gives the regressive quotient in closed form.
 
-For a triangle with corners `a`, `b` and `c` of weight one, the line `b & c` through the facing side reads zero at `b` and `c`, and dividing by `a & b & c` scales it to read one at `a`, so at any point `p`, `gradient_a & p` is the area ratio with `a` moved to `p`. Across a topology of simplices of any dimension, joining the corners of each facing facet and dividing by the simplex's join computes every corner's gradient together, as on the tetrahedra of the three-sphere in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example:
+For a triangle with corners `a`, `b` and `c` of weight one, the line `b & c` through the facing side reads zero at `b` and `c`, and dividing by `a & b & c` scales it to read one at `a`, so at any point `p`, `gradient_a & p` is the area ratio with `a` moved to `p`. Across a topology of simplices of any dimension, joining the corners of each facing facet and dividing by the simplex's join computes every corner's gradient together, as on the tetrahedra of the three-sphere in a [gravitational waves](../examples/relativity/gravitational_waves/waves.ipynb) example ([gallery](https://numga.org/#gravitational-waves)):
 
 ```python
 corners = topology.incidence[-1, 0] * vertices                              # [corners] Antivector-[simplices]
@@ -161,7 +161,7 @@ corner_gradients = (sides | patches.inverse()) / 2                     # [corner
 
 In every case the gradient's level set contains the facing facet, so the regressive join expresses directly without a metric what a quarter turn of that edge expresses through one.
 
-In the plane, without a projective weight w, the same quotient follows directly from the vertex differences. Because `c - b = (c - a) - (b - a)`, the facing side `c - b` pairs to zero with itself and to `(b - a) & (c - a) == 2 * area` with `a - b`, so dividing by `2 * area` satisfies the edge definition directly:
+In the plane, without a projective weight w, the same quotient follows directly from the vertex differences. Because `c - b = (c - a) - (b - a)`, the facing side `c - b` pairs to zero with itself and to `(b - a) & (c - a) == 2 * area` with `a - b`, so dividing by `2 * area` satisfies the edge definition directly ([Dirac–Kähler](../examples/surfaces/dirac_kahler/dirac_kahler.ipynb)):
 
 ```python
 area * gradient_a == (c - b) / 2                                  # [] Antivector-

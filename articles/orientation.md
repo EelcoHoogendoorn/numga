@@ -8,9 +8,9 @@ The geometric requirement is that transformations of space commute with construc
 
 Two pictures show what a physical mirror does to a line, and everything after them builds on these two. Here points are oriented by their weights and planes by their positive sides.
 
-<p align="center"><img src="../plots/pairs_in_mirror.png" alt="Two points on a line lying in a mirror, and two planes crossing in that line, before and after the mirror" width="353" /></p>
+<p align="center"><a href="../examples/orientation/normals/normals.ipynb"><img src="../plots/pairs_in_mirror.png" alt="Two points on a line lying in a mirror, and two planes crossing in that line, before and after the mirror" width="353" /></a></p>
 
-*Figure: a vertical mirror, the pale sheet, and a line lying in it. Top: a red point and a blue point on the line. Bottom: a red plane and a blue plane crossing in the line, each at half a right angle to the mirror. Left: the scene. Right: its mirror image.*
+*Figure: a vertical mirror, the pale sheet, and a line lying in it. Top: a red point and a blue point on the line. Bottom: a red plane and a blue plane crossing in the line, each at half a right angle to the mirror. Left: the scene. Right: its mirror image ([notebook](../examples/orientation/normals/normals.ipynb)).*
 
 In the top row, the two points lie in the mirror and keep their positions and weights. In the bottom row, each plane's mirror image lies where the other plane was, so the mirror swaps them. In both rows the line stays where it is.
 
@@ -30,9 +30,9 @@ In projective three-space, where vectors are planes and antivectors are points, 
 
 Reflecting every element with the grade-involuted sandwich `mirror * x.involute() * mirror.inverse()` swaps `red` and `blue` and commutes with the geometric and outer products, so it negates the meet `red ^ blue` as it should. Because it commutes with the outer product while reversing the space's unit volume, it anti-commutes with the regressive product in every dimension and at every grade, turning around the joined line `ends[0] & ends[1]` that lies in the mirror:
 
-<p align="center"><img src="../plots/line_in_mirror.png" alt="Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result" width="603" /></p>
+<p align="center"><a href="../examples/orientation/normals/normals.ipynb"><img src="../plots/line_in_mirror.png" alt="Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result" width="603" /></a></p>
 
-*Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its intrinsic orientation. Left: the line. Middle: its mirror image, with its direction unchanged. Right: the result of reflecting with the unoriented sandwich; the line is turned around.*
+*Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its intrinsic orientation. Left: the line. Middle: its mirror image, with its direction unchanged. Right: the result of reflecting with the unoriented sandwich; the line is turned around ([notebook](../examples/orientation/normals/normals.ipynb)).*
 
 ```python
 # The mirror is the plane x = 0; two planes cross in the z axis, and two points lie on it.
@@ -53,7 +53,7 @@ Putting an overall minus sign in front, `-mirror * x.involute() * mirror.inverse
 
 ## An orientation-aware reflection
 
-An orientation-aware reflection `mirror >> x` negates the grade-involuted sandwich for intrinsic elements and leaves it unchanged for extrinsic ones, reading the orientation from the element's type. Reflection then commutes with the join just as it commutes with every other product:
+An orientation-aware reflection `mirror >> x` negates the grade-involuted sandwich for intrinsic elements and leaves it unchanged for extrinsic ones, reading the orientation from the element's type. Reflection then commutes with the join just as it commutes with every other product ([surface normals](../examples/orientation/normals/normals.ipynb)):
 
 ```python
 # The join, unchanged.
@@ -66,9 +66,9 @@ mirror >> (red ^ blue)                                 # [] Bivector+
 
 Mirroring a system together with its measuring apparatus must also preserve every physical reading. Kinetic energy gives a direct test, because a spinning body and its mirror image turn opposite ways while carrying the same positive kinetic energy:
 
-<p align="center"><img src="../plots/mirror_energy.gif" alt="A body of three masses turning, and its mirror image turning the other way with the same kinetic energy" width="600" /></p>
+<p align="center"><a href="../examples/orientation/mirror_energy/mirror_energy.ipynb"><img src="../plots/mirror_energy.gif" alt="A body of three masses turning, and its mirror image turning the other way with the same kinetic energy" width="600" /></a></p>
 
-*Figure: a body of three masses turns, and its mirror image turns the other way. Colours identify matching masses, marker sizes show the masses, and arrows show their velocities.*
+*Figure: a body of three masses turns, and its mirror image turns the other way. Colours identify matching masses, marker sizes show the masses, and arrows show their velocities ([notebook](../examples/orientation/mirror_energy/mirror_energy.ipynb)).*
 
 The body's rate of turning is an extrinsic line oriented around its axis, while the mass points are intrinsic. Joining each mass point with its velocity under that rate gives an intrinsic angular momentum oriented along its line, and the kinetic energy is half the regressive pairing of the rate with the momentum. Under the orientation-aware reflection, the mirrored body has the same positive kinetic energy. Under the uniform sandwich `reflect`, both factors preserve their outer product while the unit volume reverses, and adding an overall minus sign negates both factors and cancels in their pairing, so either uniform rule changes the sign of `rate & momentum` in every dimension and turns the mirrored body's kinetic energy negative:
 
@@ -95,9 +95,9 @@ Every such reading pairs an extrinsic value with an intrinsic one by the regress
 
 The line is one grade among the rest. Every element of the algebra can carry either orientation, intrinsic or extrinsic, and a mirror treats the two differently at every grade. A triangle shows the distinction on planes:
 
-<p align="center"><img src="../plots/normal_orientation.png" alt="A triangle's positive side, and the order of its corners, before and after a vertical mirror" width="603" /></p>
+<p align="center"><a href="../examples/orientation/normals/normals.ipynb"><img src="../plots/normal_orientation.png" alt="A triangle's positive side, and the order of its corners, before and after a vertical mirror" width="603" /></a></p>
 
-*Figure: a triangle lying in a horizontal plane, and its mirror image in a vertical mirror. Left: the plane's positive side, which stays above both triangles. Right: the order of the corners, which the mirror reverses.*
+*Figure: a triangle lying in a horizontal plane, and its mirror image in a vertical mirror. Left: the plane's positive side, which stays above both triangles. Right: the order of the corners, which the mirror reverses ([notebook](../examples/orientation/normals/normals.ipynb)).*
 
 The plane equation of the triangle's plane orients it by which side is positive in the space outside it, an extrinsic orientation, and the vertical mirror keeps the positive side up. Joining the triangle's three corners in order gives the same plane oriented by its corners going round within it, an intrinsic orientation, and in the mirror image the corners go round the other way. A [surface normals](../examples/orientation/normals/normals.ipynb) example draws both:
 
@@ -122,7 +122,7 @@ Stepping up a dimension from a plane into three-space separates the two orientat
 
 Embedding that sheet into projective three-space (`w0 x+ y+ z+`, dimension 4) adds an orthogonal axis `z` and splits the two kinds cleanly. An extrinsic element imposes constraints on its surroundings (fixed codimension), so adding `z` leaves both its grade and its algebraic expression untouched while its locus extrudes along the new axis: the mirror line `x` becomes the vertical mirror plane `x`, a wavefront line becomes a wavefront plane, and the turning rate `xy` stays a grade-two bivector whose pivot point extrudes into a rotation axis. Restricting back to the sheet recovers the original element with no choice of sign along `z`.
 
-An intrinsic element carries a fixed dimension of its own rather than extruding along the added axis. A point mass on the sheet remains a point mass in the room, a momentum line remains a line, and a triangle patch remains a patch, so its grade rises by one with every added dimension (grade n − 1 for points, n − 2 for lines, n − 3 for patches). Keeping the two-dimensional point's grade-two blade `xy` fixed in three-space instead turns it into the vertical z-line, one dimension up:
+An intrinsic element carries a fixed dimension of its own rather than extruding along the added axis. A point mass on the sheet remains a point mass in the room, a momentum line remains a line, and a triangle patch remains a patch, so its grade rises by one with every added dimension (grade n − 1 for points, n − 2 for lines, n − 3 for patches). Keeping the two-dimensional point's grade-two blade `xy` fixed in three-space instead turns it into the vertical z-line, one dimension up ([spinning wheel](../examples/orientation/spinning_wheel/spinning_wheel.ipynb)):
 
 ```python
 # plane_mv in the projective plane, space_mv in projective three-space.
@@ -156,7 +156,7 @@ Viewing both constructions across dimensions also explains the combinations that
 | Join `p & q` | intrinsic (`-`) | grade 1, line | grade 2, line | grade 3, line |
 | Join `p & q & r` | intrinsic (`-`) | grade 0, signed area | grade 1, triangle plane | grade 2, triangle patch |
 
-In three-space, an extrinsic antivector (`u ^ v ^ w`, grade 3) is a point cut out by three mirrors, and stepping into four-space extrudes it into a line; an intrinsic bivector (`p & q`, grade 2) is a line or momentum spear joined from two points, and an intrinsic plane (`p & q & r`, grade 1) is the triangle winding `winding` above, both climbing one grade higher in four-space without changing their geometric dimension. Opposite crossings still pair into mirror-even extrinsic scalars: in three-space, an extrinsic point cut out by three planes pairs with an intrinsic triangle plane to read the point's signed offset from the triangle's plane:
+In three-space, an extrinsic antivector (`u ^ v ^ w`, grade 3) is a point cut out by three mirrors, and stepping into four-space extrudes it into a line; an intrinsic bivector (`p & q`, grade 2) is a line or momentum spear joined from two points, and an intrinsic plane (`p & q & r`, grade 1) is the triangle winding `winding` above, both climbing one grade higher in four-space without changing their geometric dimension. Opposite crossings still pair into mirror-even extrinsic scalars: in three-space, an extrinsic point cut out by three planes pairs with an intrinsic triangle plane to read the point's signed offset from the triangle's plane ([surface normals](../examples/orientation/normals/normals.ipynb)):
 
 ```python
 # Extrinsic point (grade 3+) paired with the intrinsic triangle winding (grade 1-) above.
@@ -175,7 +175,7 @@ The ordering of a pairing also matters across dimensions. In the three-dimension
 
 Those product sign rules divide the algebra into two distinct algebraic roles. Because the product of two extrinsic elements stays extrinsic, the extrinsic side forms a closed subalgebra under the geometric product. Multiplying mirror hyperplanes builds versors (rotations, translations and boosts), and extrinsic bivectors (turning rates, twists, boosts and electromagnetic fields) close under the commutator to form the Lie algebra of continuous transformations. Every power of an extrinsic bivector stays extrinsic as well, so its exponential `rate.exp()` has one consistent orientation at every order and generates a continuous motion.
 
-The intrinsic side does not close under the geometric product. Raising an intrinsic element to successive powers alternates its orientation between extrinsic on even powers and intrinsic on odd powers, so an intrinsic bivector cannot be exponentiated, and the commutator of two intrinsic bivectors lands on the extrinsic side rather than closing on itself. Instead, intrinsic elements close under the regressive product (points joined into lines, patches and volumes, together with extensive quantities such as mass and entropy) and remain intrinsic under the action of extrinsic transformations:
+The intrinsic side does not close under the geometric product. Raising an intrinsic element to successive powers alternates its orientation between extrinsic on even powers and intrinsic on odd powers, so an intrinsic bivector cannot be exponentiated, and the commutator of two intrinsic bivectors lands on the extrinsic side rather than closing on itself. Instead, intrinsic elements close under the regressive product (points joined into lines, patches and volumes, together with extensive quantities such as mass and entropy) and remain intrinsic under the action of extrinsic transformations ([tennis racket](https://numga.org/#tennis-racket), [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb)):
 
 ```python
 motion = rate.exp()                                        # [] Motor+
