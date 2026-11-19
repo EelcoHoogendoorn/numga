@@ -118,17 +118,23 @@ In a plane, a point can likewise be oriented by its weight, as a mass is, or by 
 
 ## From the plane to space
 
-Stepping from a plane into three-space shows why orientation and grade separate. A mass at a point on a sheet of paper remains a mass at a point when the room around the sheet is included. A wheel turning in the sheet turns about a point in the sheet, and about an axis in the room. From the projective plane to projective three-space, the weighted point stays an antivector (grade two in the plane, grade three in space) while the turn stays a bivector:
+Stepping up a dimension from a plane into three-space separates the two orientations by how an element behaves when a new axis is added. In the projective plane (`w0 x+ y+`, dimension 3), a mirror line `x` has grade one, a turn `xy` about the origin has grade two, and the origin point itself has that same grade-two blade `xy` with intrinsic orientation.
+
+Embedding that sheet into projective three-space (`w0 x+ y+ z+`, dimension 4) adds an orthogonal axis `z` and splits the two kinds cleanly. An extrinsic element imposes constraints on its surroundings (fixed codimension), so adding `z` leaves both its grade and its algebraic expression untouched while its locus extrudes along the new axis: the mirror line `x` becomes the vertical mirror plane `x`, a wavefront line becomes a wavefront plane, and the turning rate `xy` stays a grade-two bivector whose pivot point extrudes into a rotation axis. Restricting back to the sheet recovers the original element with no choice of sign along `z`.
+
+An intrinsic element carries a fixed dimension of its own rather than extruding along the added axis. A point mass on the sheet remains a point mass in the room, a momentum line remains a line, and a triangle patch remains a patch, so its grade rises by one with every added dimension (grade n − 1 for points, n − 2 for lines, n − 3 for patches). Keeping the two-dimensional point's grade-two blade `xy` fixed in three-space instead turns it into the vertical z-line, one dimension up:
 
 ```python
 # plane_mv in the projective plane, space_mv in projective three-space.
-point_2d = plane_mv.point([0, 0])                          # [] Antivector-
-point_3d = space_mv.point([0, 0, 0])                       # [] Antivector-
-pivot = plane_mv.xy                                        # [] Bivector+
-axis = space_mv.xy                                         # [] Bivector+
-```
+mirror_2d = plane_mv.x                                     # [] Vector+ (grade 1: x)
+mirror_3d = space_mv.x                                     # [] Vector+ (grade 1: x)
+pivot = plane_mv.xy                                        # [] Bivector+ (grade 2: xy)
+axis = space_mv.xy                                         # [] Bivector+ (grade 2: xy)
 
-The two crossing lines that locate the pivot in the sheet extend to two crossing planes in the room, and their meeting point becomes their meeting line with the same sense of turning around it. Restricting back to the sheet recovers the pivot.
+point_2d = plane_mv.point([0, 0])                          # [] Antivector- (grade 2: xy)
+point_3d = space_mv.point([0, 0, 0])                       # [] Antivector- (grade 3: xyz)
+z_line = space_mv.point([0, 0, 0]) & space_mv.point([0, 0, 1])  # [] Antibivector- (grade 2: xy)
+```
 
 Constructing an extrinsic point in three-space requires meeting that axis with a third plane, and the chosen side of that plane becomes part of the orientation:
 
@@ -139,13 +145,48 @@ opposite_point = axis ^ (-space_mv.z)                      # [] Trivector+
 
 A turn in the sheet does not choose which side of the sheet is positive. Choosing the opposite side reverses the extrinsic point's orientation while keeping its location and the turn in the sheet unchanged, because in three-space an extrinsic point carries a handedness of its surroundings. An intrinsic point needs no choice along the added direction because its orientation stays within the point itself.
 
+Viewing both constructions across dimensions also explains the combinations that at first look exotic, such as an intrinsic plane, an intrinsic bivector or an extrinsic antivector. They are simply what appears where the two ladders cross the same grade in a given dimension. Outer products of mirrors climb up from grade 0 at fixed grade while their loci extrude along each added axis; joins of points step down from grade n at fixed geometric dimension while their grades rise by one with n. Each cell below gives the grade and geometric locus of one construction as the ambient projective dimension grows:
+
+| Construction | Orientation | Plane (n = 3) | Three-space (n = 4) | Four-space (n = 5) |
+| --- | --- | --- | --- | --- |
+| Mirror `u` | extrinsic (`+`) | grade 1, line | grade 1, plane | grade 1, hyperplane |
+| Meet `u ^ v` | extrinsic (`+`) | grade 2, pivot point | grade 2, axis line | grade 2, plane |
+| Meet `u ^ v ^ w` | extrinsic (`+`) | grade 3, pseudoscalar | grade 3, extrinsic point | grade 3, line |
+| Point `p` | intrinsic (`-`) | grade 2, point | grade 3, point | grade 4, point |
+| Join `p & q` | intrinsic (`-`) | grade 1, line | grade 2, line | grade 3, line |
+| Join `p & q & r` | intrinsic (`-`) | grade 0, signed area | grade 1, triangle plane | grade 2, triangle patch |
+
+In three-space, an extrinsic antivector (`u ^ v ^ w`, grade 3) is a point cut out by three mirrors, and stepping into four-space extrudes it into a line; an intrinsic bivector (`p & q`, grade 2) is a line or momentum spear joined from two points, and an intrinsic plane (`p & q & r`, grade 1) is the triangle winding `winding` above, both climbing one grade higher in four-space without changing their geometric dimension. Opposite crossings still pair into mirror-even extrinsic scalars: in three-space, an extrinsic point cut out by three planes pairs with an intrinsic triangle plane to read the point's signed offset from the triangle's plane:
+
+```python
+# Extrinsic point (grade 3+) paired with the intrinsic triangle winding (grade 1-) above.
+above = axis ^ (space_mv.z - 3 * space_mv.w)               # [] Trivector+
+# -3: unchanged under mirror >> on both factors.
+above & winding                                            # [] Scalar+
+```
+
 ## Orientation across products
 
-Once the orientations of the inputs are chosen, requiring reflections to commute with every product fixes the orientation of every result. Because the unoriented sandwich commutes with the outer product, the orientation sign of an outer product is the product of its factors' signs. Because the unoriented sandwich negates the regressive product, commuting with a reflection reverses that sign rule for `&`: two intrinsic elements join into an intrinsic one, and pairing an extrinsic element with an intrinsic one produces a mirror-even extrinsic scalar. Taking the metric-free complement swaps what lies within an element with what lies around it, exchanging the two orientations.
+Once the orientations of the inputs are chosen, requiring reflections to commute with every product fixes the orientation of every result. Because the unoriented sandwich commutes with the outer product, the orientation sign of the geometric and outer products is the product of the factors' signs. Because the unoriented sandwich negates the regressive product, commuting with a reflection reverses that sign rule for the regressive product: two intrinsic elements join into an intrinsic one, and pairing an extrinsic element with an intrinsic one produces a mirror-even extrinsic scalar. Taking the metric-free complement swaps what lies within an element with what lies around it, exchanging the two orientations.
 
 The ordering of a pairing also matters across dimensions. In the three-dimensional projective plane, `plane & point` and `point & plane` agree in sign, whereas in four-dimensional projective three-space swapping an extrinsic vector and an intrinsic antivector negates the result (`point & plane == -(plane & point)`). Putting the extrinsic factor first keeps complementary basis pairings positive in even and odd dimensions alike.
 
-Orientation also rules out expressions whose terms transform in incompatible ways. In the spinning body above, `rate` and `momentum` carry opposite orientations, so `rate + momentum` has no single transformation law under reflection. Raising an intrinsic element to an exponential mixes orientations in the same way, since its even powers are extrinsic and its odd powers are intrinsic, whereas `rate.exp()` is extrinsic throughout and generates a motion. Metric norms stay within one orientation at a time as well, measuring intrinsic directions through their duals so a spatial step's squared length stays positive in projective and spacetime algebras alike, while projective points carry both a norm (their weight) and an antinorm (the length of a direction).
+## Generators and carried objects
+
+Those product sign rules divide the algebra into two distinct algebraic roles. Because the product of two extrinsic elements stays extrinsic, the extrinsic side forms a closed subalgebra under the geometric product. Multiplying mirror hyperplanes builds versors (rotations, translations and boosts), and extrinsic bivectors (turning rates, twists, boosts and electromagnetic fields) close under the commutator to form the Lie algebra of continuous transformations. Every power of an extrinsic bivector stays extrinsic as well, so its exponential `rate.exp()` has one consistent orientation at every order and generates a continuous motion.
+
+The intrinsic side does not close under the geometric product. Raising an intrinsic element to successive powers alternates its orientation between extrinsic on even powers and intrinsic on odd powers, so an intrinsic bivector cannot be exponentiated, and the commutator of two intrinsic bivectors lands on the extrinsic side rather than closing on itself. Instead, intrinsic elements close under the regressive product (points joined into lines, patches and volumes, together with extensive quantities such as mass and entropy) and remain intrinsic under the action of extrinsic transformations:
+
+```python
+motion = rate.exp()                                        # [] Motor+
+bracket = rate.commutator(other_rate)                      # [] Bivector+
+moved = motion >> point                                    # [] Antivector-
+velocity = point.commutator(rate)                          # [] Antivector-
+momentum = point & velocity                                # [] Antibivector-
+crossed = momentum.commutator(other_momentum)              # [] Bivector+ (leaves intrinsic side)
+```
+
+Orientation also rules out expressions whose terms transform in incompatible ways. In the spinning body above, `rate` and `momentum` carry opposite orientations, so `rate + momentum` has no single transformation law under reflection and `momentum.exp()` mixes orientations across its series. Metric norms stay within one orientation at a time as well, measuring intrinsic directions through their duals so a spatial step's squared length stays positive in projective and spacetime algebras alike, while projective points carry both a norm (their weight) and an antinorm (the length of a direction).
 
 In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the determinant of the map, $-1$ for a mirror. In exterior calculus the two kinds correspond to outer and inner orientation, represented by untwisted and twisted differential forms [[3, §§1–2]](#references), and in projective geometry the two kinds of line correspond to Study's spears and axes [[4, §2.2]](#references), [[5, §8.6.1]](#references).
 
