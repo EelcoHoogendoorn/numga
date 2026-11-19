@@ -28,7 +28,7 @@ The terms ***intrinsic orientation*** and ***extrinsic orientation*** here mean 
 
 In plane-based projective three-space, where vectors represent planes and antivectors represent points, the outer product of two planes is their meet and the [regressive product](regressive_product.md) of two points is their join. Both lines have grade two and the same coefficients up to scale.
 
-Reflecting every element with the grade-involuted sandwich `mirror * x.involute() * mirror.inverse()` swaps `red` and `blue` and commutes with the geometric and outer products, so it negates the meet `red ^ blue` as it should. Because it commutes with the outer product while reversing the space's unit volume, it anti-commutes with the regressive product in every dimension and at every grade, turning around the joined line `ends[0] & ends[1]` that lies in the mirror:
+Reflecting every element with the grade-involuted sandwich `mirror * x.involute() * mirror.inverse()` swaps the two oblique planes and commutes with the geometric and outer products, so it negates their meet as it should. Because it commutes with the outer product while reversing the space's unit volume, it anti-commutes with the regressive product in every dimension and at every grade, turning around the joined line of the two points lying in the mirror:
 
 <p align="center"><a href="../examples/orientation/normals/normals.ipynb"><img src="../plots/line_in_mirror.png" alt="Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result" width="603" /></a></p>
 
@@ -38,7 +38,7 @@ Reflecting every element with the grade-involuted sandwich `mirror * x.involute(
 # The mirror is the plane x = 0; two planes cross in the z axis, and two points lie on it.
 mirror = mv.x                                          # [] Vector+
 red, blue = mv.x + mv.y, mv.y - mv.x                   # [] Vector+, [] Vector+
-ends = mv.point([[0, 0, -0.5], [0, 0, 0.5]])           # [points] Antivector-
+start, finish = mv.point([[0, 0, -0.5], [0, 0, 0.5]])  # [] Antivector-, [] Antivector-
 
 def reflect(x):
     return mirror * x.involute() * mirror.inverse()
@@ -46,7 +46,7 @@ def reflect(x):
 # Minus the meet, matching blue ^ red, the meet of the mirrored planes.
 reflect(red ^ blue)                                    # [] Bivector+
 # Minus the join, turned around instead of unchanged.
-reflect(ends[0] & ends[1])                             # [] Antibivector-
+reflect(start & finish)                                # [] Antibivector-
 ```
 
 Putting an overall minus sign in front, `-mirror * x.involute() * mirror.inverse()`, leaves intrinsic points in the mirror and their joins unchanged, while leaving the mirror plane itself unflipped, negating planes perpendicular to the mirror, and leaving `red ^ blue` unflipped instead of negated. Applied uniformly to every element, no single sandwich rule has the geometric action of a mirror.
@@ -57,7 +57,7 @@ An orientation-aware reflection `mirror >> x` negates the grade-involuted sandwi
 
 ```python
 # The join, unchanged.
-mirror >> (ends[0] & ends[1])                          # [] Antibivector-
+mirror >> (start & finish)                             # [] Antibivector-
 # Minus the meet.
 mirror >> (red ^ blue)                                 # [] Bivector+
 ```
