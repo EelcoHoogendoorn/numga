@@ -6,111 +6,80 @@ From computer science, extensors arise through partial application of the produc
 
 ## 1. The computer science lens
 
-Partial application binds some arguments of a function now and takes the rest later. In projective three-space, planes are extrinsic vectors (`Vector+`), joined lines are intrinsic antibivectors (`Antibivector-`), and points are intrinsic antivectors (`Antivector-`), with `+` and `-` marking how each transforms in a mirror ([Why orientation](orientation.md)). Fixing a `light` source, a Python function can accept a `point` and return the line joining them:
+Partial application binds some arguments of a function now and takes the rest later. In projective three-space, planes are extrinsic vectors, joined lines are intrinsic antibivectors, and points are intrinsic antivectors, where `+` and `-` record how each transforms in a mirror ([Why orientation](orientation.md)). For a fixed light source, a Python function accepts a point and returns the line joining them:
 
 ```python
 def ray_fn(point: Point) -> Line:
     return light & point
 ```
 
-Writing the type `Point` for the argument, naming the space of points it takes, constructs a map directly in the algebra:
+Naming the space of points by its type `Point` builds that same map directly inside the algebra. Because the resulting extensor belongs to the algebra, further products act on its output and composition feeds one map directly into another:
 
 ```python
 ray = light & Point                                          # [] Antibivector- <- Antivector-
-```
-
-`ray_fn` is a Python function, while `ray` is an extensor. Both are first-class Python objects, and `ray_fn(point)` and `ray(point)` return the same line.
-
-Because `ray` belongs to the algebra, the algebra's products act directly on its output, and the result still takes a point:
-
-```python
 shadow = ray ^ ground                                        # [] Antivector- <- Antivector-
-```
-
-`ray` returns a line, so `^ ground` meets that line with the ground plane. The resulting `shadow` still takes a point, and now returns one.
-
-Composition supplies the output of one map to the input of another. Meeting a line with `ground` can itself be written as a map that takes a line:
-
-```python
 intersection = Line ^ ground                                 # [] Antivector- <- Antibivector-
+composed = intersection(ray)                                 # [] Antivector- <- Antivector-
 ```
 
-`intersection` accepts a line, and `ray` produces one. Supplying `ray` as that input composes the two maps:
+`ray_fn` is a Python function, while `ray` is an extensor. Both are first-class Python objects, and `ray_fn(point)` and `ray(point)` return the same line. In the block above, `shadow` meets each ray with the ground plane directly, while `intersection` packages that meet as its own map on lines so `intersection(ray)` constructs the same shadow map by composition.
 
-```python
-shadow = intersection(ray)                                   # [] Antivector- <- Antivector-
-```
-
-The result still takes the point `ray` takes, and is the same map as `ray ^ ground`.
-
-Evaluation is all `ray_fn` offers: a Python function hides the arithmetic it performs. An extensor holds that arithmetic as a value, so evaluation is only one of the operations it supports. It can also run in the other direction, from an output back to an input that produces it: for a linear map `M`, `M.solve(y)` finds an `x` such that `M(x) == y`, and when `M` is invertible, `M.inverse()` constructs the inverse map, itself an extensor that can be composed and used in further products. Its adjoint, its adjugate, its eigenvectors and its trace are available in the same way; a Python function gives access to none of them.
+A Python function hides the arithmetic inside it and supports evaluation alone. An extensor holds that linear action as an algebraic value, so evaluation is only one of the operations available on it. For a linear map `M`, `M.solve(y)` finds an input `x` satisfying `M(x) == y`, and when `M` is invertible, `M.inverse()` builds the inverse map as an extensor that composes and multiplies like any other. Reading `M` backwards across the regressive pairing gives its metric-free adjugate `M.adjugate()` for every linear map, even without a metric or an inverse. When the algebra carries a nondegenerate metric, `M.adjoint()` transfers `M` across the scalar product instead, and when input and output share one space, eigenvalues and trace are available directly on `M`. A Python function exposes none of these operations.
 
 ## 2. The geometric lens
 
-An extensor built from geometry transforms as its geometry does: building it again from its transformed elements gives the same map as transforming the map itself, on its output and on each of its inputs. That holds because a motion or reflection of space is itself an element of the algebra, and its action on an element, `transformation >> x`, preserves every product.
+An extensor built from geometry transforms as its geometry does. Building the map again from its transformed ingredients gives the same map as transforming the map itself, on its output and on each of its inputs. That holds because a motion or reflection of space is itself an element of the algebra, and its forward action `transformation >> x` and inverse action `transformation << x` preserve every product.
 
-Because those transformations and their actions are themselves elements and maps of the algebra, the same map can act as a transformation in one expression and be transformed as an object in another [[1, §§1.2.4–1.2.5]](#references). A thin lens in a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example bends each incoming ray toward its optical `center` where the ray meets its `plane`, in proportion to `1 / focal`. At the same time, the lens is an object in the scene, carried by a rigid motion `motor` along with everything else. Moving the lens as a map, by undoing the motion on the incoming ray, applying the lens and carrying the outgoing ray forward, gives the same map as building the lens from its moved centre and plane:
+In geometric algebra, versors already act both as geometric objects and as transformations [[1, §§1.2.4–1.2.5]](#references). With extensors, arbitrary geometric maps share that same algebra, so one object can transform what passes through it in one expression and be transformed as an object in another. In a [scenegraph](../examples/geometry/scenegraph/scenegraph.ipynb) example of a robot arm carrying a two-lens camera and its sensor, a thin lens shears each incoming ray radially inward toward the optical axis where the ray crosses the lens plane, focusing parallel rays at distance `focal`. At the same time, the lens is an object in the scene carried by a rigid motion `motor` along with everything else. Moving the lens as a map, by undoing the motion on the incoming ray, applying the lens and carrying the outgoing ray forward, gives the same map as building the lens from its moved centre and plane:
 
 ```python
-lens = Line - (center & (Line ^ plane)) / focal                          # [] Antibivector- <- Antibivector-
+lens = Line - (centre & (Line ^ plane)) / focal                          # [] Antibivector- <- Antibivector-
 moved = motor >> lens(motor << Line)                                     # [] Antibivector- <- Antibivector-
-rebuilt = Line - ((motor >> center) & (Line ^ (motor >> plane))) / focal # [] Antibivector- <- Antibivector-
+rebuilt = Line - ((motor >> centre) & (Line ^ (motor >> plane))) / focal # [] Antibivector- <- Antibivector-
 ```
 
-Because `motor >>` distributes across every product and cancels `motor <<` on `Line`, `moved` and `rebuilt` are the same map. One action moves the ray, the lens and the motion itself, and nothing in the scene is set apart from the objects it transforms.
+Because the sandwich action distributes across every product and its inverse action cancels on `Line`, `moved` and `rebuilt` are the same map, and the same identity holds when a reflection `mirror` replaces `motor`. One action moves the ray, the lens and the motion itself, and nothing in the scene is set apart from the objects it transforms.
 
 <p align="center"><img src="../plots/scenegraph.gif" alt="A robot arm in 3D with a two-lens camera and sample sight ray on the left, and the rendered sensor image on the right" width="598" /></p>
 
 *Figure: an articulated robot arm and a moving two-lens camera in three dimensions on the left, with the image produced on the sensor by composing the body motors, lens maps and sensor meet on the right.*
 
-In tensor algebra the order is the reverse. The transformations come first, given as rotation matrices, and a tensor is defined as an array that responds to them by the tensor transformation law, $T' = R T R^{\mathsf T}$, one factor of the rotation on each of its axes. The rotation is a linear map on vectors and therefore a tensor itself, yet the definition treats it as given beforehand, standing outside as the test the other objects must pass. Here a transformation is an extensor from the start, and no object is defined by testing it against something posited outside the algebra. The tensor transformation law is a consequence instead: the expression for the moved lens, `motor >> lens(motor << Line)`, reads in that notation as $R T R^{\mathsf T}$, the motion applied on the output and undone on the input.
+In tensor algebra the order is the reverse. The transformations come first, given as rotation matrices, and a tensor is defined as an array that responds to them by the tensor transformation law, such as $T' = R T R^{\mathsf T}$ for a two-index tensor, with one factor of the rotation on each of its axes. The rotation is a linear map on vectors and therefore a tensor itself, yet the definition treats it as given beforehand, standing outside as the test the other objects must pass. Here a transformation is an extensor from the start, and no object is defined by testing it against something posited outside the algebra. The tensor transformation law follows as a consequence, where the moved lens `motor >> lens(motor << Line)` reads in tensor notation as $R T R^{\mathsf T}$, the motion applied on the output and undone on the input.
 
 ## 3. The mathematical lens
 
 An extensor is a map between multivector spaces, linear in each of its arguments separately. The input and output spaces may contain any grades, including mixtures of grades. Its arity is the number of arguments: a linear map has one, a bilinear map has two, and a multivector itself has none.
 
-The products of geometric algebra are bilinear. Fixing some factors and naming the spaces of the remaining arguments by their types therefore gives a multilinear map, one argument per type, and adding expressions with the same input and output spaces gives another such map. Partial application supplies some arguments, composition feeds maps into arguments, and supplying every argument produces a multivector. All of these operate on one family of objects.
+The products of geometric algebra are bilinear. Naming the spaces of their arguments by their types builds multilinear maps directly, one argument per type. For example, `Point & Point` is a bilinear map taking two points to their joining line, and multiplying two one-argument maps produces a two-argument map whose factors act on independent inputs. Adding expressions with the same input and output spaces gives another map of that kind, partial application supplies some arguments, composition feeds maps into arguments, and supplying every argument yields a multivector.
 
-The converse matters just as much: every multilinear map between finite-dimensional multivector spaces can be written as a sum of expressions built from the algebra's products. A linear map is completely determined by its outputs on a basis. Pairing the input with a suitable multivector reads one basis coefficient; multiplying that scalar by a chosen output gives a dyad.
+The converse holds as well, so every multilinear map between finite-dimensional multivector spaces can be written as a sum of expressions built from the algebra's products. A linear map is determined by its outputs on a basis. Pairing an input with a complementary element of opposite orientation reads one basis coefficient into an ordinary scalar, and multiplying that scalar by a chosen output gives a rank-one dyad.
 
-Given a basis of the point space and the dual batch of `planes`, each plane pairs to one with its own basis point and to zero with the others. The regressive product then gives one scalar readout per basis point:
+Given a basis of points and the dual collection of `planes` pairing to one with its own basis point and to zero with the others, the regressive product yields one scalar readout per basis point. Multiplying chosen point outputs by those readouts and summing over the basis constructs any linear map from points to points, and multiplying two independent readouts constructs any bilinear map from pairs of points to points:
 
 ```python
 readouts = planes & Point                                    # [basis] Scalar+ <- Antivector-
-```
-
-With a batch `outputs` holding the output point chosen for each basis point, multiplying by the readouts and summing constructs the map:
-
-```python
 linear = (outputs * readouts).sum(axis=0)                    # [] Antivector- <- Antivector-
-```
-
-Evaluating `linear` on a basis point selects its assigned output. Because those outputs can be chosen freely and linearity fixes every other value, this expression constructs every linear map from points to points.
-
-A bilinear map assigns an output to each ordered pair of basis points. With those outputs in `pair_outputs`, indexed by one batch axis for each input basis, each term multiplies its output by one readout on each input:
-
-```python
 bilinear = (
     pair_outputs * readouts[:, None] * readouts[None, :]
 ).sum(axis=(0, 1))                                           # [] Antivector- <- (Antivector-, Antivector-)
 ```
 
-The two copies of `readouts` each take a point, independently. On a pair of basis points, only their assigned output survives the sum, and multilinearity fixes the result for every other pair of inputs. Each further argument adds another scalar readout factor and another batch axis to sum over.
+Evaluating `linear` on a basis point selects its assigned output, and evaluating `bilinear` on an ordered pair of basis points selects the output assigned to that pair, while linearity and multilinearity fix every other value. Each further argument multiplies in another independent scalar readout and sums over one more basis index.
 
-The outputs can be multivectors of any type, and the inputs can belong to any multivector space. Pairing each input grade with its complement supplies the scalar readouts; for mixed grades, the scalar part of that pairing does so. This construction works even when the metric is degenerate. Where the scalar product is nondegenerate, it can supply the readouts instead.
+The same expansion covers arbitrary output types and mixed-grade input spaces, even when the metric is degenerate. On a mixed-grade input, pairing with an element of opposite orientation and complementary grade leaves higher-grade terms alongside the scalar coefficient, so coefficients are extracted from the top grade downward. Pairing with the intrinsic grade-zero unit reads the top-grade coefficient as a pure scalar because all lower grades vanish under that regressive product. Subtracting that top-grade term leaves one grade fewer, and repeating the step down to grade zero recovers every basis coefficient using only the algebra's own products and sums, with no metric and no grade-projection operator. Where the scalar product is nondegenerate, it can supply the readouts directly instead.
 
-The multilinear-map definition and the sum-of-products construction describe the same space of extensors. The extensors of interest in practice are a subset of that space: those whose factors carry a meaning, such as a motor built from two planes or a lens built from its centre and plane. Which constructions have a geometric meaning is a question of interpretation, not of definition; the expansion above establishes only that no multilinear map is out of reach of the products.
+The multilinear-map definition and the sum-of-products construction describe the same space of extensors. The extensors of interest in practice are those whose factors carry geometric meaning, such as a motor built from two planes or a lens built from its centre and plane. Which constructions carry geometric meaning depends on the model, while the basis expansion establishes that no multilinear map lies outside the algebra's products.
 
-In linear algebra, pulling linear forms back across the canonical pairing defines the dual map on dual spaces, whereas transferring vectors across an inner product defines the adjoint [[2, §§3F, 7A]](#references); the adjugate across `&` and the adjoint across the scalar product make the same separation here. Standard presentations of linear algebra within geometric algebra start from linear maps on vectors and extend them over outer products as grade-preserving outermorphisms [[1, §1.2.3]](#references), [[3, §2.3]](#references), whereas the extensors considered here include multilinear maps of any arity between arbitrary oriented and mixed-grade spaces.
+In linear algebra, pulling linear forms back across the canonical pairing defines the dual map on dual spaces, whereas transferring vectors across an inner product defines the adjoint [[2, §§3F, 7A]](#references); the adjugate across the regressive pairing and the adjoint across the scalar product make the same separation here. Standard presentations of linear algebra within geometric algebra start from linear maps on vectors and extend them over outer products as grade-preserving outermorphisms [[1, §1.2.3]](#references), [[3, §2.3]](#references), whereas the extensors considered here include multilinear maps of any arity between arbitrary oriented and mixed-grade spaces.
 
-## How the lenses fit together
+## Conclusion
 
-The three lenses describe one set of operations. Naming an argument's space by its type in a product builds a map from geometry, supplying a value evaluates it, and supplying another map composes the two. Moving a map is composition with a transformation's own action, and the tensor transformation law is what that composition gives because the transformation preserves the products the map was built from. Sums of products reach every multilinear map, so nothing outside the algebra's products is needed to build any extensor, apply it, or move it.
+The three lenses describe one set of operations. Naming an argument's space by its type in a product builds a map from geometry, supplying a value evaluates it, and supplying another map composes the two. Moving a map is composition with a transformation's own action, and the tensor transformation law follows because the transformation preserves the products the map was built from. Sums of products reach every multilinear map, so nothing outside the algebra's products is needed to build any extensor, apply it, or move it.
 
 ## Companion documents
 
 * [Why orientation](orientation.md): why geometric constructions and positive physical energies require intrinsic and extrinsic orientation.
-* [The regressive product](regressive_product.md): how `&` pairs orientations, joins points, contracts fields and builds linear maps and their adjugates.
+* [The regressive product](regressive_product.md): how the regressive product pairs orientations, joins points, contracts fields and builds linear maps and their adjugates.
 * [Complementarity](complementarity.md), [Extensors, linear algebra, tensors and forms](frameworks.md) and [Extensors and common practice](common_practice.md): how these maps pair complementary quantities, relate to other mathematical frameworks, and apply across geometry and physics.
 * `numga` documentation: [Extensor overview](../docs/extensors.md), [Extensor tutorial](../docs/tutorial/extensors/00-introduction.md), [The adjoint](../docs/tutorial/extensors/09-the-adjoint.md) and [the adjugate](../docs/tutorial/extensors/10-the-adjugate.md).
 
