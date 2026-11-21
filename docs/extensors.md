@@ -90,12 +90,14 @@ push = absolute_melting * cells * (entropy_slope & freezing) * held_slope       
 ```python
 drags = (corners.mean(axis=0) * vertices).commutator(mv.xy)                  # Point-[faces]
 along = (areas / 3)[..., None, None] * (drags[..., None, None] & gradients[..., None, :])
-stepping = ((cells / step + cells * potential) * Wave + assembled(kinetic * Wave) +
-            assembled(rotation * along * (Wave * mv.ab)))                    # (Wave+ <- Wave+)[vertices <- vertices]
+energy = (cells * potential * Wave + assembled(kinetic * Wave) +
+          assembled(rotation * along * (Wave * mv.ab)))                      # (Wave+ <- Wave+)[vertices <- vertices]
+response = (damping - mv.ab) / (1 + damping ** 2)                            # Even+
 turns = (ends[..., 0] * ends[..., 1]).normalized().log()                     # Turn+[edges]
 ```
 
 * The trap drags each point a quarter turn in its plane, `point.commutator(mv.xy)`, while the wave turns in its own, `Wave * mv.ab`, and the rotation's energy pairs the drag with the wave's gradient.
+* The wave is stepped in real time by one even element, `(damping - mv.ab) / (1 + damping ** 2)`, in which `mv.ab` turns its phase and the damping lets the stirred cloud settle.
 * Summing the rotor logarithms `(ends[..., 0] * ends[..., 1]).normalized().log()` around each triangle counts whole turns of the wave to locate quantized vortices.
 
 ---
