@@ -1,18 +1,21 @@
-"""A rotating Bose-Einstein condensate in a harmonic trap settles into a ground-state lattice of quantized vortices on
-a triangulated disk, formulated in the product of the trap's plane and an internal phase plane of the condensate.
+"""A rotating Bose-Einstein condensate in an elliptical harmonic trap evolves in real time under the damped
+Gross-Pitaevskii equation on a triangulated disk, formulated in the product of the trap's plane and an internal phase
+plane of the condensate.
 
-A condensate shares one quantum state across all of its atoms. Because its flow follows the spatial turning of that
-wave rather than rigid-body rotation, circulation concentrates at quantized vortices, density holes around which the
-wave turns once. Under steady rotation, vortices enter the cloud at Feynman's areal density of twice the rotation rate
-over the circulation quantum, so the coarse-grained flow matches rigid-body rotation.
+A condensate shares one quantum state across all of its atoms. Because its superfluid flow follows the spatial turning
+of that wave rather than rigid-body rotation, circulation enters from the rim as quantized vortices, density holes
+around which the wave turns once. Stirring the cloud with a mildly elliptical rotating trap in the presence of thermal
+dissipation draws vortices into the interior, where they arrange into a triangular lattice at Feynman's areal density
+of twice the rotation rate over the circulation quantum.
 
-Each vertex value is a vector in the internal `a, b` plane whose norm is the square root of the atom density and whose
-direction sets the local phase. Two bivectors govern the rotating frame: `xy` turns positions in the trap plane by a
-quarter turn via `point.commutator(xy)`, while `ab` turns the wave by a quarter turn in its internal plane via
-`wave * ab` and commutes with every spatial blade. Pairing the simplex gradients with the rotational drag velocity and
-turning the wave by `ab` gives the rotating-frame energy term directly, and imaginary-time relaxation at unit atom
-number settles the cloud into its vortex lattice. Summing the logarithms of edge rotors around each triangle yields its
-integer winding number without angle unwrapping.
+Each vertex value is modelled as a vector in the internal `a, b` plane whose norm is the square root of the atom
+density and whose direction sets the local phase, with no imaginary unit. Two commuting bivectors govern the rotating
+frame. The trap plane `xy` turns positions by a quarter turn via `point.commutator(xy)` into rotational drag velocity,
+while the internal plane `ab` turns the wave by a quarter turn via `wave * ab`. A single even phase-response element
+`(damping - ab) / (1 + damping ** 2)` combines real-time phase precession and thermal dissipation, and subtracting the
+instantaneous chemical potential preserves unit atom number while eliminating global phase precession. Summing the
+logarithms of normalized edge rotors around each triangle yields its exact integer winding number without angle
+unwrapping.
 """
 
 from __future__ import annotations
@@ -29,10 +32,10 @@ from numga.topology import Topology
 ga = Algebra("x+y+") * Algebra("a+b+")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()                                                   # Scalar+
-Plane = ga.gatype.vector()                                                    # Plane+
-Point = ga.gatype.antivector()                                                # Point-
-Wave = Plane.derive.within(Algebra("a+b+"))                                   # Wave+
-Turn = ga.gatype.bivector().derive.within(Algebra("a+b+"))                    # Turn+
+Plane = ga.gatype.vector()                                                    # Vector+
+Point = ga.gatype.antivector()                                                # Antivector-
+Wave = Plane.derive.within(Algebra("a+b+"))                                   # Vector+
+Turn = ga.gatype.bivector().derive.within(Algebra("a+b+"))                    # Bivector+
 
 # Unit displacements across and up the trap plane from its centre.
 horizontal = mv.x.dual()                                                      # [] Point-
@@ -66,34 +69,58 @@ def triangle_geometry(topology: Topology, vertices: Point) -> tuple[Scalar, Plan
     return areas, gradients, dual_areas
 
 
-def relaxation_states(topology: Topology, vertices: Point, areas: Scalar, gradients: Plane, dual_areas: Scalar,
-                      trap_potential: Scalar, repulsion: float, rotation: float, wave: Wave, step: float,
-                      n_steps: int, stride: int) -> Iterator[Wave]:
-    """Yields the condensate wave (`Wave+[V]`) every `stride` steps of imaginary-time relaxation at unit atom number,
-    stepping kinetic, trap, and rotational-drag terms implicitly and contact repulsion explicitly."""
+def condensate_states(
+    topology: Topology,
+    vertices: Point,
+    areas: Scalar,
+    gradients: Plane,
+    dual_areas: Scalar,
+    trap_potential: Scalar,
+    repulsion: float,
+    rotation: float,
+    damping: float,
+    wave: Wave,
+    time_step: float,
+    n_steps: int,
+    stride: int,
+) -> Iterator[Wave]:
+    """Yields the condensate wave (`Wave+[V]`) every `stride` real-time steps of the damped rotating-frame
+    Gross-Pitaevskii equation at unit atom number, advancing kinetic, trap, and rotational-drag terms by
+    Crank-Nicolson and contact repulsion less the instantaneous chemical potential explicitly."""
     corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
     # Pairwise coupling of corner simplex gradients through the inverse-mass mobility over each triangle.
     kinetic = (gradients[:, None] & mobility(gradients[None, :])) * (areas / 2)   # [3, 3] Scalar+[F]
     # Quarter-turn velocity of each triangle centroid in the rotating frame, paired extrinsic-first with the gradients.
     drag_velocities = (corners.mean(axis=0) * vertices).commutator(mv.xy)     # Point-[F]
     advection = (areas / 3) * (gradients & drag_velocities)[None, :]          # [1, 3] Scalar+[F]
-    local_operator = kinetic * Wave - rotation * advection * (Wave * mv.ab)   # [3, 3] (Wave+ <- Wave+)[F]
-    step_operator = ((dual_areas / step + dual_areas * trap_potential) * Wave +
-                     corner_assembly(topology, local_operator))               # (Wave+ <- Wave+)[V <- V]
-    for index in range(n_steps + 1):
+    local_energy = kinetic * Wave - rotation * advection * (Wave * mv.ab)     # [3, 3] (Wave+ <- Wave+)[F]
+    linear_energy = dual_areas * trap_potential * Wave + corner_assembly(topology, local_energy)   # (Wave+ <- Wave+)[V <- V]
+    # Single even phase-response element combining thermal dissipation and real-time phase precession.
+    phase_response = (damping - mv.ab) / (1 + damping ** 2)                   # [] Even+
+    energy_rate = (dual_areas * trap_potential * (Wave * phase_response) +
+                   corner_assembly(topology, local_energy * phase_response))   # (Wave+ <- Wave+)[V <- V]
+    mass = dual_areas / time_step * Wave                                      # (Wave+ <- Wave+)[V <- V]
+    implicit = mass + 0.5 * energy_rate                                       # (Wave+ <- Wave+)[V <- V]
+    explicit = mass - 0.5 * energy_rate                                       # (Wave+ <- Wave+)[V <- V]
+    yield wave
+    for index in range(1, n_steps + 1):
+        density = wave.scalar_norm_squared()                                  # Scalar+[V]
+        # Subtracting the instantaneous chemical potential preserves atom number and removes global phase precession.
+        energy_wave = linear_energy(wave) + dual_areas * repulsion * density * wave   # Wave+[V]
+        chemical_potential = wave.scalar_product(energy_wave).sites.sum()     # [] Scalar+
+        forcing = explicit(wave) - dual_areas * (repulsion * density - chemical_potential) * (wave * phase_response)   # Wave+[V]
+        unnormalized = implicit.solve(forcing)                                # Wave+[V]
+        atom_count = (dual_areas * unnormalized.scalar_norm_squared()).sites.sum()   # [] Scalar+
+        wave = unnormalized / atom_count.square_root()                        # Wave+[V]
         if index % stride == 0:
             yield wave
-        density = wave.scalar_norm_squared()                                  # Scalar+[V]
-        unnormalized = step_operator.solve(dual_areas * (wave / step - repulsion * density * wave))   # Wave+[V]
-        atom_count = (dual_areas * unnormalized.scalar_norm_squared()).sites.sum()                    # [] Scalar+
-        wave = unnormalized / atom_count.square_root()                        # Wave+[V]
 
 
 def triangle_windings(topology: Topology, wave: Wave) -> Turn:
-    """Summing the logarithms of normalized edge rotors around each triangle boundary gives its phase winding
+    """The logarithms of normalized edge rotors summed around each triangle boundary give its phase winding
     (`Turn+[F]`) in whole turns."""
-    ends = topology.incidence[1, 0] * wave                                    # [2] Wave+[E]
-    edge_turns = (ends[0] * ends[1]).normalized().log()                       # Turn+[E]
+    tail, head = topology.incidence[1, 0] * wave                              # Wave+[E], Wave+[E]
+    edge_turns = (tail * head).normalized().log()                             # Turn+[E]
     return (topology.boundary[2, 1] * edge_turns).sum(axis=0) / (2 * np.pi)   # Turn+[F]
 
 

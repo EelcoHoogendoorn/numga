@@ -145,7 +145,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how examples and notebooks are orga
 ## Quantum
 
 - [Magnetic resonance](quantum/magnetic_resonance/) — Driven and relaxing spins produce nutation, resonance line shapes and spin echoes.
-- [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: descending its energy in a rotating trap, it settles into a lattice of quantized vortices as dense as Feynman's rule asks.
+- [A rotating Bose–Einstein condensate](quantum/condensate/) — The condensate as a vector in a plane of its own joined to the trap's plane, the trap's turning and the wave's two bivectors kept apart: stirred in real time by a rotating elliptical trap, with a little damping, it draws quantized vortices in from its rim into a lattice as dense as Feynman's rule asks.
 - [Magnetic skyrmions](quantum/skyrmions/) — Exchange carried across each bond by a rotor twisted about it is the Dzyaloshinskii–Moriya interaction: on a triangular lattice the spins crystallize into a lattice of skyrmions, vanish into a ferromagnet and give way to a spiral as the field is swept, and drift at the skyrmion Hall angle under a current.
 - [Graphene](quantum/graphene/) — Electron hopping produces Dirac cones, pseudospin textures and a Berry phase around each cone.
 - [Graphene edge states](quantum/kane_mele/) — Spin-orbit coupling produces boundary states in a finite graphene flake.
