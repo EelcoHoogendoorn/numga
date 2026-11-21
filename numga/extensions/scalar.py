@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 from numga.extensor import Extensor
+from numga.units import clip_unit, compare_units, dimensionless, keep
 
 
 @Extensor.to_array.register(lambda g: g.is_scalar)
@@ -56,7 +57,7 @@ def _reduction(name: str) -> Callable:
 
 
 for _name in ("min", "max"):
-    getattr(Extensor, _name).register(lambda g: g.is_scalar)(_reduction(_name))
+    getattr(Extensor, _name).register(lambda g: g.is_scalar, unit=keep)(_reduction(_name))
 
 
 def _function(name: str) -> Callable:
@@ -84,21 +85,24 @@ def _comparison(name: str) -> Callable:
     return apply
 
 
-for _name in ("abs", "sin", "cos", "tan", "arcsin", "arccos", "arctan",
+Extensor.abs.register(lambda g: g.is_scalar, unit=keep)(_function("abs"))
+for _name in ("sin", "cos", "tan", "arcsin", "arccos", "arctan",
               "sinh", "cosh", "tanh", "arcsinh", "arccosh", "arctanh"):
-    getattr(Extensor, _name).register(lambda g: g.is_scalar)(_function(_name))
+    getattr(Extensor, _name).register(lambda g: g.is_scalar, unit=dimensionless)(_function(_name))
 
 for _name in ("isnan", "isfinite", "isinf"):
     getattr(Extensor, _name).register(lambda g: g.is_scalar)(_predicate(_name))
 
 for _name in ("less", "less_equal", "greater", "greater_equal"):
-    getattr(Extensor, _name).register(lambda a, b: a.is_scalar and b.is_scalar)(_comparison(_name))
+    getattr(Extensor, _name).register(lambda a, b: a.is_scalar and b.is_scalar, unit=compare_units)(_comparison(_name))
 
 
-@Extensor.clip.register(lambda g: g.is_scalar)
+@Extensor.clip.register(lambda g: g.is_scalar, unit=clip_unit)
 def clip(value: Extensor, minimum: Any, maximum: Any) -> Extensor:
     """Clamping entries to `[minimum, maximum]` across batch axes returns a scalar extensor."""
-    kernel = value.context.xp.clip(value.to_array(), minimum, maximum)
+    lo = minimum.to_array() if isinstance(minimum, Extensor) else minimum
+    hi = maximum.to_array() if isinstance(maximum, Extensor) else maximum
+    kernel = value.context.xp.clip(value.to_array(), lo, hi)
     return Extensor._from_prepared_kernel(
         value.context, value.algebra.gatype.scalar(), kernel[..., None],
     )

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 import warnings
 
 import numga
+from numga.units import UnitGrid, resolve_stamp
 
 from .errors import GATypeError
 from .gatype import GAType
@@ -55,6 +56,7 @@ class _Registration:
     patterns: tuple[DispatchPattern, ...]
     implementation: Callable
     staged: bool = False
+    unit: Callable | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +64,7 @@ class _PredicateRegistration:
     predicate: Callable
     implementation: Callable
     staged: bool = False
+    unit: Callable | None = None
 
 
 class GATypeDispatch:
@@ -79,6 +82,7 @@ class GATypeDispatch:
         "_cache",
         "_input_orientation",
         "_output_orientation",
+        "_unit",
     )
 
     def __init__(
@@ -90,6 +94,7 @@ class GATypeDispatch:
         takes: str,
         input_orientation: Orientation | None = None,
         output_orientation: Orientation | None = None,
+        unit: Callable | None = None,
     ) -> None:
         """`takes` describes the accepted domain in plain words for refusal messages when no
         registration matches."""
@@ -111,6 +116,12 @@ class GATypeDispatch:
         object.__setattr__(self, "_cache", {})
         object.__setattr__(self, "_input_orientation", input_orientation)
         object.__setattr__(self, "_output_orientation", output_orientation)
+        object.__setattr__(self, "_unit", unit)
+
+    def set_unit(self, unit: Callable | None) -> None:
+        """Replace the method-wide unit law and clear cached resolutions."""
+        object.__setattr__(self, "_unit", unit)
+        self._cache.clear()
 
     @property
     def name(self) -> str:
@@ -150,6 +161,7 @@ class GATypeDispatch:
         position: int | None = None,
         fields: bool = False,
         staged: bool = False,
+        unit: Callable | None = None,
     ) -> Callable:
         """Predicates inspect concrete `GAType`s directly and take priority over all declarative
         patterns. Among declarative signatures, specializations must be registered before more
@@ -159,12 +171,12 @@ class GATypeDispatch:
             if not (len(patterns) == 1 and is_predicate(patterns[0])):
                 raise TypeError("a field implementation registers a predicate")
             def decorate_fields(implementation: Callable) -> Callable:
-                self._field_predicates.append(_PredicateRegistration(patterns[0], implementation, staged))
+                self._field_predicates.append(_PredicateRegistration(patterns[0], implementation, staged, unit))
                 self._cache.clear()
                 return implementation
             return decorate_fields
         if len(patterns) == 1 and is_predicate(patterns[0]):
-            return self._register_predicate(patterns[0], position=position, staged=staged)
+            return self._register_predicate(patterns[0], position=position, staged=staged, unit=unit)
         if position is not None:
             raise TypeError("position is supported only for callable predicates")
 
@@ -194,7 +206,7 @@ class GATypeDispatch:
         def decorate(implementation: Callable) -> Callable:
             if not callable(implementation):
                 raise TypeError("a dispatch implementation must be callable")
-            self._registrations.append(_Registration(normalized, implementation, staged))
+            self._registrations.append(_Registration(normalized, implementation, staged, unit))
             self._cache.clear()
             return implementation
 
@@ -206,6 +218,7 @@ class GATypeDispatch:
         *,
         position: int | None = None,
         staged: bool = False,
+        unit: Callable | None = None,
     ) -> Callable:
         if position is not None and (
             isinstance(position, bool)
@@ -221,7 +234,7 @@ class GATypeDispatch:
         def decorate(implementation: Callable) -> Callable:
             if not callable(implementation):
                 raise TypeError("a dispatch implementation must be callable")
-            entry = _PredicateRegistration(predicate, implementation, staged)
+            entry = _PredicateRegistration(predicate, implementation, staged, unit)
             if position is None:
                 self._predicates.append(entry)
             else:
@@ -248,9 +261,52 @@ class GATypeDispatch:
             raise GATypeError(
                 f"{self.name!r} takes {self._input_orientation.value} elements; got {actual[0].signature}"
             )
-        implementation = self._oriented(self._staged(self._select(actual), actual))
+        bare = tuple(gatype.derive.unchecked for gatype in actual)
+        entry = self._select(bare)
+        law = entry.unit if entry.unit is not None else self._unit
+        if law is None:
+            implementation = self._oriented(self._staged(entry, actual))
+        else:
+            implementation = self._with_units(self._oriented(self._staged(entry, bare)), actual, law)
         self._cache[actual] = implementation
         return implementation
+
+    def _with_units(
+        self,
+        implementation: Callable,
+        actual: tuple[GAType, ...],
+        law: Callable,
+    ) -> Callable:
+        n_operands = self._n_operands
+        if all(not gatype.has_units for gatype in actual):
+            return implementation
+        if any(not gatype.has_units for gatype in actual):
+            def unchecked_call(*arguments, **kwargs):
+                ops = arguments[:n_operands]
+                stripped = tuple(_strip_operand(op) for op in ops) + arguments[n_operands:]
+                return _stamp(implementation(*stripped, **kwargs), None, restore_units=False)
+
+            return unchecked_call
+
+        if getattr(law, "uses_extra_args", False):
+            def dynamic_call(*arguments, **kwargs):
+                target_unit = law(*actual, *arguments[n_operands:], **kwargs)
+                ops = arguments[:n_operands]
+                restore = any(isinstance(op, numga.extensor.Extensor) and op.context.units for op in ops)
+                stripped = tuple(_strip_operand(op) for op in ops) + arguments[n_operands:]
+                return _stamp(implementation(*stripped, **kwargs), target_unit, restore_units=restore)
+
+            return dynamic_call
+
+        target_unit = law(*actual)
+
+        def checked_call(*arguments, **kwargs):
+            ops = arguments[:n_operands]
+            restore = any(isinstance(op, numga.extensor.Extensor) and op.context.units for op in ops)
+            stripped = tuple(_strip_operand(op) for op in ops) + arguments[n_operands:]
+            return _stamp(implementation(*stripped, **kwargs), target_unit, restore_units=restore)
+
+        return checked_call
 
     def _select(self, actual: tuple[GAType, ...]) -> _Registration | _PredicateRegistration:
         if any(gatype.has_fields for gatype in actual):
@@ -396,6 +452,46 @@ class GATypeDispatch:
                 f"every {self.name!r} actual GAType must belong to one algebra"
             )
         return actual
+
+
+def _strip_operand(operand: object) -> object:
+    extensor_type = numga.extensor.Extensor
+    if isinstance(operand, extensor_type) and (operand.has_units or operand.context.units):
+        return extensor_type._from_prepared_kernel(
+            operand.context.unchecked, operand.gatype.derive.unchecked, operand._kernel,
+        )
+    return operand
+
+
+def _stamp_one(value: object, unit: object, *, restore_units: bool) -> object:
+    extensor_type = numga.extensor.Extensor
+    if not isinstance(value, extensor_type):
+        return value
+    if unit is None:
+        resolved = UnitGrid.unchecked(tuple(len(space) for space in value.axes))
+    else:
+        resolved = resolve_stamp(unit, value.gatype)
+    if resolved.is_unchecked and not value.context.is_exact:
+        context = value.context.unchecked
+    elif restore_units and not value.context.is_exact:
+        context = value.context.checked
+    else:
+        context = value.context
+    gatype = value.gatype if value.gatype.units == resolved else value.gatype.derive.unit(resolved)
+    if context is value.context and gatype is value.gatype:
+        return value
+    return extensor_type._from_prepared_kernel(context, gatype, value._kernel)
+
+
+def _stamp(result: object, target_unit: object, *, restore_units: bool) -> object:
+    if isinstance(result, tuple):
+        if isinstance(target_unit, tuple):
+            return tuple(
+                _stamp_one(item, unit, restore_units=restore_units)
+                for item, unit in zip(result, target_unit)
+            )
+        return tuple(_stamp_one(item, target_unit, restore_units=restore_units) for item in result)
+    return _stamp_one(result, target_unit, restore_units=restore_units)
 
 
 def _always(*gatypes: GAType) -> bool:

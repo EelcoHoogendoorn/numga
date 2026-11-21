@@ -11,7 +11,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import Algebra, NumpyContext, dim, stack
 from numga.sparse import SparseExtensor, spdiag
 from numga.topology import Topology
 
@@ -19,7 +19,7 @@ from numga.topology import Topology
 ga = Algebra("x+y+t-w0") * Algebra("s0")
 space = Algebra("x+y+")
 quantities = Algebra("t-s0")
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Antiscalar = ga.gatype.antiscalar()                                           # Antiscalar-
@@ -45,21 +45,21 @@ spin_plane = mv.xy                                                            # 
 
 # --- math -----------------------------------------------------------------------------
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Upright]:
-    """Joining opposite corners of each triangle gives its area (`Scalar+[F]`) and its three corner simplex gradients (`[3] Upright+[F]`)."""
-    corners = topology.incidence[2, 0] * vertices                             # [3] Point-[F]
-    facing = topology.off[2, 0] * vertices                                    # [2, 3] Point-[F]
+    """Joining opposite corners of each triangle gives its area (`Scalar+[F], length^2`) and its three corner simplex gradients (`[3] Upright+[F], 1/length`)."""
+    corners = topology.incidence[2, 0] * vertices                             # [3] Point-[F], 1 | length
+    facing = topology.off[2, 0] * vertices                                    # [2, 3] Point-[F], 1 | length
     # Joining the opposite edge with time and entropy forms the hyperplane of constant off-plane potentials, normalized to read one at the corner.
     sides = facing[0] & facing[1]                                             # [3] Antibivector-[F]
     unread = time & entropy                                                   # [] Antibivector-
-    gradients = ((sides & unread) / (sides & unread & corners)).cast(Upright)  # [3] Upright+[F]
-    double_areas = corners[0] & corners[1] & corners[2] & unread              # Antiscalar-[F]
+    gradients = ((sides & unread) / (sides & unread & corners)).cast(Upright)  # [3] Upright+[F], 1/length
+    double_areas = corners[0] & corners[1] & corners[2] & unread              # Antiscalar-[F], length^2
     return double_areas.norm() / 2, gradients
 
 
-def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray,
+def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: Scalar, mobilities: Scalar,
            skews: np.ndarray) -> DriftMap:
     """Drude steady balance between collision drag, Lorentz turning, and spin skew scattering maps a drive to each carrier species' drift velocity (`[..., 2] Spatial- <- Drive+`)."""
-    parcels = valences * (time + entropies_per_charge * entropy)              # [2] Parcel-
+    parcels = valences * (time + entropies_per_charge * entropy)              # [2] Parcel-, 1 | voltage/temperature
     # Commuting the drive and magnetic field with a moving parcel separates into the rest push on the parcel plus magnetic turning of its spatial drift.
     rest_push = Drive.commutator(parcels)                                     # [2] Spatial- <- Drive+
     # Magnetic turning and spin skew scattering combine with collision drag into one scaled spatial rotor per carrier species.
@@ -67,10 +67,10 @@ def drifts(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.nd
     return hall_rotors.inverse() * (mobilities * rest_push)
 
 
-def response(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray,
-             skews: np.ndarray, densities: np.ndarray, conductivity: float) -> Response:
-    """Carrier drift fluxes weighted by `densities` (`[..., 2]`) combine with lattice thermal conduction into the linear transport map (`[...] Flux- <- Drive+`)."""
-    parcels = valences * (time + entropies_per_charge * entropy)              # [2] Parcel-
+def response(magnetic: Magnetic, valences: np.ndarray, entropies_per_charge: Scalar, mobilities: Scalar,
+             skews: np.ndarray, densities: Scalar, conductivity: Scalar) -> Response:
+    """Carrier drift fluxes weighted by sheet charge `densities` (`[..., 2]`) combine with lattice entropy conduction into the linear transport map (`[...] Flux- <- Drive+`)."""
+    parcels = valences * (time + entropies_per_charge * entropy)              # [2] Parcel-, 1 | voltage/temperature
     carrier_drifts = drifts(magnetic, valences, entropies_per_charge, mobilities, skews)   # [..., 2] Spatial- <- Drive+
     carrier_response = (densities * carrier_drifts.regressive(parcels)).sum(axis=-1)       # [...] Flux- <- Drive+
     lattice_response = conductivity * Drive.commutator(entropy).regressive(entropy)        # [] Flux- <- Drive+
@@ -83,7 +83,8 @@ def interior(response: Response) -> tuple[Drive, Drive]:
     # Four scalar readings along the four basis planes of Drive form one invertible linear map on drives.
     conditions = (mv.xt * (mv.xt & response(Drive)) + mv.xs * (Drive & (x_direction & entropy))
                   + mv.yt * (mv.yt & response(Drive)) + mv.ys * (mv.ys & response(Drive)))   # [...] Drive+ <- Drive+
-    return conditions.solve(mv.xt), conditions.solve(mv.xs)
+    return (conditions.solve(mv.xt * (dim.current / dim.length)),
+            conditions.solve(mv.xs * (dim.temperature / dim.length)))
 
 
 def outflow(topology: Topology, areas: Scalar, gradients: Upright, response: Response) -> SparseExtensor:
@@ -95,33 +96,33 @@ def outflow(topology: Topology, areas: Scalar, gradients: Upright, response: Res
 
 
 def steady_potentials(topology: Topology, areas: Scalar, gradients: Upright, response: Response,
-                      high_contacts: np.ndarray, low_contacts: np.ndarray, current: float,
-                      temperature_difference: float) -> tuple[Potential, Potential]:
-    """Zero net charge and entropy outflow on free dual cells determines the isothermal current-driven and open-circuit heat-driven vertex potentials (`Potential+[V]`)."""
+                      high_contacts: np.ndarray, low_contacts: np.ndarray, current: Scalar,
+                      temperature_difference: Scalar) -> tuple[Potential, Potential]:
+    """Zero net charge and entropy outflow on free dual cells determines the isothermal current-driven and open-circuit heat-driven vertex potentials (`Potential+[V], voltage | temperature`)."""
     V, E, F = topology.n_elements
     contact_signs = np.zeros(V)
     contact_signs[high_contacts], contact_signs[low_contacts] = 1, -1
-    # Solving unit electrochemical and thermal drops between the contacts gives two linear basis states whose combination enforces fixed current or open circuit.
-    contact_potentials = mv.scalar(contact_signs[:, None]).field() * stack((mv.t, mv.s)) / 2   # [2] Potential+[V]
+    # Solving unit electrochemical and target thermal drops between the contacts gives two linear basis states whose combination enforces fixed current or open circuit.
+    contact_potentials = mv.scalar(contact_signs[:, None]).field() * stack((mv.t * dim.voltage, mv.s * temperature_difference)) / 2   # [2] Potential+[V], voltage | temperature
     free_reading = topology.reading(np.flatnonzero(contact_signs == 0), 0)    # Scalar+[V_free <- V]
     vertex_outflow = outflow(topology, areas, gradients, response)            # (Parcel- <- Potential+)[V <- V]
     free_outflow = free_reading * vertex_outflow * free_reading.adjugate()    # (Parcel- <- Potential+)[V_free <- V_free]
     basis_potentials = contact_potentials + free_reading.adjugate() * free_outflow.solve(
-        -(free_reading * vertex_outflow(contact_potentials)))                 # [2] Potential+[V]
+        -(free_reading * vertex_outflow(contact_potentials)))                 # [2] Potential+[V], voltage | temperature
     # Charge leaving the high-contact dual cells gives the net current entering the conductor under each basis drop.
-    contact_currents = mv.t & (topology.reading(high_contacts, 0) * vertex_outflow(basis_potentials)).sites.sum()   # [2] Scalar+
-    unit_electric, unit_thermal = basis_potentials                            # Potential+[V], Potential+[V]
-    electric_current, thermal_current = contact_currents                      # [] Scalar+, [] Scalar+
+    contact_currents = mv.t & (topology.reading(high_contacts, 0) * vertex_outflow(basis_potentials)).sites.sum()   # [2] Scalar+, current
+    unit_electric, unit_thermal = basis_potentials                            # Potential+[V], voltage | temperature
+    electric_current, thermal_current = contact_currents                      # [] Scalar+, current
     return (unit_electric * (current / electric_current),
-            (unit_thermal - unit_electric * (thermal_current / electric_current)) * temperature_difference)
+            unit_thermal - unit_electric * (thermal_current / electric_current))
 
 
 def steady_states(topology: Topology, areas: Scalar, gradients: Upright, high_contacts: np.ndarray,
-                  low_contacts: np.ndarray, current: float, temperature_difference: float, magnetic: Magnetic,
-                  valences: np.ndarray, entropies_per_charge: np.ndarray, mobilities: np.ndarray, skews: np.ndarray,
-                  densities: np.ndarray, conductivity: float
-                  ) -> Iterator[tuple[np.ndarray, Potential, Spatial, Potential, Spatial]]:
-    """Yields per-frame carrier densities (`[2]`), vertex potentials (`Potential+[V]`), and triangle drift velocities (`[2] Spatial-[F]`) under current and heat drives."""
+                  low_contacts: np.ndarray, current: Scalar, temperature_difference: Scalar, magnetic: Magnetic,
+                  valences: np.ndarray, entropies_per_charge: Scalar, mobilities: Scalar, skews: np.ndarray,
+                  densities: Scalar, conductivity: Scalar
+                  ) -> Iterator[tuple[Scalar, Potential, Spatial, Potential, Spatial]]:
+    """Yields per-frame carrier densities (`[2]`), vertex potentials (`Potential+[V], voltage | temperature`), and triangle drift velocities (`[2] Spatial-[F], length/time`) under current and heat drives."""
     corners = topology.incidence[2, 0]                                        # [3] Scalar+[F <- V]
     for frame, frame_densities in enumerate(densities):
         carrier_drifts = drifts(magnetic[frame], valences, entropies_per_charge, mobilities, skews)   # [2] Spatial- <- Drive+
@@ -129,7 +130,7 @@ def steady_states(topology: Topology, areas: Scalar, gradients: Upright, high_co
                                   frame_densities, conductivity)              # [] Flux- <- Drive+
         electric_potentials, thermal_potentials = steady_potentials(
             topology, areas, gradients, frame_response, high_contacts, low_contacts, current, temperature_difference)
-        potentials = stack((electric_potentials, thermal_potentials))         # [2] Potential+[V]
-        triangle_drives = -(gradients ^ (corners * potentials[:, None])).sum(axis=-1)   # [2] Drive+[F]
+        potentials = stack((electric_potentials, thermal_potentials))         # [2] Potential+[V], voltage | temperature
+        triangle_drives = -(gradients ^ (corners * potentials[:, None])).sum(axis=-1)   # [2] Drive+[F], voltage/length | temperature/length
         yield (frame_densities, electric_potentials, carrier_drifts(triangle_drives[0]),
                thermal_potentials, carrier_drifts(triangle_drives[1]))

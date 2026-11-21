@@ -54,6 +54,7 @@ from .gatype import (
 from .multivector import MultivectorFactory
 from .operator import OperatorFactory, SymbolicKernel
 from .subspace import SubSpace, SubSpaceFactory, SupportKey
+from .units import Unit, UnitGrid, dim
 
 # Default extension overloads register once core classes exist.
 from . import extensions as _extensions

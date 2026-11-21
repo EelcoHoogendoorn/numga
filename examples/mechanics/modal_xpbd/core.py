@@ -46,7 +46,7 @@ Force = ga.gatype.vector().derive.nondegenerate                            # Vec
 
 # --- math -----------------------------------------------------------------------------
 # Leading `...` axes batch independent parameter cases.
-def girder(n_bays: int, length: float, height: float, stiffness: float, density: float, n_modes: int) -> Shape:
+def girder(n_bays: int, length: Scalar, height: Scalar, stiffness: Scalar, density: Scalar, n_modes: int) -> Shape:
     """Bar stiffness solved against lumped vertex masses reduces a girder of `n_bays` bays to its
     `n_modes` lowest non-rigid vibration modes."""
     positions, edges = truss(mv, n_bays, length, height)                   # Antivector-[V], [E, 2]
@@ -54,27 +54,27 @@ def girder(n_bays: int, length: float, height: float, stiffness: float, density:
     V, E = topology.n_elements
     # Subtracting each bar's tail from its head cancels unit point weights into an ideal displacement.
     ends = topology.d[0]                                                   # Scalar+[E <- V]
-    bar_displacements = (ends * positions).cast(Displacement)              # Antivector-[E]
+    bar_displacements = (ends * positions).cast(Displacement)              # Antivector-[E], length
     # Dualizing once with the Euclidean metric turns each bar displacement into the force plane along
     # that bar, whose pairing with the displacement gives the squared bar length.
-    pulls = bar_displacements.dual_inverse()                               # Vector+[E]
-    lengths = (pulls & bar_displacements).square_root()                    # Scalar+[E]
+    pulls = bar_displacements.dual_inverse()                               # Vector+[E], length
+    lengths = (pulls & bar_displacements).square_root()                    # Scalar+[E], length
     unit_forces = pulls / lengths                                          # Vector+[E]
     # Each bar measures axial stretch by pairing its unit force with relative end displacement and
     # pulls back along the same line of action.
-    bars = unit_forces * (unit_forces & Displacement) * stiffness / lengths  # (Vector+ <- Antivector-)[E]
+    bars = unit_forces * (unit_forces & Displacement) * stiffness / lengths  # (Vector+ <- Antivector-)[E], mass/time^2
     stretching = ends * Displacement                                       # (Antivector- <- Antivector-)[E <- V]
-    masses = mv.scalar(np.full((V, 1), density * length * height / V)).field()  # Scalar+[V]
-    weights = spdiag(masses * Displacement.dual_inverse())                 # (Vector+ <- Antivector-)[V <- V]
+    masses = (density * length * height / V).broadcast_to((V,)).field()    # Scalar+[V], mass
+    weights = spdiag(masses * Displacement.dual_inverse())                 # (Vector+ <- Antivector-)[V <- V], mass
     # Pull bar stiffnesses back to the vertices through the coboundary adjugate.
-    girder_stiffness = stretching.adjugate()(bars(stretching))             # (Vector+ <- Antivector-)[V <- V]
+    girder_stiffness = stretching.adjugate()(bars(stretching))             # (Vector+ <- Antivector-)[V <- V], mass/time^2
     # Drop the three zero-frequency planar rigid motions carried by the body's motor.
-    squared_frequencies, modes = girder_stiffness.eigh(weights, 3 + n_modes)  # [3 + n_modes] Scalar+, [3 + n_modes] Antivector-[V]
-    squared_frequencies, modes = squared_frequencies[3:], modes[3:]        # [n_modes] Scalar+, [n_modes] Antivector-[V]
-    centre = (positions * masses).sites.sum() / masses.sites.sum()         # [] Antivector-
-    rest = positions - centre + mv.w.dual()                                # Antivector-[V]
+    squared_frequencies, modes = girder_stiffness.eigh(weights, 3 + n_modes)  # [3 + n_modes] Scalar+, 1/time^2; Antivector-[V], 1/mass^(1/2)
+    squared_frequencies, modes = squared_frequencies[3:], modes[3:]        # [n_modes] Scalar+, Antivector-[V]
+    centre = (positions * masses).sites.sum() / masses.sites.sum()         # [] Antivector-, 1 | length
+    rest = positions - centre + mv.w.dual()                                # Antivector-[V], 1 | length
     inertia = (masses * rest).regressive(rest.commutator(Twist)).sites.sum()  # [] Antibivector- <- Bivector+
-    compliance = 1 / squared_frequencies                                   # [n_modes] Scalar+
+    compliance = 1 / squared_frequencies                                   # [n_modes] Scalar+, time^2
     return Shape(rest=rest, modes=modes, compliance=compliance, masses=masses, edges=edges, inertia=inertia)
 
 

@@ -7,7 +7,7 @@ import numpy as np
 from numga import NumpyContext, Orientation, stack
 from numga.algebras import VGA3D as ga
 
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 Scalar = ga.gatype.scalar()
 # Points and displacements are antivectors; spatial gradients are covectors, vectors.
 Antivector = ga.gatype.antivector()
@@ -22,7 +22,7 @@ one = mv.antipseudoscalar([1])                               # Antiscalar-
 
 
 # --- math -----------------------------------------------------------------------------
-def kernels(queries: Antivector, centers: Antivector, radius: float) -> tuple[Evaluation, Gradient]:
+def kernels(queries: Antivector, centers: Antivector, radius: Scalar) -> tuple[Evaluation, Gradient]:
     """Reproducing kernels map scalar nodal values at `centers` to interpolated values and spatial gradients at `queries`."""
     points = one + centers                                       # [...] AffinePoint-
     difference = queries[..., None] - centers                    # [..., ...] Antivector-
@@ -46,18 +46,18 @@ def kernels(queries: Antivector, centers: Antivector, radius: float) -> tuple[Ev
     return (weights * Scalar).field(1), (gradients * Scalar).field(1)
 
 
-def skinning_modes(evaluation: Evaluation, gradient: Gradient, sample_volumes: np.ndarray,
-                   lame_lambda: np.ndarray, lame_mu: np.ndarray,
+def skinning_modes(evaluation: Evaluation, gradient: Gradient, sample_volumes: Scalar,
+                   lame_lambda: Scalar, lame_mu: Scalar,
                    n_modes: int) -> tuple[Scalar, Scalar]:
-    """Generalized eigenmodes of the isotropic elastic stiffness against volume mass give the `n_modes` lowest scalar skinning modes (`[n_modes] Scalar+[...]`)."""
+    """Generalized eigenmodes of the isotropic elastic stiffness against volume-averaged mass give the `n_modes` lowest dimensionless scalar skinning modes (`[n_modes] Scalar+[...]`)."""
     # Assembling over the quadrature sites integrates all pairs of nodal responses together, each pulled back to the
-    # nodes by the adjugate: the mass pairs values with sample volumes, and the stiffness pairs gradients with the
-    # flux an isotropic material drives.
+    # nodes by the adjugate: averaging by total volume keeps the mass Gram matrix and skinning modes dimensionless.
     values_at_samples = evaluation.field(0)                      # (Scalar+ <- Scalar+)[... <- ...]
     gradients_at_samples = gradient.field(0)                     # (Vector+ <- Scalar+)[... <- ...]
-    mass = values_at_samples.adjugate()((sample_volumes * Scalar.dual()(evaluation)).field(0))   # (Antiscalar- <- Scalar+)[... <- ...]
+    volume_weights = sample_volumes / sample_volumes.sum(axis=0) # [...] Scalar+
+    mass = values_at_samples.adjugate()((volume_weights * Scalar.dual()(evaluation)).field(0))   # (Antiscalar- <- Scalar+)[... <- ...]
     # Summing the rest elastic costs of three translation directions gives the isotropic flux along each gradient.
-    fluxes = sample_volumes * (lame_lambda + 4 * lame_mu) * Vector.dual()(gradient)   # [...] (Antivector- <- Scalar+)[...]
+    fluxes = volume_weights * (lame_lambda + 4 * lame_mu) * Vector.dual()(gradient)   # [...] (Antivector- <- Scalar+)[...]
     stiffness = gradients_at_samples.adjugate()(fluxes.field(0))                       # (Antiscalar- <- Scalar+)[... <- ...]
     eigenvalues, mode_fields = stiffness.eigh(mass)              # [...] Scalar+, [...] Scalar+[...]
     return eigenvalues[:n_modes], mode_fields[:n_modes]

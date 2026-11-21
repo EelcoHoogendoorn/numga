@@ -7,7 +7,7 @@ from itertools import islice
 
 import numpy as np
 
-from numga import stack
+from numga import dim, stack
 from examples.fluids.kirchhoff import core
 
 mv = core.mv
@@ -18,14 +18,15 @@ n_aspects = 41
 aspects = np.geomspace(0.1, 10, n_aspects)
 n_widenings = 48
 # Gliding ellipsoid parameters across three cases: in vacuum, nearly end-on in fluid, and nearly broadside in fluid.
-semi_axes = np.array([3, 1, 1])
-density = 1
-fluid_densities = np.array([0, 1, 1])
-n_cases = len(fluid_densities)
-blow = 12
+density_unit = dim.mass / dim.length**3
+semi_axes = mv.scalar([[3.0], [1.0], [1.0]], unit=dim.length)                 # [3] Scalar+, length
+density = mv.scalar(1.0, unit=density_unit)                                   # [] Scalar+, mass/length^3
+fluid_densities = mv.scalar([[0.0], [1.0], [1.0]], unit=density_unit)         # [3] Scalar+, mass/length^3
+n_cases = fluid_densities.shape[0]
+blow = mv.scalar(12.0, unit=dim.mass * dim.length / dim.time)                 # [] Scalar+, mass*length/time
 headings = np.array([0.1, 0.1, np.pi / 2 - 0.1])
 # Time step, total step count, frame stride, outline sample count, and frame duration.
-dt = 0.16
+dt = mv.scalar(0.16, unit=dim.time)                                           # [] Scalar+, time
 n_steps = 250
 n_steps_per_frame = 2
 n_outline = 48
@@ -35,12 +36,17 @@ frame_duration_ms = 40
 # --- math -----------------------------------------------------------------------------
 def energy_ratios() -> core.Scalar:
     """Fluid-to-solid kinetic energy ratios at equal density across spheroid aspect ratios for axial shift, transverse shift, and transverse turn."""
-    spheroid_axes = np.stack([aspects, np.ones_like(aspects), np.ones_like(aspects)], axis=-1)   # [n_aspects, 3]
-    stretches = core.ellipsoid_stretch(spheroid_axes)                         # [n_aspects] Direction- <- Direction-
-    shapes = stretches(stretches)                                             # [n_aspects] Direction- <- Direction-
-    solid_inertia = core.total_inertia(shapes, 1, 0, n_widenings)[:, None]    # [n_aspects, 1] Forque- <- Twist+
-    fluid_inertia = core.total_inertia(shapes, 0, 1, n_widenings)[:, None]    # [n_aspects, 1] Forque- <- Twist+
-    rates = stack([mv.wx, mv.wy, mv.zx])                                      # [3] Twist+
+    spheroid_axes = mv.scalar(
+        np.stack([aspects, np.ones_like(aspects), np.ones_like(aspects)], axis=-1)[..., None],
+        unit=dim.length,
+    )                                                                         # [n_aspects, 3] Scalar+, length
+    stretches = core.ellipsoid_stretch(spheroid_axes)                         # [n_aspects] Direction- <- Direction-, length
+    shapes = stretches(stretches)                                             # [n_aspects] Direction- <- Direction-, length^2
+    unit_density = mv.scalar(1.0, unit=density_unit)
+    zero_density = mv.scalar(0.0, unit=density_unit)
+    solid_inertia = core.total_inertia(shapes, unit_density, zero_density, n_widenings)[:, None]   # [n_aspects, 1] Forque- <- Twist+
+    fluid_inertia = core.total_inertia(shapes, zero_density, unit_density, n_widenings)[:, None]   # [n_aspects, 1] Forque- <- Twist+
+    rates = stack([mv.wx * (dim.length / dim.time), mv.wy * (dim.length / dim.time), mv.zx / dim.time])  # [3] Twist+, 1/time | length/time
     return (rates & fluid_inertia(rates)) / (rates & solid_inertia(rates))    # [n_aspects, 3] Scalar+
 
 
@@ -88,9 +94,11 @@ def main() -> None:
 
     # checks
     # A sphere's added mass equals half the displaced fluid mass in every direction, and pure rotation moves no fluid.
-    unit_stretch = core.ellipsoid_stretch(np.array([1, 1, 1]))                # [] Direction- <- Direction-
-    sphere_fluid = core.total_inertia(unit_stretch(unit_stretch), 0, 1, n_widenings)   # [] Forque- <- Twist+
-    rates = stack([mv.wx, mv.wy, mv.zx])                                      # [3] Twist+
+    unit_stretch = core.ellipsoid_stretch(mv.scalar([[1.0], [1.0], [1.0]], unit=dim.length))   # [] Direction- <- Direction-, length
+    sphere_fluid = core.total_inertia(
+        unit_stretch(unit_stretch), mv.scalar(0.0, unit=density_unit), mv.scalar(1.0, unit=density_unit), n_widenings,
+    )                                                                         # [] Forque- <- Twist+
+    rates = stack([mv.wx * (dim.length / dim.time), mv.wy * (dim.length / dim.time), mv.zx / dim.time])  # [3] Twist+, 1/time | length/time
     np.testing.assert_allclose((rates & sphere_fluid(rates)).to_array(), [2 * np.pi / 3, 2 * np.pi / 3, 0], atol=1e-12)
     # Total kinetic energy of body and fluid is conserved across the trajectory within midpoint-integrator accuracy.
     body_impulses = motors << impulse                                         # [..., n_cases] Forque-

@@ -194,23 +194,23 @@ class TorchContext(Context):
 
     def __init__(
         self, algebra: Algebra | str, dtype: object = torch.float32, device: object = "cpu",
-        *, execution: Literal["dense", "sparse"] = "dense",
+        *, execution: Literal["dense", "sparse"] = "dense", units: bool = False,
     ) -> None:
         from numga.algebra import Algebra
 
         object.__setattr__(self, "_algebra", Algebra(algebra) if isinstance(algebra, str) else algebra)
         object.__setattr__(self, "_dtype", _numpy_dtype(dtype))
         object.__setattr__(self, "_device", torch.device(device))
-        super().__init__(execution)
+        super().__init__(execution, units=units)
 
     def __setattr__(self, _name: str, _value: object) -> None:
         raise AttributeError("TorchContext instances are immutable")
 
     @classmethod
-    def from_key(cls, algebra: Algebra, key: tuple[object, ...]) -> TorchContext:
+    def from_key(cls, algebra: Algebra, key: tuple[object, ...], *, units: bool = False) -> TorchContext:
         if len(key) != 4 or key[0] != "torch":
             raise ValueError(f"invalid torch Context key {key!r}")
-        context = cls(algebra, key[1], key[2], execution=key[3])
+        context = cls(algebra, key[1], key[2], execution=key[3], units=units)
         if context.key != key:
             raise ValueError(f"torch Context key is not canonical: {key!r}")
         return context
@@ -262,7 +262,10 @@ class TorchContext(Context):
         return _materialize(kernel, self.torch_dtype, self.device)
 
     def with_dtype(self, dtype: object) -> TorchContext:
-        return type(self)(self.algebra, dtype, self.device, execution=self.execution)
+        return type(self)(self.algebra, dtype, self.device, execution=self.execution, units=self.units)
+
+    def _with_units(self, units: bool) -> TorchContext:
+        return type(self)(self.algebra, self.dtype, self.device, execution=self.execution, units=units)
 
     def kernel_dtype(self, kernel: torch.Tensor) -> np.dtype:
         return _NUMPY_DTYPES[kernel.dtype]

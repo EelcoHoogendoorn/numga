@@ -35,6 +35,7 @@ import numpy as np
 jax.config.update("jax_enable_x64", True)
 
 from numga.extensor import Extensor
+from numga.units import divide_by_input
 
 from .context import Context, context_from_key
 
@@ -60,22 +61,22 @@ class JaxContext(Context):
 
     def __init__(
         self, algebra: Algebra | str, dtype: object = np.float64,
-        *, execution: Literal["dense", "sparse"] = "dense",
+        *, execution: Literal["dense", "sparse"] = "dense", units: bool = False,
     ) -> None:
         from numga.algebra import Algebra
 
         object.__setattr__(self, "_algebra", Algebra(algebra) if isinstance(algebra, str) else algebra)
         object.__setattr__(self, "_dtype", _dtype(dtype))
-        super().__init__(execution)
+        super().__init__(execution, units=units)
 
     def __setattr__(self, _name: str, _value: object) -> None:
         raise AttributeError("JaxContext instances are immutable")
 
     @classmethod
-    def from_key(cls, algebra: Algebra, key: tuple[object, ...]) -> JaxContext:
+    def from_key(cls, algebra: Algebra, key: tuple[object, ...], *, units: bool = False) -> JaxContext:
         if len(key) != 3 or key[0] != "jax":
             raise ValueError(f"invalid JAX Context key {key!r}")
-        context = cls(algebra, key[1], execution=key[2])
+        context = cls(algebra, key[1], execution=key[2], units=units)
         if context.key != key:
             raise ValueError(f"JAX Context key is not canonical: {key!r}")
         return context
@@ -239,6 +240,7 @@ def derivative(function: Callable) -> Callable:
             image.gatype.subspaces + (value.gatype.output_subspace,),
             image.gatype.orientations + (value.gatype.orientation,),
             fields=image.gatype.fields + step,
+            units=divide_by_input(image.gatype.units, value.gatype.units),
         )
         return Extensor._from_prepared_kernel(value.context, gatype, jnp.transpose(changes, order))
 
@@ -250,15 +252,15 @@ def _flatten_extensor(extensor: Extensor) -> tuple:
         raise TypeError(
             "only Extensors in a JaxContext can cross a JAX transformation boundary"
         )
-    return (extensor._kernel,), (extensor.gatype, extensor.context.key)
+    return (extensor._kernel,), (extensor.gatype, extensor.context.key, extensor.context.units)
 
 
 def _unflatten_extensor(
     metadata: tuple,
     children: tuple[Any, ...],
 ) -> Extensor:
-    gatype, context_key = metadata
-    context = context_from_key(gatype.algebra, context_key)
+    gatype, context_key, units = metadata
+    context = context_from_key(gatype.algebra, context_key, units=units)
     return Extensor._from_prepared_kernel(context, gatype, children[0])
 
 

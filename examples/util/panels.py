@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 from matplotlib.axes import Axes
 
+from numga import dim, stack
 from numga.extensor import Extensor
 from numga.render.camera import Camera
 from numga.render.drawing import composited
@@ -115,16 +116,73 @@ def limits(ax: Axes) -> tuple[np.ndarray, np.ndarray]:
     return np.array([left + right, bottom + top]) / 2, np.array([right - left, top - bottom]) / 2
 
 
-def panel(ax: Axes, across: Extensor, up: Extensor, weight: Extensor) -> Camera:
+def _panel_camera(
+    ax: Axes,
+    across: Extensor,
+    up: Extensor,
+    weight: Extensor,
+    unit: float,
+    xlim: Extensor | None,
+    ylim: Extensor | None,
+) -> Camera:
+    """Build a `Camera` fitted to `room(ax)`, scaling checked `across` and `up` planes into `dim.pixel`."""
+    if xlim is not None or ylim is not None:
+        if xlim is None or ylim is None:
+            raise ValueError("xlim and ylim must both be supplied together")
+        x_arr = np.asarray(xlim.to_array(), dtype=float).reshape(2)
+        y_arr = np.asarray(ylim.to_array(), dtype=float).reshape(2)
+        ax.set_xlim(float(x_arr[0]), float(x_arr[1]))
+        ax.set_ylim(float(y_arr[0]), float(y_arr[1]))
+
+    if not across.has_units:
+        return fitted(Camera(across, up, 0 * across, weight, unit, *limits(ax), 300), ax)
+
+    mv = across.context.multivector
+    columns, rows = room(ax)
+    if xlim is not None and ylim is not None:
+        span_x, span_y = xlim[1] - xlim[0], ylim[1] - ylim[0]
+        mid_x, mid_y = (xlim[0] + xlim[1]) / 2, (ylim[0] + ylim[1]) / 2
+    else:
+        mid, half = limits(ax)
+        span_x, span_y = mv.scalar(float(2 * half[0])), mv.scalar(float(2 * half[1]))
+        mid_x, mid_y = mv.scalar(float(mid[0])), mv.scalar(float(mid[1]))
+
+    same_unit = (
+        span_x.units.is_zero
+        or span_y.units.is_zero
+        or span_x.unit == span_y.unit
+    )
+    if same_unit:
+        aspect = float((span_x / span_y).to_array())
+        fitted_columns = min(columns, int(rows * aspect))
+        scale_x = mv.scalar(float(fitted_columns), unit=dim.pixel) / span_x
+        scale_y = scale_x
+    else:
+        scale_x = mv.scalar(float(columns), unit=dim.pixel) / span_x
+        scale_y = mv.scalar(float(rows), unit=dim.pixel) / span_y
+
+    across_px, up_px = scale_x * across, scale_y * up
+    middle_px = stack((scale_x * mid_x, scale_y * mid_y))
+    half_px = stack((scale_x * (span_x / 2), scale_y * (span_y / 2)))
+    return Camera(across_px, up_px, 0 * across_px, weight, unit, middle_px, half_px)
+
+
+def panel(ax: Axes, across: Extensor, up: Extensor, weight: Extensor, *,
+          xlim: Extensor | None = None, ylim: Extensor | None = None) -> Camera:
     """Frames `ax`'s data limits with a projective `Camera` that reads horizontal and vertical
-    coordinates with `across` and `up` divided by `weight & point`, fitted to `room(ax)`."""
-    return fitted(Camera(across, up, 0 * across, weight, 0.0, *limits(ax), 300), ax)
+    coordinates with `across` and `up` divided by `weight & point`, fitted to `room(ax)`. When
+    `across` carries checked units, optional `xlim`/`ylim` (`[2] Scalar+`) set the axes limits and
+    scale the camera planes into `dim.pixel`."""
+    return _panel_camera(ax, across, up, weight, 0.0, xlim, ylim)
 
 
-def offset_panel(ax: Axes, across: Extensor, up: Extensor) -> Camera:
+def offset_panel(ax: Axes, across: Extensor, up: Extensor, *,
+                 xlim: Extensor | None = None, ylim: Extensor | None = None) -> Camera:
     """Frames `ax`'s data limits with an affine `Camera` that reads unit-weight origin offsets with
-    `across` and `up`, fitted to `room(ax)`."""
-    return fitted(Camera(across, up, 0 * across, 0 * across, 1.0, *limits(ax), 300), ax)
+    `across` and `up`, fitted to `room(ax)`. When `across` carries checked units, optional
+    `xlim`/`ylim` (`[2] Scalar+`) set the axes limits and scale the camera planes into `dim.pixel`."""
+    weight = across.context.multivector.zeros(across.gatype.derive.unchecked) if across.has_units else 0 * across
+    return _panel_camera(ax, across, up, weight, 1.0, xlim, ylim)
 
 
 def overlay(ax: Axes, pictures: list, *, zorder: float | None = None):

@@ -19,8 +19,12 @@ from __future__ import annotations
 
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductOne, Versor
+from numga.units import exp_unit, log_unit
 
 from ._scalar_functions import register_scalar_function
+
+Extensor.exp.set_unit(exp_unit)
+Extensor.log.set_unit(log_unit)
 
 
 @Extensor.exp_linear.register(lambda t: t.is_bivector)

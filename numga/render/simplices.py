@@ -28,13 +28,14 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from numga import GATypeError, dim
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from numga.topology import Topology
 from numga.wgsl import Shader, samples_per_side
 
 from . import solids
-from .camera import Camera, placing, read, reading
+from .camera import Camera, check_projection, placing, read, reading
 from .drawing import Draw
 
 if TYPE_CHECKING:
@@ -318,10 +319,19 @@ def marker_shader(Point: GAType, Plane: GAType) -> Shader:
     return Shader(placing(Plane) + marker_source, Point.algebra, dict(Point=Point, Plane=Plane), {})
 
 
-def chevron_reach(length: float) -> np.ndarray:
+def _pixels(value: Extensor | np.ndarray | float, name: str) -> np.ndarray | float:
+    """Read pixel widths, radii, or chevron lengths, requiring `dim.pixel` on checked `Extensor` inputs."""
+    if isinstance(value, Extensor):
+        if value.has_units and not value.units.is_zero and value.unit != dim.pixel:
+            raise GATypeError(f"{name} must carry pixel units; got {value.gatype.signature}")
+        return value.to_array()
+    return value
+
+
+def chevron_reach(length: Extensor | float) -> np.ndarray:
     """A chevron barb of pixel `length` angled thirty degrees off its edge projects onto axial and
     transverse components `(sqrt(3) / 2, 1 / 2) * length`."""
-    return length * np.array([np.sqrt(3) / 2, 1 / 2])
+    return float(_pixels(length, "chevron")) * np.array([np.sqrt(3) / 2, 1 / 2])
 
 
 def following(edges: np.ndarray) -> np.ndarray:
@@ -344,14 +354,17 @@ def travelled(points: Extensor, edges: np.ndarray, camera: Camera) -> np.ndarray
     return totals - lengths - np.maximum.accumulate(np.where(starts, totals - lengths, 0))
 
 
-def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: np.ndarray | float, camera: Camera,
-            chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0, dashes: tuple[float, float] = (1.0, 0.0),
-            cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Draw | np.ndarray:
+def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: Extensor | np.ndarray | float,
+            camera: Camera, chevrons: np.ndarray = np.zeros(1), chevron: Extensor | float = 0.0,
+            dashes: tuple[float, float] = (1.0, 0.0), cap: Cap = Cap.ROUND, opacity: float = 1.0) -> Draw | np.ndarray:
     """Project the 1-simplices of `topology` over `points` (`[V]`) through `camera` as a 2D stroke
     `Draw` pass (or a transparent `[rows, columns, 4]` array when `topology` has no edges) `width`
     pixels wide (`[V]` or one number, linear along each edge between its points' widths) in
     `colours` (`[E, 3]` or `[3]`), with optional tip chevrons and periodic dash-gap patterns along
     contiguous edge chains."""
+    check_projection(points, camera)
+    width_px = _pixels(width, "width")
+    chevron_px = chevron_reach(chevron)
     side = samples_per_side()
     rows, columns = camera.shape
     edges = np.asarray(topology.elements[1], dtype=np.uint32)
@@ -364,9 +377,9 @@ def strokes(points: Extensor, topology: Topology, colours: np.ndarray, width: np
         travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
         open_ends=np.isin(edges, topology.exterior[0]).astype(float),
         follows=following(edges),
-        radii=np.broadcast_to(width, points.shape).astype(float) * side / 2,
+        radii=np.broadcast_to(width_px, points.shape).astype(float) * side / 2,
         samples=np.array([columns * side, rows * side], dtype=float),
-        chevron=chevron_reach(chevron) * side, dashes=np.array(dashes) * side, cap=float(cap), opacity=opacity,
+        chevron=chevron_px * side, dashes=np.array(dashes) * side, cap=float(cap), opacity=opacity,
         **camera.uniforms(1.0)))
 
 
@@ -375,8 +388,8 @@ def view_camera(view: View) -> Camera:
     return view.to_camera()
 
 
-def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: np.ndarray | float, view: View,
-          gloss: float = 0.0, chevrons: np.ndarray = np.zeros(1), chevron: float = 0.0,
+def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: Extensor | np.ndarray | float, view: View,
+          gloss: float = 0.0, chevrons: np.ndarray = np.zeros(1), chevron: Extensor | float = 0.0,
           dashes: tuple[float, float] = (1.0, 0.0)) -> Draw:
     """Render the 1-simplices of `topology` over `points` (`[V]`) in `PGA3D` as supersampled 3D
     tubes `width` pixels wide (`[V]` or one number, a truncated cone along each edge between its
@@ -389,7 +402,7 @@ def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: np.n
     return Draw(tube_shader(), camera.shape, 6 * len(edges), dict(
         points=points, edges=edges, colours=np.broadcast_to(colours, (len(edges), 3)),
         travelled=travelled(points, edges, camera) * side, chevrons=np.broadcast_to(chevrons, len(edges)).astype(float),
-        radii=np.broadcast_to(width, points.shape).astype(float) * side / 2,
+        radii=np.broadcast_to(_pixels(width, "width"), points.shape).astype(float) * side / 2,
         samples=np.array([columns * side, rows * side], dtype=float),
         chevron=chevron_reach(chevron) * side, dashes=np.array(dashes) * side, scene_pixel=view.pixel,
         oversampling=float(side), cap=float(Cap.ROUND), opacity=1.0,
@@ -398,11 +411,13 @@ def tubes(points: Extensor, topology: Topology, colours: np.ndarray, width: np.n
         **camera.uniforms(8 * view.half.max()), **solids.lighting(gloss)))
 
 
-def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray | float, camera: Camera,
+def markers(points: Extensor, colours: np.ndarray, radii: Extensor | np.ndarray | float, camera: Camera,
             opacity: float = 1.0) -> Draw | np.ndarray:
     """Project circular dots of pixel `radii` around `points` (`[N]`) in `colours` (`[N, 3]` or
     `[3]`) through `camera` into a 2D `Draw` pass (or a transparent `[rows, columns, 4]` array when
     `points` is empty)."""
+    check_projection(points, camera)
+    radii_px = _pixels(radii, "radii")
     side = samples_per_side()
     rows, columns = camera.shape
     # An empty point batch produces a transparent RGBA layer.
@@ -410,5 +425,5 @@ def markers(points: Extensor, colours: np.ndarray, radii: np.ndarray | float, ca
         return np.zeros(camera.shape + (4,))
     return Draw(marker_shader(**reading(points, camera)), camera.shape, 6 * len(points), dict(
         points=points, colours=np.broadcast_to(colours, (len(points), 3)),
-        radii=np.broadcast_to(radii, len(points)).astype(float) * side,
+        radii=np.broadcast_to(radii_px, len(points)).astype(float) * side,
         samples=np.array([columns * side, rows * side], dtype=float), opacity=opacity, **camera.uniforms(1.0)))

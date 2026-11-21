@@ -27,8 +27,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from numga.algebras import PGA3D
+from numga.binding import BindingPlan, TypeRules
 from numga.extensor import Extensor
-from numga.gatype import GAType, Orientation, ReverseProductOne, Versor
+from numga.gatype import GAType, Orientation, ReverseProductOne, Versor, rules
 
 if TYPE_CHECKING:
     from numga.backend.context import Context
@@ -136,20 +137,36 @@ class PrincipalInertiaPGA3(Extensor):
         momentum = np.empty(np.broadcast_shapes(r.shape[:-1], self.shape) + (6,))
         momentum[..., 0:3] = r[..., 3:6] * self.upper
         momentum[..., 3:6] = r[..., 0:3] * self.lower
-        return Extensor._from_prepared_kernel(rate.context, self.gatype.derive.output, momentum)
+        plan = BindingPlan.from_types(self.gatype, ((0, rate.gatype),))
+        return Extensor._from_prepared_kernel(rate.context, TypeRules.bind(plan), momentum)
 
     def inverse(self) -> PrincipalInertiaPGA3:
         """Inverting a principal-frame inertia map swaps `upper` and `lower` and takes four
         elementwise reciprocals."""
-        return PrincipalInertiaPGA3(self._context, 1 / self.lower, 1 / self.upper, self.gatype.derive.transposed)
+        return PrincipalInertiaPGA3(self._context, 1 / self.lower, 1 / self.upper, self.gatype.derive.inverted)
 
 
 def principal_inertia_pga3(mass: Extensor, moments: Extensor) -> PrincipalInertiaPGA3:
     """Constructing a principal-frame inertia map pairs a `Scalar` mass with principal moments selected
     on the rotation blades `yz zx xy`."""
-    bivector = mass.algebra.subspace.bivector()
-    gatype = mass.algebra.gatype.oriented((bivector, bivector), (Orientation.intrinsic, Orientation.extrinsic))
-    lower = moments.select_subspace(mass.algebra.subspace("yz zx xy"))._kernel
+    algebra = mass.algebra
+    bivector = algebra.subspace.bivector()
+    Bivector = algebra.gatype.bivector()
+    upper_op = algebra.operator.dual(Bivector.derive.degenerate)
+    upper_mul = algebra.operator.geometric_product(mass.gatype, upper_op.gatype)
+    upper_type = TypeRules.bind(BindingPlan.from_types(upper_mul.gatype, ((0, mass.gatype), (1, upper_op.gatype))))
+    mv = moments.context.multivector
+    lower_types = []
+    for spin_mv in (mv.yz, mv.zx, mv.xy):
+        axis_dual = algebra.operator.dual(spin_mv.gatype.derive.plain)
+        coeff_op = algebra.operator.scalar_product(spin_mv.gatype, moments.gatype)
+        coeff_type = TypeRules.bind(BindingPlan.from_types(coeff_op.gatype, ((0, spin_mv.gatype), (1, moments.gatype))))
+        mul_op = algebra.operator.geometric_product(coeff_type, axis_dual.gatype)
+        lower_types.append(
+            TypeRules.bind(BindingPlan.from_types(mul_op.gatype, ((0, coeff_type), (1, axis_dual.gatype))))
+        )
+    gatype = rules.ADD.result((upper_type, *lower_types), (bivector, bivector))
+    lower = moments.select_subspace(algebra.subspace("yz zx xy"))._kernel
     return PrincipalInertiaPGA3(mass.context, mass._kernel, lower, gatype)
 
 

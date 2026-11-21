@@ -11,7 +11,7 @@ from numga import NumpyContext
 from numga.algebras import PGA2D
 
 ga = PGA2D
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 Scalar = ga.gatype.scalar()                         # Scalar+
 Point = ga.gatype.antivector()                      # Antivector-
 Plane = ga.gatype.vector()                          # Vector+
@@ -53,7 +53,7 @@ def position_ellipsoid(estimate: Motor, sigma: Covariance, positions: Point, sig
 
 
 # --- plumbing -------------------------------------------------------------------------
-def body_covariance(translation_std: float, rotation_std: float) -> Covariance:
+def body_covariance(translation_std: Scalar, rotation_std: Scalar) -> Covariance:
     """Translation variance `translation_std**2` along both body axes and rotation variance `rotation_std**2`
     about the body origin form an isotropic body-frame covariance (`[] Twist+ <- Line-`)."""
     translation = mv.yw * (mv.yw & Line) + mv.wx * (mv.wx & Line)               # [] Twist+ <- Line-

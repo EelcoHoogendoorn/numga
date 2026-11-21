@@ -13,6 +13,7 @@ from examples.optics.lens_camera.core import (
     Point,
     PointMap,
     Quadric,
+    Scalar,
     SensorPlane,
     SensorPoint,
     camera_exposure,
@@ -23,11 +24,11 @@ from examples.optics.lens_camera.core import (
     scene_point,
     unit_point,
 )
-from numga import stack
+from numga import dim, stack
 
 # Front and rear focal lengths; the front lens stands fixed at x == 1 while the rear lens translates to zoom.
-focal_lengths = np.array([1.0, 0.6])
-front_at = 1.0
+focal_lengths = mv.scalar([[1.0], [0.6]], unit=dim.length)                      # [2] Scalar+, length
+front_at = mv.scalar(1.0, unit=dim.length)                                      # [] Scalar+, length
 # Three depth layers of scene points and one far-layer subject point with three traced aperture-rim heights.
 depths = np.array([-3.2, -2.2, -1.6])
 n_depths = len(depths)
@@ -43,18 +44,18 @@ scene = scene_point(
         ),
         axis=-1,
     )
-)                                                                               # [n_depths, n_heights, n_widths] Point-
-subject = scene_point(np.array([-3.2, 0.0, -1.0 / 6.0]))                        # [] Point-
+)                                                                               # [n_depths, n_heights, n_widths] Point-, 1 | length
+subject = scene_point(np.array([-3.2, 0.0, -1.0 / 6.0]))                        # [] Point-, 1 | length
 rim_heights = np.array([1, 0, -1])
 # Wide, telephoto, and tilted-sensor still settings.
-wide_at, tele_at = 1.4, 1.8
-focus_distance = 2.2
-aperture = 0.45
+wide_at, tele_at = mv.scalar(1.4, unit=dim.length), mv.scalar(1.8, unit=dim.length)
+focus_distance = mv.scalar(2.2, unit=dim.length)
+aperture = mv.scalar(0.45, unit=dim.length)
 sensor_tilt = np.radians(25)
 # Zoom, focus, and aperture oscillation midpoints and swings across the animation loop.
-rear_middle, rear_swing = 1.6, 0.2
-focus_middle, focus_swing = 2.4, 0.8
-aperture_middle, aperture_swing = 0.3, 0.1
+rear_middle, rear_swing = mv.scalar(1.6, unit=dim.length), mv.scalar(0.2, unit=dim.length)
+focus_middle, focus_swing = mv.scalar(2.4, unit=dim.length), mv.scalar(0.8, unit=dim.length)
+aperture_middle, aperture_swing = mv.scalar(0.3, unit=dim.length), mv.scalar(0.1, unit=dim.length)
 n_frames = 108
 frame_duration_ms = 40
 n_section_samples = 48
@@ -62,13 +63,13 @@ n_section_samples = 48
 
 # --- math -----------------------------------------------------------------------------
 def camera_setting(
-    rear_at: float, focus_at: float, tilt: float, radius: float,
+    rear_at: Scalar, focus_at: Scalar, tilt: float, radius: Scalar,
 ) -> tuple[PointMap, Camera, Motor, Quadric, Plane, Point]:
     """Exposing `scene` with the rear lens at `rear_at`, focus target at `focus_at`, sensor tilt `tilt`, and aperture `radius` evaluates `camera_exposure`."""
-    placements = (mv.xw * (np.array([front_at, rear_at]) / 2)).exp()            # [2] Rotor+
-    focus = origin + mv.x.dual() * focus_at                                     # [] Point-
+    placements = (mv.xw * (stack((front_at, rear_at)) / 2)).exp()               # [2] Rotor+, 1 | length
+    focus = origin + mv.x.dual() * focus_at                                     # [] Point-, 1 | length
     turn = (mv.xy * (tilt / 2)).exp()                                           # [] Rotor+
-    rim = origin + mv.y.dual() * (radius * rim_heights)                         # [3] Point-
+    rim = origin + mv.y.dual() * (radius * rim_heights)                         # [3] Point-, 1 | length
     return camera_exposure(scene, subject, focal_lengths, placements, focus, turn, radius, rim)
 
 
@@ -129,8 +130,8 @@ def main() -> None:
     other = scene_point(np.array([[-1.0, 0.3, 0.1], [-1.5, 0.2, -0.4], [-2.0, -0.5, 0.6]]))  # [3] Point-
     camera_hits = unit_point(camera(Point, other)(scene[0, 0, 0]))              # [3] Point-
     joined_hits = unit_point((collineation(scene[0, 0, 0]) & collineation(other)) ^ sensor)  # [3] Point-
-    assert bool(((camera_hits & joined_hits).norm() < 1e-11).all())
-    assert bool(((cones(collineation(scene)) & collineation(scene)).abs() < 1e-9).all())
+    assert bool(((camera_hits & joined_hits).norm() < mv.scalar(1e-11, unit=dim.length)).all())
+    assert bool(((cones(collineation(scene)) & collineation(scene)).abs() < mv.scalar(1e-9, unit=dim.length**4)).all())
 
     for index in ((0, 0, 0), (2, 4, 3)):
         start = (collineation(scene[index]) & collineation(centre)) ^ sensor    # [] Point-
@@ -144,7 +145,7 @@ def main() -> None:
     wide_collineation, _, wide_frame, wide_cones, _, _ = wide
     focused_hit = (wide_collineation(scene[1, 2, 1]) & wide_collineation(centre)) ^ (wide_frame >> home)  # [] Point-
     focused_section = unit_point(cone_section(wide_cones[1, 2, 1], focused_hit, wide_frame, n_section_samples))  # [n_section_samples] Point-
-    assert bool(((focused_section & unit_point(focused_hit)).norm() < 1e-6).all())
+    assert bool(((focused_section & unit_point(focused_hit)).norm() < mv.scalar(1e-6, unit=dim.length)).all())
     assert len(recorded) == n_frames
 
 

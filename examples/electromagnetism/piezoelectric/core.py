@@ -21,7 +21,7 @@ from numga.topology import Topology
 from examples.electromagnetism.piezoelectric.numerical import solve_coupled
 
 # Planar spacetime x+y+t-: two positive spatial axes and one negative time axis.
-ctx = NumpyContext(ga)
+ctx = NumpyContext(ga, units=True)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Plane = ga.gatype.vector().derive.within(Algebra("x+y+"))
@@ -39,26 +39,26 @@ pole = mv.y.dual()                                                              
 
 
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
-    """Opposite edge vectors joined against time give each triangle's area (`Scalar+[F]`) and corner simplex gradients (`[3] Plane+[F]`)."""
+    """Opposite edge vectors joined against time give each triangle's area (`Scalar+[F]`, `length^2`) and corner simplex gradients (`[3] Plane+[F]`, `1/length`)."""
     # Each corner's opposite edge vector, oriented along the triangle's boundary cycle.
-    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                  # [3] Point-[F]
-    double_areas = (sides[0] & sides[1]) & time                                   # Antiscalar-[F]
+    sides = topology.boundary[2, 1] * (topology.d[0] * vertices)                  # [3] Point-[F], length
+    double_areas = (sides[0] & sides[1]) & time                                   # Antiscalar-[F], length^2
     # Sweeping each opposite side through time and dividing by twice the signed area gives the corner's simplex gradient.
-    gradients = (time & sides) / double_areas                                     # [3] Plane+[F]
+    gradients = (time & sides) / double_areas                                     # [3] Plane+[F], 1/length
     return double_areas.norm() / 2, gradients
 
 
 def strain(topology: Topology, displacement: Point, gradients: Plane) -> Strain:
     """Corner displacements paired with the simplex gradients form the symmetric strain map (`[F] Plane+ <- Point-`) on each triangle."""
     # Evaluate on the batch of triangles so the adjugate acts on each triangle's local map.
-    corner_displacements = (topology.incidence[2, 0] * displacement).batch()      # [..., 3, F] Point-
+    corner_displacements = (topology.incidence[2, 0] * displacement).batch()      # [..., 3, F] Point-, length
     gradient = (corner_displacements.dual_inverse() * (gradients.batch() & Point)).sum(axis=-2)  # [..., F] Plane+ <- Point-
     return (gradient + gradient.adjugate()) / 2
 
 
-def constitutive(directions: Plane, stretch_stiffnesses: np.ndarray, cross_stiffness: float,
-                 shear_stiffness: float, stretch_polarizations: np.ndarray,
-                 shear_polarization: float, permittivities: np.ndarray
+def constitutive(directions: Plane, stretch_stiffnesses: Scalar, cross_stiffness: Scalar,
+                 shear_stiffness: Scalar, stretch_polarizations: Scalar,
+                 shear_polarization: Scalar, permittivities: Scalar
                  ) -> tuple[Elastic, Polarization, Permittivity]:
     """Two orthogonal material planes (`[...] Plane+`) determine the elastic, piezoelectric and permittivity maps."""
     transverse_plane, poling_plane = directions[..., 0], directions[..., 1]       # [...] Plane+, [...] Plane+
@@ -86,24 +86,24 @@ def constitutive(directions: Plane, stretch_stiffnesses: np.ndarray, cross_stiff
 
 def enthalpy(local_strain: Strain, electric_field: Field, elastic: Elastic, polarization: Polarization,
              permittivity: Permittivity, poling: Scalar) -> Scalar:
-    """Local strain (`[...] Plane+ <- Point-`) and electric field (`[...] Field+`) contract with the material maps into the electric enthalpy density (`[...] Scalar+`)."""
+    """Local strain (`[...] Plane+ <- Point-`) and electric field (`[...] Field+`, `voltage/length`) contract with the material maps into the electric enthalpy density (`[...] Scalar+`, `energy/length^3`)."""
     deformation = local_strain.dual()                                             # [...] Point- <- Point-
     # Each trace contracts one displacement-gradient pair of the constitutive map with the local deformation.
-    elastic_density = elastic(deformation, Plane, deformation, Plane).trace(1, 2).trace(1, 2) / 2  # [...] Scalar+
-    piezo_excitation = polarization(deformation, Plane).trace(1, 2) * poling      # [...] Excitation-
-    dielectric_excitation = permittivity(electric_field)                          # [...] Excitation-
+    elastic_density = elastic(deformation, Plane, deformation, Plane).trace(1, 2).trace(1, 2) / 2  # [...] Scalar+, energy/length^3
+    piezo_excitation = polarization(deformation, Plane).trace(1, 2) * poling      # [...] Excitation-, charge/length^2
+    dielectric_excitation = permittivity(electric_field)                          # [...] Excitation-, charge/length^2
     return elastic_density - (electric_field & piezo_excitation) - (electric_field & dielectric_excitation) / 2
 
 
 def assemble(topology: Topology, areas: Scalar, gradients: Plane, elastic: Elastic, polarization: Polarization,
-             permittivity: Permittivity, poling: Scalar, width: float
+             permittivity: Permittivity, poling: Scalar, width: Scalar
              ) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor]:
     """Pullback through the corner incidences sums the triangle enthalpy blocks into vertex maps (`[V, V]`)."""
     # Bind each corner's simplex gradient to form triangle-level work and excitation maps (test corner first, trial corner second).
-    corner_gradients = gradients.batch()                                          # [3, F] Plane+
+    corner_gradients = gradients.batch()                                          # [3, F] Plane+, 1/length
     work = elastic(Point, corner_gradients[None], Point, corner_gradients[:, None])  # [3, 3, F] Scalar+ <- (Point-, Point-)
     piezo_map = polarization(Point, corner_gradients) * poling.batch()            # [3, F] Excitation- <- Point-
-    field_map = corner_gradients ^ (-mv.t * Scalar)                               # [3, F] Field+ <- Scalar+
+    field_map = corner_gradients ^ (-mv.t * Scalar)                               # [3, F] Field+ <- Scalar+, 1/length
 
     # Convert the bilinear work form into a linear map from trial displacement to test force.
     elastic_blocks = (Plane & Point).solve(work)                                  # [3, 3, F] Plane+ <- Point-
@@ -112,7 +112,7 @@ def assemble(topology: Topology, areas: Scalar, gradients: Plane, elastic: Elast
     mixed_blocks = -piezo_map[:, None].adjugate()(field_map[None])                # [3, 3, F] Plane+ <- Scalar+
     electric_blocks = -field_map[:, None].adjugate()(permittivity(field_map[None]))  # [3, 3, F] Antiscalar- <- Scalar+
 
-    volumes = width * areas.batch()                                               # [F] Scalar+
+    volumes = width * areas.batch()                                               # [F] Scalar+, length^3
     corners = topology.incidence[2, 0]                                            # [3] Scalar+[F <- V]
     return tuple(
         (corners[:, None].adjugate() * spdiag((local_blocks * volumes).field()) * corners[None, :]).sum(axis=0).sum(axis=0)
@@ -123,7 +123,7 @@ def assemble(topology: Topology, areas: Scalar, gradients: Plane, elastic: Elast
 def equilibrium(mechanical: SparseExtensor, coupling: SparseExtensor, dielectric: SparseExtensor,
                 free_motion: Sparse, free_voltage: Sparse,
                 electrode_potential: Scalar, mechanical_load: Plane) -> tuple[Point, Scalar]:
-    """Mechanical equilibrium and charge balance determine the vertex displacements (`Point-[V]`) and potentials (`Scalar+[V]`)."""
+    """Mechanical equilibrium and charge balance determine the vertex displacements (`Point-[V]`, `length`) and potentials (`Scalar+[V]`, `voltage`)."""
     # Restrict the enthalpy blocks to unconstrained displacements and independent potential groups.
     elastic = free_motion.adjugate() * mechanical * free_motion
     mixed = free_motion.adjugate() * coupling * free_voltage

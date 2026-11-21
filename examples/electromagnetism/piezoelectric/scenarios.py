@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
+from numga import dim, stack
 from numga.sparse import Sparse, SparseExtensor
 from numga.topology import Topology
 from examples.electromagnetism.piezoelectric import core
@@ -17,22 +17,30 @@ voltage_unit = length_unit * field_unit
 force_unit = stress_unit * length_unit**2
 charge_unit = force_unit * length_unit / voltage_unit
 
-length, thickness, width = 30, 1, 5
+energy_dim = dim.charge * dim.voltage
+force_dim = energy_dim / dim.length
+stress_dim = energy_dim / dim.length**3
+piezo_dim = dim.charge / dim.length**2
+permittivity_dim = dim.charge / (dim.voltage * dim.length)
+
+length, thickness = 30, 1
+width = core.mv.scalar(5.0, unit=dim.length)
 n_length, n_thickness = 180, 12
-applied_voltage, applied_force = 100 / voltage_unit, 0.06 / force_unit
-sensor_voltage_scale = 10 / voltage_unit
+applied_voltage = core.mv.scalar(100 / voltage_unit, unit=dim.voltage)
+applied_force = core.mv.scalar(0.06 / force_unit, unit=force_dim)
+sensor_voltage_scale = core.mv.scalar(10 / voltage_unit, unit=dim.voltage)
 n_frames, frame_duration_ms = 90, 40
 displacement_scale, strain_scale = 100, 2e-5
 gallery_colours = 64
 
 # Reduced plane-stress constants for PZT-5A (Martins and Cordioli, Table A3),
 # ordered transverse then parallel to the poling direction at fixed in-plane strain.
-stretch_stiffnesses = np.array([73.38258, 64.01459]) * 1e9 / stress_unit
-cross_stiffness = 28.18203 * 1e9 / stress_unit
-shear_stiffness = 21.05263 * 1e9 / stress_unit
-stretch_polarizations = np.array([-2.008341, 19.12233]) * field_unit / stress_unit
-shear_polarization = 12.29474 * field_unit / stress_unit
-permittivities = np.array([8.137619, 7.556942]) * 1e-9 / permittivity_unit
+stretch_stiffnesses = core.mv.scalar(np.array([[73.38258], [64.01459]]) * 1e9 / stress_unit, unit=stress_dim)
+cross_stiffness = core.mv.scalar(28.18203 * 1e9 / stress_unit, unit=stress_dim)
+shear_stiffness = core.mv.scalar(21.05263 * 1e9 / stress_unit, unit=stress_dim)
+stretch_polarizations = core.mv.scalar(np.array([[-2.008341], [19.12233]]) * field_unit / stress_unit, unit=piezo_dim)
+shear_polarization = core.mv.scalar(12.29474 * field_unit / stress_unit, unit=piezo_dim)
+permittivities = core.mv.scalar(np.array([[8.137619], [7.556942]]) * 1e-9 / permittivity_unit, unit=permittivity_dim)
 
 
 class Strip(Topology):
@@ -104,7 +112,7 @@ def device() -> tuple[Strip, core.Point, core.Scalar, core.Plane, core.Scalar, c
                       tuple[SparseExtensor, SparseExtensor, SparseExtensor]]:
     """Standard bimorph geometry and PZT-5A constants produce the strip fields and assembled enthalpy blocks."""
     topology, coordinates, layer_poling, top_weights, tip_weights = bimorph(length, thickness, n_length, n_thickness)
-    vertices = core.mv(core.Plane, coordinates).dual().field()                    # Point-[V]
+    vertices = core.mv(core.Plane, coordinates).dual().field() * dim.length       # Point-[V], length
     poling = core.mv.scalar(layer_poling).field()                                 # Scalar+[F]
     top_electrode = core.mv.scalar(top_weights).field()                           # Scalar+[V]
     tip_distribution = core.mv.scalar(tip_weights).field()                        # Scalar+[V]
@@ -120,7 +128,8 @@ def actuation(topology: Strip, gradients: core.Plane, top_electrode: core.Scalar
     """Voltage across the electrodes with zero tip load bends the strip into its actuator equilibrium."""
     free_motion, driven_voltage = boundary_maps(topology, np.array([], dtype=int))
     displacement, potential = core.equilibrium(
-        *blocks, free_motion, driven_voltage, applied_voltage * top_electrode, 0 * core.mv.y * tip_distribution,
+        *blocks, free_motion, driven_voltage, applied_voltage * top_electrode,
+        0 * applied_force * core.mv.y * tip_distribution,
     )
     axial_strain = core.strain(topology, displacement, gradients)(core.axis) & core.axis  # [F] Scalar+
     return displacement, potential, axial_strain
@@ -132,7 +141,8 @@ def sensing(topology: Strip, gradients: core.Plane, top_electrode: core.Scalar, 
     """Transverse tip force with a floating zero-charge top electrode bends the strip into its open-circuit sensor equilibrium."""
     free_motion, floating_voltage = boundary_maps(topology, topology.top_nodes)
     displacement, potential = core.equilibrium(
-        *blocks, free_motion, floating_voltage, 0 * top_electrode, (core.mv.y * applied_force) * tip_distribution,
+        *blocks, free_motion, floating_voltage, 0 * applied_voltage * top_electrode,
+        (core.mv.y * applied_force) * tip_distribution,
     )
     axial_strain = core.strain(topology, displacement, gradients)(core.axis) & core.axis  # [F] Scalar+
     return displacement, potential, axial_strain
@@ -177,7 +187,8 @@ def main() -> None:
     sensor_motion, sensor_potential, _ = sensor
     free_motion, driven_voltage = boundary_maps(topology, np.array([], dtype=int))
     short_motion, short_potential = core.equilibrium(
-        *blocks, free_motion, driven_voltage, 0 * top_electrode, (core.mv.y * applied_force) * tip_distribution,
+        *blocks, free_motion, driven_voltage, 0 * applied_voltage * top_electrode,
+        (core.mv.y * applied_force) * tip_distribution,
     )
     actuator_tip = ((core.mv.y & actuator_motion) * tip_distribution).sites.sum()
     short_charges = -(coupling.adjugate()(short_motion) + dielectric(short_potential))
@@ -185,7 +196,7 @@ def main() -> None:
     sensor_charges = -(coupling.adjugate()(sensor_motion) + dielectric(sensor_potential))
     assert (actuator_tip / applied_voltage - short_charge / applied_force).abs() < 1e-9 * (actuator_tip / applied_voltage).abs()
     assert (top_electrode & sensor_charges).sites.sum().abs() < 1e-10 * short_charge.abs()
-    assert ((topology.reading(topology.clamp_nodes, 0) * actuator_motion).antinorm() < 1e-12).all()
+    assert ((topology.reading(topology.clamp_nodes, 0) * actuator_motion).antinorm() < 1e-12 * actuator_tip.abs()).all()
 
 
 def pinned() -> None:

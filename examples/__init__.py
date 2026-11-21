@@ -87,26 +87,26 @@ def auto_increment_path(path: Path | str) -> Path:
         counter += 1
 
 
-# Cached `(ga, instance)` pairs keyed by `(module, id(ga), context)`; retaining `ga` keeps its
+# Cached `(ga, instance)` pairs keyed by `(module, id(ga), context, units)`; retaining `ga` keeps its
 # object `id` live for the lifetime of the cache entry.
-_instances: dict[tuple[str, int, type], tuple[Algebra, ModuleType]] = {}
+_instances: dict[tuple[str, int, type, bool], tuple[Algebra, ModuleType]] = {}
 
 
-def instantiate(module: str, ga: Algebra, context: type[Context] = NumpyContext) -> ModuleType:
+def instantiate(module: str, ga: Algebra, context: type[Context] = NumpyContext, *, units: bool = False) -> ModuleType:
     """Modules written generically over an algebra declare `ga: Algebra` and `ctx: Context` at top
     level without binding them.
 
-    Each distinct `(module, ga, context)` triple executes once in `float64` precision and caches its
+    Each distinct `(module, ga, context, units)` tuple executes once in `float64` precision and caches its
     loaded module outside `sys.modules`. Because `Algebra` construction interns identical signatures
     while keeping custom-factory algebras such as `PGA3D` distinct, matching algebras share one
     loaded copy while distinct algebras and backends coexist cleanly.
     """
-    key = (module, id(ga), context)
+    key = (module, id(ga), context, units)
     if key not in _instances:
         spec = importlib.util.find_spec(module)
         instance = importlib.util.module_from_spec(spec)
         instance.ga = ga
-        instance.ctx = context(ga, dtype=np.float64)
+        instance.ctx = context(ga, dtype=np.float64, units=units)
         spec.loader.exec_module(instance)
         _instances[key] = (ga, instance)
     return _instances[key][1]

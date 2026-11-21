@@ -42,22 +42,22 @@ class NumpyContext(Context):
 
     def __init__(
         self, algebra: Algebra | str, dtype: object = np.float64,
-        *, execution: Literal["dense", "sparse"] = "dense",
+        *, execution: Literal["dense", "sparse"] = "dense", units: bool = False,
     ) -> None:
         from numga.algebra import Algebra
 
         object.__setattr__(self, "_algebra", Algebra(algebra) if isinstance(algebra, str) else algebra)
         object.__setattr__(self, "_dtype", _dtype(dtype))
-        super().__init__(execution)
+        super().__init__(execution, units=units)
 
     def __setattr__(self, _name: str, _value: object) -> None:
         raise AttributeError("NumpyContext instances are immutable")
 
     @classmethod
-    def from_key(cls, algebra: Algebra, key: tuple[object, ...]) -> NumpyContext:
+    def from_key(cls, algebra: Algebra, key: tuple[object, ...], *, units: bool = False) -> NumpyContext:
         if len(key) != 3 or key[0] != "numpy":
             raise ValueError(f"invalid NumPy Context key {key!r}")
-        context = cls(algebra, key[1], execution=key[2])
+        context = cls(algebra, key[1], execution=key[2], units=units)
         if context.key != key:
             raise ValueError(f"NumPy Context key is not canonical: {key!r}")
         return context

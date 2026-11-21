@@ -29,6 +29,9 @@ from numga.gatype import (
     ReverseProductOne,
     ReverseProductZero,
 )
+from numga.units import invert_unit_law
+
+Extensor.inverse.set_unit(invert_unit_law)
 
 
 @Extensor.inverse.register(lambda t: t.arity == 0 and t.entails(ReverseProductZero))

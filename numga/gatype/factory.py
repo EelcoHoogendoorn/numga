@@ -27,7 +27,9 @@ from typing import TYPE_CHECKING
 import numga
 from numga.flyweight import FlyweightFactory
 from numga.subspace import SubSpace
+from numga.units import UnitGrid, coerce_unit_grid, dim
 
+from .errors import GATypeError
 from .gatype import GAType
 from .orientation import Orientation
 from .traits import (
@@ -80,6 +82,7 @@ class GATypeFactory(FlyweightFactory[GAType]):
         fields: tuple = (),
         *,
         orientation: Orientation | None = None,
+        unit: object = None,
     ) -> GAType:
         """Calling `ga.gatype` builds a canonical `GAType` from output-first nullary `GAType`s,
         from bare `SubSpace`s paired with an explicit `orientation`, or from a symbolic `Extensor`
@@ -89,7 +92,8 @@ class GATypeFactory(FlyweightFactory[GAType]):
                 raise TypeError("an expression's type is what its construction gives: no traits, fields or orientation")
             if subspaces.algebra is not self.algebra:
                 raise ValueError("the expression belongs to another algebra than this factory's")
-            return subspaces.output_gatype
+            result = subspaces.gatype.derive.plain if subspaces.arity == 0 else subspaces.output_gatype
+            return result if unit is None else result.derive.unit(unit)
         if isinstance(subspaces, (SubSpace, GAType)):
             raw_axes = (subspaces,)
         else:
@@ -111,7 +115,20 @@ class GATypeFactory(FlyweightFactory[GAType]):
             raise TypeError("each axis must be a SubSpace or a nullary GAType")
         axes = tuple(axis if isinstance(axis, SubSpace) else axis.output_subspace for axis in raw_axes)
         orientations = tuple(orientation if isinstance(axis, SubSpace) else axis.orientation for axis in raw_axes)
-        return self.oriented(axes, orientations, traits, fields)
+        if unit is not None:
+            resolved_units: UnitGrid | None = coerce_unit_grid(unit, axes)
+        elif len(raw_axes) == 1 and isinstance(raw_axes[0], GAType):
+            resolved_units = raw_axes[0].units
+        elif any(isinstance(axis, GAType) and axis.has_units for axis in raw_axes):
+            axis_grids = tuple(
+                axis.units if isinstance(axis, GAType) and axis.has_units
+                else UnitGrid.uniform_grid((len(space),), dim.none)
+                for axis, space in zip(raw_axes, axes)
+            )
+            resolved_units = UnitGrid.outer_quotient(axis_grids[0], axis_grids[1:])
+        else:
+            resolved_units = None
+        return self.oriented(axes, orientations, traits, fields, units=resolved_units)
 
     def oriented(
         self,
@@ -119,6 +136,7 @@ class GATypeFactory(FlyweightFactory[GAType]):
         orientations: Iterable[Orientation],
         traits: TraitSet = EMPTY_TRAITS,
         fields: tuple = (),
+        units: UnitGrid | None = None,
     ) -> GAType:
         """Explicit output-first subspaces and per-axis orientations pool a canonical `GAType` after
         stripping structurally implied traits."""
@@ -131,21 +149,31 @@ class GATypeFactory(FlyweightFactory[GAType]):
             for axis in axes
         ):
             raise ValueError("every GAType axis must belong to this factory's algebra")
+        blade_shape = tuple(len(axis) for axis in axes)
+        if units is None:
+            resolved_units = UnitGrid.unchecked(blade_shape)
+        elif not isinstance(units, UnitGrid):
+            raise TypeError(f"GAType units must be a UnitGrid; got {units!r}")
+        elif units.shape != blade_shape:
+            raise GATypeError(f"UnitGrid shape {units.shape} does not match type shape {blade_shape}")
+        else:
+            resolved_units = units
 
         normalized_traits = normalize_explicit_traits(axes, traits)
 
         fields = tuple(sorted(fields))
-        key = (axes, orientations, normalized_traits, fields)
+        key = (axes, orientations, normalized_traits, fields, resolved_units)
         return self.factory_construct(
             key,
-            lambda: GAType(axes, orientations, normalized_traits, fields),
+            lambda: GAType(axes, orientations, normalized_traits, fields, resolved_units),
         )
 
-    @lru_cache(maxsize=None)
-    def rotor(self) -> GAType:
+    def rotor(self, *, unit: object = None) -> GAType:
         """Rotors span the extrinsic even subalgebra with certified `Versor` and `ReverseProductOne`
         traits."""
-        return self.oriented((self.algebra.subspace.even(),), (Orientation.extrinsic,), ROTOR_TRAITS)
+        space = self.algebra.subspace.even()
+        resolved = None if unit is None else coerce_unit_grid(unit, (space,))
+        return self.oriented((space,), (Orientation.extrinsic,), ROTOR_TRAITS, units=resolved)
 
     motor = rotor
 
@@ -164,8 +192,10 @@ class GATypeFactory(FlyweightFactory[GAType]):
         orientation = Orientation.intrinsic if intrinsic else Orientation.extrinsic
 
         @wraps(constructor)
-        def constructed(*args: object, **kwargs: object) -> GAType:
-            return self.oriented((constructor(*args, **kwargs),), (orientation,))
+        def constructed(*args: object, unit: object = None, **kwargs: object) -> GAType:
+            space = constructor(*args, **kwargs)
+            resolved = None if unit is None else coerce_unit_grid(unit, (space,))
+            return self.oriented((space,), (orientation,), units=resolved)
 
         self.__dict__[name] = constructed
         return constructed

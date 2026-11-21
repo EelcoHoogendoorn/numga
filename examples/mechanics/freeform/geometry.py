@@ -12,7 +12,8 @@ from numga.algebras import VGA3D
 from examples.util import shapes
 from numga.topology import Topology
 
-mv = NumpyContext(VGA3D).multivector
+mv = NumpyContext(VGA3D, units=True).multivector
+Scalar = VGA3D.gatype.scalar()
 # Points are antivectors.
 Antivector = VGA3D.gatype.antivector()
 n_ray_batch = 256
@@ -20,7 +21,7 @@ n_ray_batch = 256
 
 def coordinates(points: Antivector) -> np.ndarray:
     """Pairing `points` with the three coordinate planes reads Cartesian positions (`[..., 3]`)."""
-    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / points.unit).to_array()
 
 
 def interior_mask(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
@@ -45,12 +46,14 @@ def interior_mask(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
     return inside
 
 
-def volume_samples(topology: Topology, vertices: Antivector, n_samples: int) -> tuple[Antivector, np.ndarray]:
+def volume_samples(topology: Topology, vertices: Antivector, n_samples: int) -> tuple[Antivector, Scalar]:
     """Low-discrepancy Sobol sampling inside the closed surface `topology` draws `n_samples` equal-volume quadrature points (`[n_samples] Antivector-`)."""
     V, E, F = topology.n_elements
+    length_unit = vertices.unit
+    volume_unit = length_unit ** 3
     corners = topology.incidence[2, 0] * vertices                # [3] Antivector-[F]
     # The enclosed volume equals one sixth of the summed three-corner joins from the origin.
-    volume = float((corners[0] & corners[1] & corners[2]).sites.sum().abs().to_array()) / 6
+    volume = float(((corners[0] & corners[1] & corners[2]).sites.sum().abs() / volume_unit).to_array()) / 6
     places = coordinates(vertices.batch())                       # [V, 3]
     lower, upper = places.min(axis=0), places.max(axis=0)
     triangles = coordinates(corners.batch())                     # [3, F, 3]
@@ -65,7 +68,8 @@ def volume_samples(topology: Topology, vertices: Antivector, n_samples: int) -> 
         accepted_batches.append(accepted)
         n_inside += len(accepted)
     positions = np.concatenate(accepted_batches)[:n_samples]
-    return mv.vector(positions).dual(), np.full(n_samples, volume / n_samples)
+    return (mv.vector(positions, unit=length_unit).dual(),
+            mv.scalar(np.full((n_samples, 1), volume / n_samples), unit=volume_unit))
 
 
 def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
@@ -79,10 +83,10 @@ def center_indices(points: np.ndarray, n_centers: int) -> np.ndarray:
     return indices
 
 
-def load_solid(path: Path, height: float, n_quadrature: int,
-               n_centers: int) -> tuple[Topology, Antivector, Antivector, np.ndarray, Antivector]:
+def load_solid(path: Path, height: Scalar, n_quadrature: int,
+               n_centers: int) -> tuple[Topology, Antivector, Antivector, Scalar, Antivector]:
     """Loading `path` scales and rotates the closed triangulated surface upright to `height` on `z = 0` alongside `n_quadrature` volume samples and `n_centers` kernel centers."""
-    topology, vertex_coordinates = shapes.surface(path, height)
+    topology, vertex_coordinates = shapes.surface(path, 1.0)
     V, E, F = topology.n_elements
     vertices = mv.vector(vertex_coordinates).dual().field()      # Antivector-[V]
     # Pairing each vertex with the plane y = 0 reads its height and the vertical span.
@@ -90,7 +94,7 @@ def load_solid(path: Path, height: float, n_quadrature: int,
     extent = heights[heights.argmax()] - heights[heights.argmin()]   # [] Scalar+
     # Rescale to `height` along y and shift the base onto y = 0 before turning upright onto z = 0.
     vertices = vertices * (height / extent) + mv.y.dual() * (height / 2)  # Antivector-[V]
-    samples, sample_volumes = volume_samples(topology, vertices, n_quadrature)  # [n_quadrature] Antivector-, [n_quadrature]
+    samples, sample_volumes = volume_samples(topology, vertices, n_quadrature)  # [n_quadrature] Antivector-, [n_quadrature] Scalar+
     centers = samples[center_indices(coordinates(samples), n_centers)]          # [n_centers] Antivector-
     upright_rotor = (-mv.yz * (np.pi / 4)).exp()                 # Rotor+
     return (topology, upright_rotor >> vertices.batch(), upright_rotor >> samples,

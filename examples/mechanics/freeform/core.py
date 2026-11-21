@@ -19,7 +19,7 @@ from numga.algebras import VGA3D as ga
 from examples.mechanics.freeform.weights import kernels
 from numga.topology import Topology
 
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 tetrahedron = Topology(4, [[0, 1, 2, 3]])
 Scalar = ga.gatype.scalar()
 # Points and displacements are antivectors; gradients and forces are covectors, vectors.
@@ -41,7 +41,7 @@ Span = ga.gatype.antibivector()
 
 
 # --- math -----------------------------------------------------------------------------
-def deformation_basis(queries: Antivector, centers: Antivector, radius: float,
+def deformation_basis(queries: Antivector, centers: Antivector, radius: Scalar,
                       modes: Scalar, corners: Antivector) -> tuple[Sampling, Vector]:
     """Blending four affine control corners per scalar mode yields the displacement sampling map and feature gradients at `queries`."""
     evaluation, gradient = kernels(queries, centers, radius)
@@ -76,7 +76,7 @@ def cofactor(local: Deformation) -> Stress:
     return local.outermorphism(Span)(Vector * unit_volume) / unit_volume      # [...] Vector+ <- Vector+
 
 
-def constitutive(local: Deformation, lame_lambda: float, lame_mu: float) -> tuple[Scalar, Stress]:
+def constitutive(local: Deformation, lame_lambda: Scalar, lame_mu: Scalar) -> tuple[Scalar, Stress]:
     """Stable Neo-Hookean elasticity assigns an energy density (`[...] Scalar+`) and first Piola-Kirchhoff stress (`[...] Vector+ <- Vector+`) to `local`."""
     determinant = local.det()                                    # [...] Scalar+
     bulk = lame_lambda + lame_mu
@@ -90,13 +90,13 @@ def constitutive(local: Deformation, lame_lambda: float, lame_mu: float) -> tupl
     return energy, stress
 
 
-def control_mass(sampling: Sampling, sample_masses: np.ndarray) -> Mass:
+def control_mass(sampling: Sampling, sample_masses: Scalar) -> Mass:
     """Pulling each sample's metric displacement covector back through `sampling` assembles the control-space mass map from accelerations to forces."""
     return sampling.field(0).adjugate()((sampling.dual() * sample_masses).field(0))
 
 
 def potential(state: Antivector, sampling: Sampling, gradients: Vector,
-              sample_volumes: np.ndarray, lame_lambda: float, lame_mu: float,
+              sample_volumes: Scalar, lame_lambda: Scalar, lame_mu: Scalar,
               clamp: Scalar, load: Vector) -> tuple[Scalar, Vector]:
     """Integrating Neo-Hookean elasticity, a compliant base clamp, and an external `load` over `sample_volumes` gives the total energy and control-space force field."""
     displacement = sampling(state)                               # [...] Antivector-

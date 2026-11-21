@@ -24,6 +24,7 @@ import numpy as np
 import numga
 from numga.gatype import GAType, UnorientedSubspace
 from numga.subspace import SubSpace
+from numga.units import UnitGrid, dim
 
 if TYPE_CHECKING:
     from numga.backend.context import Context
@@ -75,8 +76,23 @@ def _classify(operand: object) -> Kind:
 # --- promotions ------------------------------------------------------------------------
 def scalar(context: Context, number: Number) -> Extensor:
     """Plain Python numbers promote to extrinsic `Scalar` values."""
+    gatype = context.algebra.gatype.scalar()
+    if context.is_exact or context.units:
+        gatype = gatype.derive.dimensionless
     return numga.extensor.Extensor._from_prepared_kernel(
-        context, context.algebra.gatype.scalar(), context.scalar_kernel(context.prepare_scalar(number)),
+        context, gatype, context.scalar_kernel(context.prepare_scalar(number)),
+    )
+
+
+def linear_scalar(context: Context, number: Number) -> Extensor:
+    """Literal Python zero takes any unit in linear arithmetic and comparisons; non-zero numbers
+    and booleans promote as dimensionless scalars."""
+    gatype = context.algebra.gatype.scalar()
+    if context.is_exact or context.units:
+        units = UnitGrid.zero((1,)) if not isinstance(number, bool) and number == 0 else UnitGrid.uniform_grid((1,), dim.none)
+        gatype = gatype.derive.unit(units)
+    return numga.extensor.Extensor._from_prepared_kernel(
+        context, gatype, context.scalar_kernel(context.prepare_scalar(number)),
     )
 
 
@@ -89,19 +105,19 @@ def batch(context: Context, array: Any) -> Extensor:
         if module in ("jax", "jaxlib"):
             from numga.backend.jax import JaxContext
             dtype = np.dtype(array.dtype)
-            context = JaxContext(context.algebra, dtype if dtype.kind in "fc" else np.float64)
+            context = JaxContext(context.algebra, dtype if dtype.kind in "fc" else np.float64, units=True)
         elif module == "torch":
             import torch
             from numga.backend.torch import TorchContext
             dtype = array.dtype if array.is_floating_point() or array.is_complex() else torch.get_default_dtype()
-            context = TorchContext(context.algebra, dtype, array.device)
+            context = TorchContext(context.algebra, dtype, array.device, units=True)
         else:
             from numga.backend.numpy import NumpyContext
             dtype = np.dtype(array.dtype)
-            context = NumpyContext(context.algebra, dtype if dtype.kind in "fc" else np.float64)
+            context = NumpyContext(context.algebra, dtype if dtype.kind in "fc" else np.float64, units=True)
     elif context.key[0] == "numpy" and module in ("jax", "jaxlib"):
         from numga.backend.jax import JaxContext
-        context = JaxContext(context.algebra)
+        context = JaxContext(context.algebra, units=context.units)
     return context.multivector.scalar(array[..., None])
 
 
@@ -119,19 +135,24 @@ def no_orientation(*_: object) -> None:
 LINEAR = {
     Kind.VALUE: lambda context, operand: operand,
     Kind.TYPE: lambda context, gatype: identity(gatype),
-    Kind.NUMBER: scalar,
+    Kind.NUMBER: linear_scalar,
     Kind.ARRAY: batch,
     Kind.SUBSPACE: no_orientation,
     Kind.FOREIGN: lambda context, operand: None,
 }
 
-# Division rejects GAType operands because a type descriptor carries no inverse.
-DIVISOR = LINEAR | {Kind.TYPE: lambda context, gatype: None}
+# Division rejects GAType operands because a type descriptor carries no inverse; literal zero stays dimensionless.
+DIVISOR = LINEAR | {Kind.TYPE: lambda context, gatype: None, Kind.NUMBER: scalar}
 
 
 def compared(context: Context, operand: object) -> Extensor:
     """Comparison operators leave `Extensor` operands unchanged and promote numbers or arrays to `Scalar` batches."""
-    return operand if kind(operand) is Kind.VALUE else batch(context, context.xp.asarray(operand))
+    found = kind(operand)
+    if found is Kind.VALUE:
+        return operand
+    if found is Kind.NUMBER:
+        return linear_scalar(context, operand)
+    return batch(context, context.xp.asarray(operand))
 
 
 def linear(context: Context, operand: object) -> Extensor | None:

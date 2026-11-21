@@ -37,7 +37,10 @@ class ExtensionMethod:
     """Each public method attaches a whole-`GAType` dispatch table (or per-arity overload tables) to
     `Extensor`."""
 
-    __slots__ = ("_name", "_takes", "_n_operands", "_dispatch", "_overloads", "_input_orientation", "_output_orientation")
+    __slots__ = (
+        "_name", "_takes", "_n_operands", "_dispatch", "_overloads",
+        "_input_orientation", "_output_orientation", "_unit",
+    )
 
     def __init__(
         self,
@@ -47,6 +50,7 @@ class ExtensionMethod:
         overloads: tuple[int, ...] = (),
         input_orientation: Orientation | None = None,
         output_orientation: Orientation | None = None,
+        unit: Callable | None = None,
     ) -> None:
         if not isinstance(name, str) or not name or name.startswith("_"):
             raise TypeError("an extension method name must be a public name")
@@ -54,9 +58,23 @@ class ExtensionMethod:
         self._takes = takes
         self._n_operands = None
         self._dispatch = None
-        self._overloads = {n_operands: ExtensionMethod(name, takes=takes) for n_operands in overloads}
+        self._overloads = {
+            n_operands: ExtensionMethod(name, takes=takes, unit=unit)
+            for n_operands in overloads
+        }
         self._input_orientation = input_orientation
         self._output_orientation = output_orientation
+        self._unit = unit
+
+    def set_unit(self, unit: Callable | None) -> None:
+        """Attach a method-wide unit law applied by the dispatcher across all registrations."""
+        if self._overloads:
+            for overload in self._overloads.values():
+                overload.set_unit(unit)
+            return
+        self._unit = unit
+        if self._dispatch is not None:
+            self._dispatch.set_unit(unit)
 
     def position_of(self, implementation: Callable) -> int:
         """Locating an implementation in the predicate tier lets a narrower specialization insert
@@ -82,6 +100,7 @@ class ExtensionMethod:
         position: int | None = None,
         fields: bool = False,
         staged: bool = False,
+        unit: Callable | None = None,
     ) -> Callable:
         """`n_operands` is fixed by the first registration, either from the number of patterns or
         from a predicate's positional signature."""
@@ -94,7 +113,7 @@ class ExtensionMethod:
                 if len(patterns) == 1 and is_predicate(patterns[0]) else len(patterns)
             )
             return self._overloads[n_operands].register(
-                *patterns, position=position, fields=fields, staged=staged,
+                *patterns, position=position, fields=fields, staged=staged, unit=unit,
             )
         predicate = len(patterns) == 1 and is_predicate(patterns[0])
         if predicate:
@@ -130,6 +149,7 @@ class ExtensionMethod:
                 GATypeDispatch(
                     self.name, None, n_operands, takes=self._takes,
                     input_orientation=self._input_orientation, output_orientation=self._output_orientation,
+                    unit=self._unit,
                 )
                 if created
                 else self._dispatch
@@ -140,6 +160,7 @@ class ExtensionMethod:
                 position=position,
                 fields=fields,
                 staged=staged,
+                unit=unit,
             )(implementation)
             if created:
                 self._dispatch = dispatch

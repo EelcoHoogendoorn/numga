@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import patheffects
 
-from numga import stack
+from numga import dim, stack
 from examples.quantum.graphene import core
 from examples.util import charts
 from numga.topology import Topology
@@ -28,7 +28,9 @@ texture_map = plt.get_cmap("RdBu_r")
 field_streak_colour = np.ones(3)
 # The bands' chart: the height of one electronvolt against one unit of momentum, and how far past the bands the
 # frame's arrows reach, in units of momentum; the frame's colour.
-energy_scale, axis_overhang = 0.3, 0.8
+energy_scale = core.mv.scalar(0.3, unit=1 / (dim.length * dim.energy))
+axis_overhang = core.mv.scalar(0.8, unit=1 / dim.length)
+energy_pad = core.mv.scalar(1.0, unit=dim.energy)
 axis_colour = np.full(3, 0.45)
 # The colour of the faint cross through the origin of the momentum plane, and of its names.
 cross_colour = np.full(3, 0.6)
@@ -54,10 +56,10 @@ def haloed_cross(ax, camera: Camera, horizontal_label: str, vertical_label: str)
     """Draws a faint origin cross with haloed axis labels over a momentum-plane panel."""
     mv = core.mv
     # The cross's two lines from edge to edge of the panel, the momenta along x and along y at its limits.
-    limits = np.array([ax.get_xlim(), ax.get_ylim()])                          # [2, 2]
+    limits = mv.scalar(np.array([ax.get_xlim(), ax.get_ylim()])[..., None], unit=1 / dim.length)  # [2, 2] Scalar+
     ends = (stack((mv.x, mv.y))[:, None] * limits).reshape(-1)                 # [4] Wavevector+
-    cross = simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, charts.FRAME_PX, camera,
-                              cap=simplices.Cap.BUTT)
+    cross = simplices.strokes(ends, Topology.chains([2, 2]), cross_colour, mv.scalar(charts.FRAME_PX, unit=dim.pixel),
+                              camera, cap=simplices.Cap.BUTT)
     overlay(ax, [cross]).set_zorder(1.5)
     halo = [patheffects.withStroke(linewidth=halo_width, foreground="white")]
     ax.annotate(horizontal_label, (1, 0), xycoords=("axes fraction", "data"), xytext=(-3, -3),
@@ -73,7 +75,7 @@ def field_figure(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     mv = momenta.context.multivector
     # The momenta as they are, read by the displacements along x and y.
     places = momenta.reshape(-1)                                                # [...] Wavevector+
-    strength = field.norm().reshape(-1).to_array()                              # [...]
+    strength = (field.norm() / dim.energy).reshape(-1).to_array()               # [...]
     # The field's direction, its parts in the planes yz and zx, pairings with those planes' patches, drawn as a
     # momentum along x and y.
     parts = field.normalized().reshape(-1)[:, None] & stack((mv.yz.dual(), mv.zx.dual()))   # [..., 2] Scalar+
@@ -82,12 +84,12 @@ def field_figure(momenta: core.Wavevector, field: core.Field) -> plt.Figure:
     figure, ax = charts.subplots(340, 340, layout="constrained")
     # The zone's reach along x and y, read by pairing with the displacements along them.
     readings = stack((mv.x.dual(), mv.y.dual()))[:, None] & places              # [2, ...] Scalar+
-    limits = stack((readings.min(axis=-1), readings.max(axis=-1)), axis=-1).to_array()
-    ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
-    camera = offset_panel(ax, mv.x.dual(), mv.y.dual())
+    limits = stack((readings.min(axis=-1), readings.max(axis=-1)), axis=-1)     # [2, 2] Scalar+
+    ax.set(aspect="equal")
+    camera = offset_panel(ax, mv.x.dual(), mv.y.dual(), xlim=limits[0], ylim=limits[1])
     colours = plt.get_cmap("viridis")(strength / strength.max())[:, :3]
     overlay(ax, [contours.picture(places, topology, strength, colours, camera)]).set_zorder(1)
-    overlay(ax, [flow.layer(places, topology, directions, camera, 1.0, field_streak_colour)]).set_zorder(2)
+    overlay(ax, [flow.layer(places, topology, directions, camera, camera.across & mv.x, field_streak_colour)]).set_zorder(2)
     haloed_cross(ax, camera, "momentum x", "momentum y")
     return figure
 
@@ -102,7 +104,7 @@ def grid_faces(n_rows: int, n_columns: int) -> np.ndarray:
 def bands_figure(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     """Draws the upper and lower band sheets over the momentum plane with six Dirac cones at the Brillouin-zone corners."""
     mv = momenta.context.multivector
-    energies = values.to_array()                                               # [..., 4]
+    energies = (values / dim.energy).to_array()                                # [..., 4]
     # The chart's directions: momentum across, along x and y, and energy up, along z.
     horizontal_offsets, vertical_unit = momenta.dual(), mv.z.dual()             # [...] Displacement-, [] Displacement-
     faces = grid_faces(*momenta.shape)
@@ -121,8 +123,8 @@ def bands_figure(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
     widths = (stack((mv.x, mv.y)) | momenta[..., None]).abs().reshape(-1)
     half_width = widths.max() + axis_overhang
     levels = values.reshape(-1)
-    floor = energy_scale * (levels.min() - 1)
-    ceiling = energy_scale * (levels.max() + 1)
+    floor = energy_scale * (levels.min() - energy_pad)
+    ceiling = energy_scale * (levels.max() + energy_pad)
     corner = -half_width * (mv.x.dual() + mv.y.dual()) + floor * vertical_unit  # [] Displacement-
     reaches = stack((2 * half_width, 2 * half_width, ceiling - floor + 2 * half_width * np.tan(elevation)))
     tips = corner + stack((mv.x.dual(), mv.y.dual(), vertical_unit)) * reaches  # [3] Displacement-
@@ -150,7 +152,7 @@ def bands_figure(momenta: core.Wavevector, values: core.Scalar) -> plt.Figure:
 
 
 @charts.style()
-def textures_figure(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], extent: float) -> plt.Figure:
+def textures_figure(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin], extent: core.Scalar) -> plt.Figure:
     """Draws the upper-band pseudospin around both valleys, shading the out-of-plane component and streaking the in-plane winding."""
     width = 2 * texture_side + texture_gap
     figure = plt.figure(figsize=(width / charts.DPI, texture_side / charts.DPI))
@@ -169,28 +171,32 @@ def textures_figure(pseudospins_at: Callable[[core.Wavevector], core.Pseudospin]
     # The momenta of the pixels as they are, a grid over the momentum plane.
     topology = Topology.grid(n_side, n_side)
     places = pixels.reshape(-1)                                                 # [n_side * n_side] Wavevector+
+    extent_val = float((extent * dim.length).to_array())
+    bounds = stack((-extent, extent))
     for ax, height, valley_directions in zip(panels, heights, directions):
         colours = texture_map((height + 1) / 2)[..., :3]
-        pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent, extent, -extent, extent))
-        ax.set(xlim=(-extent, extent), ylim=(-extent, extent))
+        pinned(ax, np.round(colours * 255).astype(np.uint8), (-extent_val, extent_val, -extent_val, extent_val))
         # The momenta read by the displacements along x and y.
-        camera = offset_panel(ax, core.mv.x.dual(), core.mv.y.dual())
+        camera = offset_panel(ax, core.mv.x.dual(), core.mv.y.dual(), xlim=bounds, ylim=bounds)
         # The part in the plane as streaks running downstream, as long as that part: specks where the pseudospin
         # stands along z.
-        overlay(ax, [flow.layer(places, topology, valley_directions.reshape(-1), camera, 1.0, streak_colour)]).set_zorder(2)
+        overlay(ax, [flow.layer(places, topology, valley_directions.reshape(-1), camera,
+                                camera.across & core.mv.x, streak_colour)]).set_zorder(2)
         haloed_cross(ax, camera, "momentum x", "momentum y")
     return figure
 
 
 @charts.style()
-def berry_figure(radii: np.ndarray, gaps: np.ndarray, rotors: core.Rotor, start_directions: core.Pseudospin) -> plt.Figure:
+def berry_figure(radii: core.Scalar, gaps: core.Scalar, rotors: core.Rotor, start_directions: core.Pseudospin) -> plt.Figure:
     """Plots the signed Berry phase against loop radius across sublattice gaps for both valleys."""
     phases = berry_phases(rotors, start_directions) / np.pi                     # [...]
+    radii_values = (radii * dim.length).to_array()
+    gap_values = (gaps / dim.energy).to_array()
     # About half the column: a few curves each way, and their legend beside them.
     figure, ax = charts.subplots(440, 240)
-    for gap, pair, colour in zip(gaps, phases, colours_palette):
-        ax.plot(radii, pair[0], color=colour, label=f"gap {gap:g} eV")
-        ax.plot(radii, pair[1], "--", color=colour)
+    for gap, pair, colour in zip(gap_values, phases, colours_palette):
+        ax.plot(radii_values, pair[0], color=colour, label=f"gap {gap:g} eV")
+        ax.plot(radii_values, pair[1], "--", color=colour)
     ax.axhline(0, color="black", linewidth=charts.FRAME_WIDTH)
     # The phase read off at none, and at a half turn either way.
     ax.set(xticks=[], yticks=[-1, 0, 1], yticklabels=["−π", "0", "π"], xlabel="loop radius", ylabel="Berry phase")

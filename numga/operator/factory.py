@@ -50,6 +50,7 @@ from numga.gatype.rules import OperationRule
 from numga.gatype.traits import EMPTY_TRAITS, BladeProduct, Identity, TraitSet
 from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
+from numga.units import UnitGrid
 
 if TYPE_CHECKING:
     from numga.algebra import Algebra
@@ -76,10 +77,13 @@ class OperatorFactory:
             raise ValueError("an Extensor requires at least an output axis")
         if any(axis.algebra is not self.algebra for axis in axes):
             raise ValueError("every Extensor axis must belong to this factory's algebra")
+        kernel = SymbolicKernel(coefficients)
+        expected = tuple(len(axis) for axis in axes)
+        units = UnitGrid.from_nonzero_mask(kernel.values) if kernel.shape == expected else None
         return Extensor(
             self.algebra.exact,
-            self.algebra.gatype.oriented(axes, orientations, traits),
-            SymbolicKernel(coefficients),
+            self.algebra.gatype.oriented(axes, orientations, traits, units=units),
+            kernel,
         )
 
     @lru_cache(maxsize=None)
@@ -127,8 +131,13 @@ class OperatorFactory:
         every intermediate grade."""
         return self._grade_transform(gatype, "pseudoscalar_negation")
 
-    @lru_cache(maxsize=None)
     def _symmetric_product(
+        self, gatype: GAType, transform: str, *, scalar_only: bool = False,
+    ) -> Extensor:
+        return self._symmetric_product_cached(gatype.derive.plain.derive.unchecked, transform, scalar_only=scalar_only)
+
+    @lru_cache(maxsize=None)
+    def _symmetric_product_cached(
         self, gatype: GAType, transform: str, *, scalar_only: bool = False,
     ) -> Extensor:
         space = gatype.output_subspace
@@ -275,12 +284,12 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _dual_dot(self, left: GAType, right: GAType) -> Extensor:
         left_dual, right_dual = self.dual(left.derive.output), self.dual(right.derive.output)
-        # Because duals are signed blade permutations, composing dot with both duals yields a single
-        # kernel on the operands' native layouts while preserving any map input axes.
         composed = self._dot(left_dual.gatype.derive.output, right_dual.gatype.derive.output).bind(
             {0: left_dual, 1: right_dual},
         )
-        gatype = rules.MULTIPLIED.result((left, right), composed.axes)
+        gatype = rules.MULTIPLIED.result((left, right), composed.axes).derive.unit(
+            UnitGrid.from_nonzero_mask(composed.kernel.values),
+        )
         return Extensor(self.algebra.exact, gatype, composed.kernel)
 
     def bivector_product(self, left: GAType, right: GAType) -> Extensor:
@@ -554,7 +563,9 @@ class OperatorFactory:
         passenger_space = passenger.output_subspace
         reflected = self.build((passenger_space, passenger_space), (passenger.orientation,) * 2, signs)
         result = result.bind({1: reflected})
-        gatype = rules.TRANSFORM.result((versor, passenger, versor), result.axes)
+        gatype = rules.TRANSFORM.result((versor, passenger, versor), result.axes).derive.unit(
+            UnitGrid.from_nonzero_mask(result.kernel.values),
+        )
         if gatype is result.gatype:
             return result
         return Extensor(result.context, gatype, result.kernel)
@@ -622,8 +633,10 @@ class OperatorFactory:
             match = valid & (table.blades == mask)
             coefficients[row, match] = signed_coeffs[match] * output_signs[row]
 
-        gatype = rule.result((left_type, right_type), (output, left, right))
-        return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
+        kernel = SymbolicKernel(coefficients)
+        axes = (output, left, right)
+        gatype = rule.result((left_type, right_type), axes).derive.unit(UnitGrid.from_nonzero_mask(kernel.values))
+        return Extensor(self.algebra.exact, gatype, kernel)
 
     def _bilinear(
         self,
@@ -659,8 +672,10 @@ class OperatorFactory:
                 * output.signs[output_index[output_mask]]
             )
 
-        gatype = rule.result((left_type, right_type), (output, left, right))
-        return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
+        kernel = SymbolicKernel(coefficients)
+        axes = (output, left, right)
+        gatype = rule.result((left_type, right_type), axes).derive.unit(UnitGrid.from_nonzero_mask(kernel.values))
+        return Extensor(self.algebra.exact, gatype, kernel)
 
     @lru_cache(maxsize=None)
     def dual(self, gatype: GAType) -> Extensor:
@@ -709,15 +724,15 @@ class OperatorFactory:
             raise UnorientedSubspace()
         if not isinstance(operand, GAType) or operand.algebra is not self.algebra:
             raise ValueError("operation operand type belongs to another algebra")
-        # Operators act on blades; field operands broadcast site by site when bound.
-        return operand.derive.plain
+        # Operators act on blades; field operands broadcast site by site and units multiply when bound.
+        return operand.derive.plain.derive.unchecked
 
     def _nullary(self, gatype: GAType) -> GAType:
         if isinstance(gatype, SubSpace):
             raise UnorientedSubspace()
         if not isinstance(gatype, GAType) or gatype.algebra is not self.algebra or gatype.arity:
             raise TypeError("an operator is built from a nullary GAType of this algebra")
-        return gatype
+        return gatype.derive.unchecked
 
     def _require_space(self, space: SubSpace) -> None:
         if not isinstance(space, SubSpace) or space.algebra is not self.algebra:

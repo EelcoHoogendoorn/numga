@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack, where
+from numga import Algebra, NumpyContext, dim, stack, where
 
 ga = Algebra("x+y+z+t-w0")
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 Scalar = ga.gatype.scalar()                                                       # Scalar+
 Event = ga.gatype.antivector()                                                    # Antivector-
 Slice = ga.gatype.vector()                                                        # Vector+
@@ -23,35 +23,37 @@ Orbit = ga.gatype.bivector()                                                    
 # Purely spatial readout planes spanning `x`, `y`, and `z`.
 Spatial = Slice.derive.within(Algebra("x+y+z+"))                                  # Vector+
 
+# Coherent Earth-radius / light-time unit constant links spatial length and coordinate time.
+c = mv.scalar(1.0, unit=dim.length / dim.time)                                    # [] Scalar+, length/time
 origin = mv.w.dual()                                                              # [] Event-
 across = mv.x.dual()                                                              # [] Event-
 time = -mv.t.dual()                                                               # [] Event-
 
 
 # --- math -----------------------------------------------------------------------------
-def orbit_positions(planes: Orbit, phases: np.ndarray, radius: float,
-                    angular_speed: float, times: Scalar) -> Event:
-    """Circular satellite trajectories in `planes` (`[n_satellites] Bivector+`) at `phases`, `radius`, and
-    `angular_speed` take coordinate `times` (`[...] Scalar+`) to `[..., n_satellites] Event-`."""
+def orbit_positions(planes: Orbit, phases: np.ndarray, radius: Scalar,
+                    angular_speed: Scalar, times: Scalar) -> Event:
+    """Circular satellite trajectories in `planes` (`[n_satellites] Bivector+`) at `phases`, `radius` (`length`), and
+    `angular_speed` (`1/time`) take coordinate `times` (`[...] Scalar+`, `time`) to `[..., n_satellites] Event-`."""
     rotations = (-planes * ((phases + angular_speed * times) / 2)).exp()          # [..., n_satellites] Rotor+
-    return origin + (rotations >> across) * radius + time * times                 # [..., n_satellites] Event-
+    return origin + (rotations >> across) * radius + time * (c * times)           # [..., n_satellites] Event-
 
 
 def spatial_distance(first: Event, second: Event) -> Scalar:
-    """Rest-frame spatial distance (`[...] Scalar+`) between unit-weight events `first` and `second`
+    """Rest-frame spatial distance (`[...] Scalar+`, `length`) between unit-weight events `first` and `second`
     combines the squared coordinate-time separation with minus the spacetime join's squared norm."""
     return ((mv.t & (first - second)).squared() - (first & second).scalar_norm_squared()).square_root()
 
 
-def emitted_events(receiver: Event, planes: Orbit, phases: np.ndarray, radius: float,
-                   angular_speed: float, n_steps: int) -> Event:
+def emitted_events(receiver: Event, planes: Orbit, phases: np.ndarray, radius: Scalar,
+                   angular_speed: Scalar, n_steps: int) -> Event:
     """Fixed-point iteration over `n_steps` light-time updates locates the retarded satellite
     transmission events (`[n_satellites] Event-`) whose signals arrive together at `receiver`."""
-    reception_time = mv.t & receiver                                              # [] Scalar+
-    emission_times = reception_time                                               # [] Scalar+
+    reception_time = (mv.t & receiver) / c                                        # [] Scalar+, time
+    emission_times = reception_time                                               # [] Scalar+, time
     for _ in range(n_steps):
         satellites = orbit_positions(planes, phases, radius, angular_speed, emission_times)  # [n_satellites] Event-
-        emission_times = reception_time - spatial_distance(receiver, satellites)  # [n_satellites] Scalar+
+        emission_times = reception_time - spatial_distance(receiver, satellites) / c  # [n_satellites] Scalar+, time
     return orbit_positions(planes, phases, radius, angular_speed, emission_times)  # [n_satellites] Event-
 
 
@@ -70,12 +72,11 @@ def cone_intersections(cones: Cone) -> Event:
     radicals = at_origin - mv.w * ((at_origin & origin) / 2)                      # [3] Slice+
     axis = radicals[0] ^ radicals[1] ^ radicals[2]                                # [] Trivector+
 
-    # Intersecting the radical line with two time slices yields unit-weight event points spanning the line.
+    # Meeting the radical line with `t = 0` and with the ideal hyperplane `w` gives a point on the line and its direction.
     base_cut = axis ^ mv.t
     base = base_cut / (mv.w & base_cut)                                           # [] Event-
-    tip_cut = axis ^ (mv.t - mv.w)
-    tip = tip_cut / (mv.w & tip_cut)                                              # [] Event-
-    direction = tip - base                                                        # [] Event-
+    ideal = axis ^ mv.w
+    direction = ideal / (mv.t & ideal)                                            # [] Event-
 
     # Solving the quadratic interval along `base + parameter * direction` locates the two null intersections.
     quadratic = cones[0](direction) & direction                                   # [] Scalar+
@@ -104,7 +105,7 @@ def cone_intervals(cones: Cone, emitted: Event, receiver: Event) -> tuple[Scalar
     return tangent & receiver[..., None], readout, lever
 
 
-def fitted_reception(emitted: Event, initial: Event, sigma: float,
+def fitted_reception(emitted: Event, initial: Event, sigma: Scalar,
                      n_steps: int) -> tuple[Event, Information, Covariance]:
     """Gauss-Newton iteration over `n_steps` fits the reception event (`[...] Event-`) to noisy
     `emitted` cone vertices with range uncertainty `sigma`, along with `Information` and `Covariance`."""

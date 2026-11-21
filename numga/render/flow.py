@@ -22,6 +22,7 @@ from functools import cache
 
 import numpy as np
 
+from numga import GATypeError, dim
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from numga.topology import Topology
@@ -29,7 +30,7 @@ from numga.wgsl import Shader, samples_per_side
 
 from . import meshes, solids
 from .drawing import Draw, Target, drawn
-from .camera import Camera, extrinsic_first, placing, reading, whole
+from .camera import Camera, extrinsic_first, placing, read, reading, whole
 
 
 n_trace_steps = 64
@@ -300,19 +301,50 @@ def draw(points: solids.Point, topology: Topology, field: solids.Point, view: so
 
 
 def layer(points: Extensor, topology: Topology, field: Extensor, camera: Camera,
-          reference_speed: float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
-          length: float = length_pixels, grain_pixels: float = 6.0, speck_pixels: float = 0.96,
+          reference_speed: Extensor | float, colour: np.ndarray, *, downstream_fraction: float = 0.9,
+          length: Extensor | float = length_pixels, grain_pixels: float = 6.0, speck_pixels: float = 0.96,
           ink_opacity: float = ink_opacity) -> np.ndarray:
     """Render a straight-RGBA flow-streak overlay `[rows, columns, 4]` in RGB `colour` over
     `topology`'s triangles for `points` (`[V]`) and `field` (`[V]`) in their own algebra, seeding one
-    jittered speck of radius `speck_pixels` per `grain_pixels` cell."""
+    jittered speck of radius `speck_pixels` per `grain_pixels` cell. When `field` and `camera` carry
+    checked units, `reference_speed` carries the same projected speed unit as `camera.across & field`
+    (such as `pixel/time`)."""
     seeds = planar_shader(**reading(points, camera), Field=whole(field, points.algebra))
+    if isinstance(length, Extensor):
+        if length.has_units and not length.units.is_zero and length.unit != dim.pixel:
+            raise GATypeError(f"flow length must carry pixel units; got {length.gatype.signature}")
+        length_val = float(length.to_array())
+    else:
+        length_val = float(length)
+    if field.has_units and camera.has_units:
+        projected_units = []
+        for plane in (camera.across, camera.up):
+            if plane.units.is_zero:
+                continue
+            projected = read(plane, field)
+            if not projected.units.is_zero:
+                projected_units.append(projected.unit)
+        if projected_units:
+            speed_unit = projected_units[0]
+            if any(u != speed_unit for u in projected_units[1:]):
+                raise GATypeError(
+                    f"flow field projects to incompatible screen units {projected_units[0]} and {projected_units[1]}"
+                )
+            if not isinstance(reference_speed, Extensor) or not reference_speed.has_units:
+                raise GATypeError(f"checked flow reference_speed must carry {speed_unit}; got {reference_speed!r}")
+            if not reference_speed.units.is_zero and reference_speed.unit != speed_unit:
+                raise GATypeError(
+                    f"flow reference_speed unit {reference_speed.unit} does not match projected field unit {speed_unit}"
+                )
+        ref_speed_val = float(reference_speed.to_array()) if isinstance(reference_speed, Extensor) else float(reference_speed)
+    else:
+        ref_speed_val = float(reference_speed.to_array()) if isinstance(reference_speed, Extensor) else float(reference_speed)
     surface, projected, grains = drawn([Draw(seeds, camera.shape, 3 * topology.n_elements[2], dict(
         points=points, faces=topology.elements[2], field=field, noise_scale=camera.pixel * grain_pixels,
         speck=speck_pixels / grain_pixels, **camera.uniforms(1.0)))], seeding, samples_per_side())
     result = trace_shader(False)(camera.shape, surface=surface, flow=projected, grains=grains, background=np.ones(3),
-                            step_pixels=length / n_trace_steps,
-                            reference_speed=max(reference_speed, np.finfo(np.float32).tiny),
+                            step_pixels=length_val / n_trace_steps,
+                            reference_speed=max(ref_speed_val, np.finfo(np.float32).tiny),
                             downstream_fraction=downstream_fraction, depth_limit=6 * camera.pixel,
                             ink_opacity=ink_opacity)
     rgba = np.empty(camera.shape + (4,))

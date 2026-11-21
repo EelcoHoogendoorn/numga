@@ -27,6 +27,7 @@ import numpy as np
 from numga.extensor import Extensor, stack
 from numga.gatype import GAType, Orientation
 from numga.subspace import SubSpace
+from numga.units import outermorphism_unit
 
 
 @lru_cache(maxsize=None)
@@ -60,7 +61,7 @@ def _image_product(space: SubSpace, images: SubSpace, product: Callable, correla
     return wedge if _grades(images) == {1} else join
 
 
-@Extensor.outermorphism.register(lambda t: t.is_exterior_map)
+@Extensor.outermorphism.register(lambda t: t.is_exterior_map, unit=outermorphism_unit)
 def outermorphism(operator: Extensor, target: GAType) -> Extensor:
     """Extending a vector map, antivector map, or correlation to `target` sends each `^` or `&`
     product of input elements to the corresponding `^` or `&` product of their images."""

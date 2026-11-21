@@ -15,13 +15,14 @@ from dataclasses import dataclass, fields, replace
 import jax
 import numpy as np
 
+from numga import dim
 from numga.algebras import PGA2D
 from numga.backend.jax import JaxContext, derivative
 from examples import instantiate
 from examples.mechanics import lie_integrators as lie
 from examples.mechanics.modal_xpbd.scenarios import Bodies, Constraints
 
-core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D, JaxContext)
+core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D, JaxContext, units=True)
 mv = core.mv
 Displacement, Force, Forque, Motor, Scalar, Twist = (
     core.Displacement, core.Force, core.Forque, core.Motor, core.Scalar, core.Twist,
@@ -65,7 +66,7 @@ def project_constraints(bodies: Bodies, constraints: Constraints, previous_ampli
         """World-frame constraint gaps at `coordinates` around the current `bodies.motor`."""
         return constraint_gaps(bodies.motor, constraints, coordinates)
 
-    current = Coordinates(twists=bodies.rate * 0.0, amplitudes=bodies.amplitudes)
+    current = Coordinates(twists=bodies.rate * dt * 0, amplitudes=bodies.amplitudes)
     change = derivative(gap)(current)
     rigid = change.twists                                                  # [...] (Antivector- <- Bivector+)[n_constraints <- n_bodies]
     modal = change.amplitudes                                              # [..., n_modes] (Antivector- <- Scalar+)[n_constraints <- n_bodies]
@@ -135,14 +136,22 @@ def main() -> None:
     from examples.util.animation import save_animation
     from . import render, scenarios
 
-    shape = core.girder(scenarios.n_bays, scenarios.length, scenarios.height, scenarios.stiffness, scenarios.density, scenarios.n_modes)
+    shape = core.girder(
+        scenarios.n_bays,
+        mv.scalar(scenarios.length, unit=dim.length),
+        mv.scalar(scenarios.height, unit=dim.length),
+        mv.scalar(scenarios.stiffness, unit=dim.mass * dim.length / dim.time**2),
+        mv.scalar(scenarios.density, unit=dim.mass / dim.length**2),
+        scenarios.n_modes,
+    )
     bodies, constraints = scenarios.hinged_chain(mv, shape, scenarios.damping, scenarios.flexibility)
-    gravity = mv.direction([0, -scenarios.gravity_strength])               # [] Antivector-
+    gravity = mv.direction([0, -scenarios.gravity_strength], unit=dim.length / dim.time**2)  # [] Antivector-, length/time^2
+    dt = mv.scalar(scenarios.dt, unit=dim.time)
     world_points = jax.jit(lambda state: core.world_points(state, shape))
     kept: list = []
 
     def frames() -> Iterator:
-        for state in swing_states(bodies, constraints, gravity, scenarios.dt, scenarios.n_substeps, scenarios.n_frames):
+        for state in swing_states(bodies, constraints, gravity, dt, scenarios.n_substeps, scenarios.n_frames):
             kept.append(state)
             yield world_points(state)
 
@@ -150,7 +159,7 @@ def main() -> None:
 
     # checks
     _, _, _, final_gap = core.coupling(kept[-1], constraints)
-    assert (final_gap.dual_inverse().norm() < 1e-4).all()
+    assert (final_gap.dual_inverse().norm() < mv.scalar(1e-4, unit=dim.length)).all()
 
 
 if __name__ == "__main__":

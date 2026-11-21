@@ -38,6 +38,13 @@ from numga.extensor import Extensor
 from numga.gatype import GAType, GATypeError, GATypePattern
 
 from numga.extensions._linalg import _linear_system, _reading, _result, _scalars
+from numga.units import adjugate_unit, lstsq_unit, lstsq_weighted_unit, pinv_unit, solve_unit
+
+Extensor.solve.set_unit(solve_unit)
+Extensor.lstsq.overload(2).set_unit(lstsq_unit)
+Extensor.lstsq.overload(3).set_unit(lstsq_weighted_unit)
+Extensor.pinv.set_unit(pinv_unit)
+Extensor.adjugate.set_unit(adjugate_unit)
 
 
 @Extensor.inverse.register(lambda t: t.maps_equal_dimensions)

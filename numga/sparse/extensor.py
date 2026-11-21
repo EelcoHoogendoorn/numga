@@ -42,7 +42,8 @@ import numpy as np
 from numga import expression
 from numga.extension import ExtensionMethod
 from numga.extensor import Extensor, concatenate, operands
-from numga.gatype import GAType
+from numga.gatype import GAType, GATypeError
+from numga.units import Unit, dim, eigh_unit, lstsq_unit, solve_unit
 
 from .numeric import Sparse, chain, summed_runs, typed
 
@@ -98,6 +99,18 @@ class SparseExtensor(Sparse):
         """Extension dispatch inspects the `GAType` of `cells`, while `shape` tracks the output and input site counts."""
         return self.cells.gatype
 
+    @property
+    def units(self):
+        return self.cells.units
+
+    @property
+    def unit(self):
+        return self.cells.unit
+
+    @property
+    def has_units(self) -> bool:
+        return self.cells.has_units
+
     # --- products --------------------------------------------------------------------------
     @overload
     def __mul__(self, other: SparseExtensor | Sparse) -> SparseExtensor: ...
@@ -111,10 +124,21 @@ class SparseExtensor(Sparse):
     def __mul__(self, other: Any) -> SparseExtensor | Extensor:
         """Numbers scale every cell, fields contract against input sites into an output field, and
         sparse maps chain cell geometric products across shared sites."""
+        if isinstance(other, Unit):
+            return NotImplemented
         return _right(other, self, expression.geometric_product)
 
     def __rmul__(self, other: Any) -> SparseExtensor | Extensor:
+        if isinstance(other, Unit):
+            return NotImplemented
         return _left(other, self, expression.geometric_product)
+
+    def __truediv__(self, other: Any) -> SparseExtensor:
+        if isinstance(other, Number):
+            return _scaled(self, 1 / other)
+        if isinstance(other, Extensor) and _is_site_free_scalar(other):
+            return _cellwise(self, self.cells / other)
+        return NotImplemented
 
     def __xor__(self, other: Any) -> SparseExtensor | Extensor:
         return _right(other, self, expression.wedge)
@@ -232,7 +256,7 @@ spdiag = SparseExtensor.from_diagonal
 def _context(other: Extensor | GAType) -> Context:
     if isinstance(other, GAType) or other.context.is_exact:
         from numga.backend.numpy import NumpyContext
-        return NumpyContext(other.algebra)
+        return NumpyContext(other.algebra, units=True)
     return other.context
 
 
@@ -270,8 +294,14 @@ def _right_number(other: Number, sparse_map: SparseExtensor, product: Callable) 
     return _scaled(sparse_map, other)
 
 
+def _is_site_free_scalar(other: Extensor) -> bool:
+    return other.arity == 0 and other.gatype.is_scalar and not other.gatype.fields
+
+
 @_right.register
-def _right_field(other: Extensor, sparse_map: SparseExtensor, product: Callable) -> Extensor:
+def _right_field(other: Extensor, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor | Extensor:
+    if _is_site_free_scalar(other):
+        return _cellwise(sparse_map, product(sparse_map.cells, other))
     reads = _reads(sparse_map) if product is expression.geometric_product else None
     if reads is not None:
         # Pure 0/1 selection maps index the field directly so unit-versor and subtype traits survive.
@@ -285,7 +315,8 @@ def _right_field(other: Extensor, sparse_map: SparseExtensor, product: Callable)
 
 def _reads(sparse_map: SparseExtensor) -> np.ndarray | None:
     # Scalar 0/1 maps with a single 1 per output row act as pure index gathers; JAX tracers fall back to multiplication.
-    if not sparse_map.cells.gatype.is_scalar:
+    cell_units = sparse_map.cells.gatype.units
+    if not sparse_map.cells.gatype.is_scalar or not (cell_units.is_unchecked or cell_units.uniform == dim.none):
         return None
     try:
         kernel = np.asarray(sparse_map.cells.kernel)
@@ -335,7 +366,9 @@ def _left_numbers(other: Sparse, sparse_map: SparseExtensor, product: Callable) 
 
 
 @_left.register
-def _left_field(other: Extensor, sparse_map: SparseExtensor, product: Callable) -> Extensor:
+def _left_field(other: Extensor, sparse_map: SparseExtensor, product: Callable) -> SparseExtensor | Extensor:
+    if _is_site_free_scalar(other):
+        return _cellwise(sparse_map, product(other, sparse_map.cells))
     return _scatter(_cell_product(product, _sites(other)[..., sparse_map.rows], sparse_map.cells), sparse_map.columns, sparse_map.shape[1]).field()
 
 
@@ -419,7 +452,7 @@ def adjoint(operator: SparseExtensor) -> SparseExtensor:
 
 
 # --- linear algebra of map cells on the NumPy backend --------------------------------------
-@SparseExtensor.solve.register(lambda cell_type, rhs: cell_type.maps_equal_dimensions, fields=True)
+@SparseExtensor.solve.register(lambda cell_type, rhs: cell_type.maps_equal_dimensions, fields=True, unit=solve_unit)
 def solve(operator: SparseExtensor, rhs: Extensor) -> Extensor:
     """Sparse LU factorization solves `operator(x) == rhs` for each leading batch index of `operator`,
     caching the SciPy `splu` factors on `operator.factors` so subsequent solves only substitute."""
@@ -433,7 +466,7 @@ def solve(operator: SparseExtensor, rhs: Extensor) -> Extensor:
     return _per_map(operator, rhs, substituted)
 
 
-@SparseExtensor.lstsq.register(lambda cell_type, rhs: cell_type.arity == 1, fields=True)
+@SparseExtensor.lstsq.register(lambda cell_type, rhs: cell_type.arity == 1, fields=True, unit=lstsq_unit)
 def lstsq(operator: SparseExtensor, rhs: Extensor) -> Extensor:
     """Iterative `lsqr` computes the minimum-coordinate-norm field `x` minimizing `operator(x) - rhs`
     in blade coefficients, leaving null-space gauges such as pure translations at zero."""
@@ -447,7 +480,11 @@ def lstsq(operator: SparseExtensor, rhs: Extensor) -> Extensor:
     return _per_map(operator, rhs, least)
 
 
-@SparseExtensor.eigh.register(lambda cell_type, metric: cell_type.is_endomorphism or cell_type.is_correlation)
+@SparseExtensor.eigh.register(
+    lambda cell_type, metric: (cell_type.is_endomorphism or cell_type.is_correlation)
+    and cell_type.axis_roles.same_as(metric),
+    unit=eigh_unit,
+)
 def eigh(operator: SparseExtensor, metric: SparseExtensor, n_modes: int) -> tuple[Extensor, Extensor]:
     """Shift-invert `eigsh` near zero computes the `n_modes` smallest-magnitude generalized
     eigenpairs of `operator(x) == eigenvalue * metric(x)` with `metric`-orthonormal eigenfields,
@@ -455,6 +492,8 @@ def eigh(operator: SparseExtensor, metric: SparseExtensor, n_modes: int) -> tupl
     with null spaces still factorize."""
     from scipy.sparse.linalg import eigsh
 
+    if operator.shape != metric.shape:
+        raise ValueError(f"sparse shapes {operator.shape} and {metric.shape} differ")
     batch = np.broadcast_shapes(operator.cells.shape[:-1], metric.cells.shape[:-1])
     values, vectors = [], []
     for case in np.ndindex(batch):
@@ -469,6 +508,16 @@ def eigh(operator: SparseExtensor, metric: SparseExtensor, n_modes: int) -> tupl
 
 def _per_map(operator: SparseExtensor, rhs: Extensor, solver: Callable) -> Extensor:
     rhs = _sites(rhs)
+    if rhs.gatype.orientation is not operator.cells.gatype.orientation:
+        raise GATypeError(
+            f"cannot solve for an {rhs.gatype.orientation.value} right-hand side against a map whose "
+            f"output takes an {operator.cells.gatype.orientation.value} orientation"
+        )
+    if not rhs.output_subspace.support_is_subset_of(operator.cells.axes[0]):
+        raise GATypeError(
+            f"right-hand side {rhs.output_subspace} does not fit into output {operator.cells.axes[0]}"
+        )
+    rhs = rhs.cast(operator.cells.axes[0])
     batch = np.broadcast_shapes(operator.cells.shape[:-1], rhs.shape[:-1])
     maps = (1,) * (len(batch) - (operator.cells.ndim - 1)) + operator.cells.shape[:-1]
     right = np.broadcast_to(np.asarray(rhs.kernel), batch + rhs.kernel.shape[rhs.ndim - 1:])

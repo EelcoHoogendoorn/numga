@@ -19,19 +19,23 @@ from examples.estimation.kalman.core import (
     position_ellipsoid,
     twist_samples,
 )
-from numga import stack
+from numga import dim, stack
 
 # Timestep in seconds, reading count, commanded steps between readings, and random seed.
-dt = 0.1
+dt = mv.scalar(0.1, unit=dim.time)                                              # [] Scalar+, time
 n_readings = 12
 n_steps_per_reading = 25
 seed = 2
-# Sinusoidal commanded turn-rate amplitude (rad/s) and angular frequency (rad/s).
-turn_amplitude = 0.9
-turn_frequency = 0.2
+# Forward speed (m/s), sinusoidal commanded turn-rate amplitude (rad/s), and angular frequency (rad/s).
+forward_speed = mv.scalar(1.0, unit=dim.length / dim.time)                      # [] Scalar+, length/time
+turn_amplitude = mv.scalar(0.9, unit=1 / dim.time)                              # [] Scalar+, 1/time
+turn_frequency = mv.scalar(0.2, unit=1 / dim.time)                              # [] Scalar+, 1/time
 # Translation and rotation standard deviations: per square-root second for motion noise, and per pose reading.
-motion_std = (0.05, 0.12)
-measurement_std = (0.3, 0.1)
+motion_std = (
+    mv.scalar(0.05, unit=dim.length / dim.time.root(2)),
+    mv.scalar(0.12, unit=1 / dim.time.root(2)),
+)
+measurement_std = (mv.scalar(0.3, unit=dim.length), mv.scalar(0.1))
 # Animation frame duration in milliseconds and confidence-ellipse standard-deviation level.
 frame_duration_ms = 40
 sigmas = 2.0
@@ -39,12 +43,12 @@ sigmas = 2.0
 
 # --- math -----------------------------------------------------------------------------
 def commanded_increments(n_readings: int, n_steps_per_reading: int) -> Twist:
-    """Unit forward speed along `+x` with a sinusoidal turn rate forms the commanded body twists
-    (`[n_readings, n_steps_per_reading] Twist+`)."""
-    times = np.arange(n_readings * n_steps_per_reading) * dt
+    """Forward speed along `+x` with a sinusoidal turn rate forms the commanded body twists
+    (`[n_readings, n_steps_per_reading] Twist+`, `1 | length`)."""
+    times = np.arange(n_readings * n_steps_per_reading) * dt                    # [n_steps] Scalar+, time
     # The generator -mv.wx translates along +x while mv.xy turns about the body origin.
-    turn = turn_amplitude * np.sin(turn_frequency * times)
-    return ((mv.xy * turn - mv.wx) * dt).reshape(n_readings, n_steps_per_reading)   # [n_readings, n_steps_per_reading] Twist+
+    turn = turn_amplitude * (turn_frequency * times).sin()                      # [n_steps] Scalar+, 1/time
+    return ((mv.xy * turn - mv.wx * forward_speed) * dt).reshape(n_readings, n_steps_per_reading)   # [n_readings, n_steps_per_reading] Twist+, 1 | length
 
 
 def drive_states(
@@ -57,7 +61,7 @@ def drive_states(
     """Yields `(truth, dead, estimate, sigma, reading)` after each commanded step in `increments`
     (`[n_readings, n_steps_per_reading] Twist+`) and after each pose reading."""
     truth = dead = estimate = reading = initial
-    sigma = body_covariance(0.0, 0.0)                                               # [] Twist+ <- Line-
+    sigma = body_covariance(mv.scalar(0.0, unit=dim.length), mv.scalar(0.0))    # [] Twist+ <- Line-
     for segment in increments:
         for increment in segment:
             step = (increment * 0.5).exp()                                          # [] Motor+
@@ -94,7 +98,7 @@ def main() -> None:
     from examples.estimation.kalman import render
 
     increments = commanded_increments(n_readings, n_steps_per_reading)              # [n_readings, n_steps_per_reading] Twist+
-    motion_noise = body_covariance(*(np.array(motion_std) * np.sqrt(dt)))           # [] Twist+ <- Line-
+    motion_noise = body_covariance(*(std * dt.square_root() for std in motion_std)) # [] Twist+ <- Line-
     measurement_noise = body_covariance(*measurement_std)                           # [] Twist+ <- Line-
     ellipsoid_of = partial(position_ellipsoid, sigmas=sigmas)
     recorded = save_states(
@@ -115,7 +119,7 @@ def main() -> None:
     dead_error = (true_positions & (dead >> origin)).norm()                         # [...] Scalar+
     filtered_error = (true_positions & positions).norm()                            # [...] Scalar+
     assert bool(filtered_error.mean(axis=0) < 0.25 * dead_error.mean(axis=0))
-    frame = mv.bivector(np.eye(3)).dual()                                           # [3] Line-
+    frame = stack((mv.yw.dual() / dim.length, mv.wx.dual() / dim.length, mv.xy.dual()))   # [3] Line-, 1/length | 1
     skew = covariances.adjugate() - covariances                                     # [...] Twist+ <- Line-
     symmetry_residual = (frame[:, None] & skew[..., None, None](frame[None, :])).abs().max()   # [] Scalar+
     assert bool(symmetry_residual < 1e-12)

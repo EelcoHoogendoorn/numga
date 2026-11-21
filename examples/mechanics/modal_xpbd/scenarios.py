@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from numga import Extensor, stack
+from numga import Extensor, dim, stack
 from numga.algebras import PGA2D
 from numga.sparse import Sparse
 from numga.topology import Topology
@@ -100,17 +100,20 @@ def girders(mv, shape: Shape, fixed: np.ndarray, damping: np.ndarray, flexibilit
     """End-to-end girders placed along `x` combine fixed supports and moving bodies scaled by
     `flexibility` (`[n_cases, n_bodies]`)."""
     n_bodies, n_modes, n_cases = len(fixed), shape.modes.shape[0], len(damping)
-    motor_type = mv.context.algebra.gatype.rotor()
-    rest = shape.rest.batch()                                              # [V] Antivector-
-    span = mv.x & (rest[-1] - rest[1])                                     # [] Scalar+
-    motor = (mv.xw * ((np.arange(n_bodies) - 0.5) * span) * 0.5).exp().cast(motor_type).broadcast_to((n_cases, n_bodies)).field()  # [n_cases] Rotor+[n_bodies]
-    amplitudes = mv.scalar(np.zeros((n_cases, n_modes, n_bodies, 1))).field()  # [n_cases, n_modes] Scalar+[n_bodies]
+    motor_type = mv.context.algebra.gatype.rotor().derive.projective(dim.length)
+    rate_type = mv.context.algebra.gatype.bivector().derive.unit(1 / dim.time).derive.projective(dim.length)
+    rest = shape.rest.batch()                                              # [V] Antivector-, 1 | length
+    span = mv.x & (rest[-1] - rest[1])                                     # [] Scalar+, length
+    motor = (mv.xw * ((np.arange(n_bodies) - 0.5) * span) * 0.5).exp().cast(motor_type).broadcast_to((n_cases, n_bodies)).field()  # [n_cases] Rotor+[n_bodies], 1 | length
+    amplitude_unit = dim.length * dim.mass.root(2)
+    amplitudes = mv.scalar(np.zeros((n_cases, n_modes, n_bodies, 1)), unit=amplitude_unit).field()  # [n_cases, n_modes] Scalar+[n_bodies], length*mass^(1/2)
+    rates = mv.scalar(np.zeros((n_cases, n_modes, n_bodies, 1)), unit=amplitude_unit / dim.time).field()  # [n_cases, n_modes] Scalar+[n_bodies], length*mass^(1/2)/time
     moving = ~fixed                                                        # [n_bodies]
     return Bodies(
         motor=motor,
-        rate=mv.bivector(np.zeros((n_cases, n_bodies, 3))).field(),
+        rate=mv(rate_type, np.zeros((n_cases, n_bodies, 3))).field(),
         amplitudes=amplitudes,
-        rates=amplitudes,
+        rates=rates,
         compliance=(shape.compliance[:, None] * flexibility[:, None, :] * moving).field(),
         damping=mv.scalar(damping[:, None, None, None]).broadcast_to((n_cases, n_modes, n_bodies)).field(),
         masses=shape.masses.sites.sum().broadcast_to((n_cases, n_bodies)).field(),
@@ -123,7 +126,7 @@ def point_constraints(mv, shape: Shape, n_bodies: int, body_idx: np.ndarray, cor
     """Anchor vertex selections `corner_idx` (`[2, n_constraints]`) and body incidences `body_idx`
     (`[2, n_constraints]`) form point constraints across `n_bodies` girders."""
     V = len(shape.rest.batch())
-    compliance = mv.scalar([splice]).broadcast_to(body_idx.shape[-1:]).field()  # Scalar+[n_constraints]
+    compliance = mv.scalar([splice], unit=dim.time**2 / dim.mass).broadcast_to(body_idx.shape[-1:]).field()  # Scalar+[n_constraints], time^2/mass
     ends = Topology(n_bodies, body_idx.T).incidence[1, 0]                  # [2] Scalar+[n_constraints <- n_bodies]
     corners = Sparse.selection(corner_idx, V)                              # [2] Scalar+[n_constraints <- V]
     return Constraints(ends, corners * shape.rest, corners * shape.modes[:, None], compliance)
@@ -186,13 +189,13 @@ def end_loaded_bodies(mv, bodies: Bodies, rest_motor, displacement: float) -> Bo
     return replace(bodies, motor=bodies.motor.batch().at[..., -1].set(driven).field().normalized())
 
 
-def compression_states(core, shape: Shape, bodies: Bodies, constraints: Constraints, displacements: np.ndarray, dt: float, n_substeps: int) -> Iterator[tuple]:
+def compression_states(core, shape: Shape, bodies: Bodies, constraints: Constraints, displacements: Extensor, dt: Extensor, n_substeps: int) -> Iterator[tuple]:
     """Yields `(world_points, midspans)` at each prescribed end displacement after `n_substeps`
     relaxation steps."""
     rest_motor = bodies.motor
     n_bodies = rest_motor.batch().shape[-1]
     middle = n_bodies // 2
-    weightless = core.mv.direction([0, 0])                                 # [] Antivector-
+    weightless = core.mv.direction([0, 0], unit=dim.length / dim.time**2)  # [] Antivector-, length/time^2
     for displacement in displacements:
         bodies = end_loaded_bodies(core.mv, bodies, rest_motor, displacement)
         for _ in range(n_substeps):
@@ -202,7 +205,7 @@ def compression_states(core, shape: Shape, bodies: Bodies, constraints: Constrai
         yield core.world_points(bodies, shape), centres.sum(axis=-1) / 2   # [..., n_bodies] Antivector-[V], [...] Antivector-
 
 
-def critical_displacement(height: float, span: float) -> float:
+def critical_displacement(height: Extensor | float, span: Extensor | float):
     """Euler buckling of a clamped two-chord truss of chord spacing `height` and length `span` sets
     in at end displacement `pi**2 * height**2 / span`."""
     return np.pi**2 * height**2 / span
@@ -212,51 +215,71 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from . import render
 
-    core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
-    shape = core.girder(n_bays, length, height, stiffness, density, n_modes)
-    save_figure(render.mode_shapes(shape.rest, shape.rest + shape.modes[:4] * 0.03, shape.edges), "modal_xpbd_modes")
+    core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D, units=True)
+    mv = core.mv
+    force_unit = dim.mass * dim.length / dim.time**2
+    density_unit = dim.mass / dim.length**2
+    shape = core.girder(
+        n_bays,
+        mv.scalar(length, unit=dim.length),
+        mv.scalar(height, unit=dim.length),
+        mv.scalar(stiffness, unit=force_unit),
+        mv.scalar(density, unit=density_unit),
+        n_modes,
+    )
+    mode_scale = mv.scalar(0.03, unit=dim.length * dim.mass.root(2))
+    save_figure(render.mode_shapes(shape.rest, shape.rest + shape.modes[:4] * mode_scale, shape.edges), "modal_xpbd_modes")
 
-    bodies, constraints = hinged_chain(core.mv, shape, damping, flexibility)
+    bodies, constraints = hinged_chain(mv, shape, damping, flexibility)
     initial_points = core.world_points(bodies, shape)
     save_figure(render.chain_figure(initial_points, shape.edges), "modal_xpbd_chain")
 
-    gravity = core.mv.direction([0, -gravity_strength])                    # [] Antivector-
+    gravity = mv.direction([0, -gravity_strength], unit=dim.length / dim.time**2)  # [] Antivector-, length/time^2
+    step_dt = mv.scalar(dt, unit=dim.time)
     swing_history: list = []
 
     def chain_frames() -> Iterator:
-        for frame_points, state in swing_states(core, shape, bodies, constraints, gravity, dt, n_substeps, n_frames):
+        for frame_points, state in swing_states(core, shape, bodies, constraints, gravity, step_dt, n_substeps, n_frames):
             swing_history.append(state)
             yield frame_points
 
     save_animation(render.swinging_chain(shape.edges, initial_points, chain_frames()), "modal_xpbd_swing", frame_duration_ms)
 
-    beam_shape = core.girder(n_beam_bays, float(n_beam_bays), beam_height, beam_stiffness, density, n_modes)
-    beam_bodies, beam_splices = clamped_beam(core.mv, beam_shape, n_beam_girders, beam_damping)
-    displacements = end_displacement * np.arange(n_beam_frames) / n_beam_frames  # [n_beam_frames]
+    beam_shape = core.girder(
+        n_beam_bays,
+        mv.scalar(float(n_beam_bays), unit=dim.length),
+        mv.scalar(beam_height, unit=dim.length),
+        mv.scalar(beam_stiffness, unit=force_unit),
+        mv.scalar(density, unit=density_unit),
+        n_modes,
+    )
+    beam_bodies, beam_splices = clamped_beam(mv, beam_shape, n_beam_girders, beam_damping)
+    displacements = mv.scalar(end_displacement, unit=dim.length) * np.arange(n_beam_frames) / n_beam_frames  # [n_beam_frames] Scalar+, length
     recorded_midspans: list = []
 
     def beam_frames() -> Iterator:
-        for frame_points, midspan in compression_states(core, beam_shape, beam_bodies, beam_splices, displacements, beam_dt, n_beam_substeps):
+        for frame_points, midspan in compression_states(core, beam_shape, beam_bodies, beam_splices, displacements, mv.scalar(beam_dt, unit=dim.time), n_beam_substeps):
             recorded_midspans.append(midspan)
             yield frame_points
 
     save_animation(render.beam_animation(beam_shape.edges, beam_frames()), "modal_xpbd_buckle", frame_duration_ms)
-    midspans = stack(recorded_midspans)                                    # [n_beam_frames, 1] Antivector-
-    critical = critical_displacement(beam_height, n_beam_girders * n_beam_bays)
+    midspans = stack(recorded_midspans)                                    # [n_beam_frames, 1] Antivector-, 1 | length
+    critical = critical_displacement(mv.scalar(beam_height, unit=dim.length), mv.scalar(float(n_beam_girders * n_beam_bays), unit=dim.length))
     save_figure(render.buckling_figure(displacements, midspans, critical), "modal_xpbd_buckling")
 
     # checks
     final_bodies = swing_history[-1]
     rigid, _, _, final_gap = core.coupling(final_bodies, constraints)
     rng = np.random.default_rng(0)
-    forces = core.mv.vector(rng.normal(size=(1, constraints.ends.shape[0], 3))).cast(core.Force).field()  # [1] Vector+[n_constraints]
-    twists = core.mv.bivector(rng.normal(size=(1, n_links + 1, 3))).field()  # [1] Bivector+[n_links + 1]
+    forces = mv.vector(rng.normal(size=(1, constraints.ends.shape[0], 3)), unit=force_unit).cast(core.Force).field()  # [1] Vector+[n_constraints], force
+    twist_type = core.Twist.derive.projective(dim.length)
+    twists = mv(twist_type, rng.normal(size=(1, n_links + 1, 3))).field()  # [1] Bivector+[n_links + 1], 1 | length
     work_diff = (rigid.adjugate()(forces) & twists).sites.sum() - (forces & rigid(twists)).sites.sum()
-    assert (work_diff.abs() < 1e-12).all()
-    assert (final_gap.dual_inverse().norm() < 1e-4).all()
-    deflection = (core.mv.y & midspans[:, 0]).abs()                        # [n_beam_frames] Scalar+
-    assert (deflection[displacements < 0.8 * critical] < 1e-6).all()
-    assert (deflection[displacements > 2 * critical] > 0.5).all()
+    assert (work_diff.abs() < mv.scalar(1e-12, unit=force_unit * dim.length)).all()
+    assert (final_gap.dual_inverse().norm() < mv.scalar(1e-4, unit=dim.length)).all()
+    deflection = (mv.y & midspans[:, 0]).abs()                             # [n_beam_frames] Scalar+, length
+    assert (deflection[displacements < 0.8 * critical] < mv.scalar(1e-6, unit=dim.length)).all()
+    assert (deflection[displacements > 2 * critical] > mv.scalar(0.5, unit=dim.length)).all()
 
 
 if __name__ == "__main__":

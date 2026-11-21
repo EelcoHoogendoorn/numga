@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import Algebra, NumpyContext, dim, stack
 from numga.algebras import PGA3D
 from numga.gatype.traits import Versor
 
 ga = PGA3D
-ctx = NumpyContext(ga)
+ctx = NumpyContext(ga, units=True)
 mv = ctx.multivector
+Scalar = ga.gatype.scalar()                                                     # Scalar+
 Point = ga.gatype.antivector()                                                  # Antivector-
 Plane = ga.gatype.vector()                                                      # Vector+
 SensorPlane = Plane.derive.within(Algebra("w0y+z+"))                            # Vector+
@@ -44,21 +45,21 @@ home = mv.x                                                                     
 
 
 def scene_point(coords: np.ndarray) -> Point:
-    """Translating `origin` by `coords` (`[..., 3]`) constructs unit-weight points (`[...] Point-`)."""
-    translators = ((stack((mv.xw, mv.yw, mv.zw)) * coords).sum(-1) / 2).exp()   # [...] Rotor+
+    """Translating `origin` by `coords` (`[..., 3]`) constructs unit-weight points (`[...] Point-`, `1 | length`)."""
+    translators = (((stack((mv.xw, mv.yw, mv.zw)) * coords).sum(-1) / 2) * dim.length).exp()   # [...] Rotor+, 1 | length
     return translators >> origin
 
 
 # --- math -----------------------------------------------------------------------------
-def thin_lens_maps(focal: np.ndarray) -> tuple[PointMap, LineMap]:
-    """Focal lengths `focal` (`[n_lenses]`) in the home plane define point collineations (`[n_lenses] Point- <- Point-`) and induced line maps (`[n_lenses] Line- <- Line-`)."""
+def thin_lens_maps(focal: Scalar) -> tuple[PointMap, LineMap]:
+    """Focal lengths `focal` (`[n_lenses] Scalar+, length`) in the home plane define point collineations (`[n_lenses] Point- <- Point-`) and induced line maps (`[n_lenses] Line- <- Line-`)."""
     point_maps = Point + origin * (home & Point) / focal                        # [...] Point- <- Point-
     line_maps = Line - (origin & (Line ^ home)) / focal                         # [...] Line- <- Line-
     return point_maps, line_maps
 
 
-def aperture_ball(radius: float) -> Quadric:
-    """Radius `radius` around `origin` defines a spherical primal quadric (`[] Plane+ <- Point-`) whose home-plane section bounds the aperture."""
+def aperture_ball(radius: Scalar) -> Quadric:
+    """Radius `radius` (`[] Scalar+, length`) around `origin` defines a spherical primal quadric (`[] Plane+ <- Point-`) whose home-plane section bounds the aperture."""
     coordinate_planes = stack((mv.x, mv.y, mv.z))                               # [3] Plane+
     return (coordinate_planes * (coordinate_planes & Point)).sum(-1) - mv.w * (mv.w & Point) * radius**2
 
@@ -66,11 +67,11 @@ def aperture_ball(radius: float) -> Quadric:
 def camera_exposure(
     scene: Point,
     subject: Point,
-    focal: np.ndarray,
+    focal: Scalar,
     placements: Motor,
     focus: Point,
     tilt: Motor,
-    radius: float,
+    radius: Scalar,
     rim: Point,
 ) -> tuple[PointMap, Camera, Motor, Quadric, Plane, Point]:
     """Exposing `scene` (`[...] Point-`) through the two lenses at `placements` (`[2] Rotor+`) with aperture `radius`, focus target `focus`, and sensor `tilt` produces the train collineation, camera map, sensor frame, image cones (`[...] Plane+ <- Point-`), element planes (`[3] Plane+`), and traced ray vertices (`[4, ...] Point-`)."""
@@ -99,10 +100,10 @@ def camera_exposure(
     rays = subject & (placements[0] >> rim)                                     # [...] Line-
     ray_vertices = stack([
         subject.broadcast_to(rays.shape),
-        rays ^ front_plane,
-        front(rays) ^ rear_plane,
-        rear(front(rays)) ^ sensor,
-    ])                                                                          # [4, ...] Point-
+        unit_point(rays ^ front_plane),
+        unit_point(front(rays) ^ rear_plane),
+        unit_point(rear(front(rays)) ^ sensor),
+    ])                                                                          # [4, ...] Point-, 1 | length
     return collineation, camera, frame, image_cones, stack([front_plane, rear_plane, sensor]), ray_vertices
 
 

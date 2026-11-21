@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import concatenate, stack
+from numga import concatenate, dim, stack
 from examples.relativity.gps import core
 from examples.util import shapes
 from numga.topology import Topology
@@ -49,10 +49,11 @@ def rest_slice_points(events: core.Event) -> solids.Point:
     return solids.context.include_from_algebra(space_slice(events))
 
 
-def fixed_view(receiver: core.Event, orbit_radius: float) -> solids.View:
+def fixed_view(receiver: core.Event, orbit_radius: core.Scalar) -> solids.View:
     """Fixed-scale camera view framing the orbital shell above `receiver`."""
-    centre = solids.origin + (rest_slice_points(receiver) - solids.origin) * (orbit_radius * 0.3)
-    return solids.View(solids.aim(centre, elevation, azimuth), np.full(2, orbit_radius * 0.95), n_pixels)
+    radius_value = float((orbit_radius / dim.length).to_array())
+    centre = solids.origin + (rest_slice_points(receiver) - solids.origin) * (radius_value * 0.3)
+    return solids.View(solids.aim(centre, elevation, azimuth), np.full(2, radius_value * 0.95), n_pixels)
 
 
 def swing_view(states: list) -> solids.View:
@@ -114,13 +115,13 @@ def solution_image(emitted: core.Event, receiver: core.Event, estimate: core.Eve
                        meshes=rays + [(principal, 0.8)])
 
 
-def constellation_figure(emitted: core.Event, receiver: core.Event, orbit_radius: float) -> plt.Figure:
+def constellation_figure(emitted: core.Event, receiver: core.Event, orbit_radius: core.Scalar) -> plt.Figure:
     """Static figure of the satellite constellation and signal paths prior to positioning."""
     return image_figure(constellation_image(emitted, receiver, fixed_view(receiver, orbit_radius)))
 
 
 def positioning_figure(emitted: core.Event, receiver: core.Event, estimate: core.Event, semi_axes: core.Event,
-                       orbit_radius: float) -> plt.Figure:
+                       orbit_radius: core.Scalar) -> plt.Figure:
     """Static figure of the satellite constellation with the fitted position and one-sigma uncertainty ellipsoid."""
     return image_figure(solution_image(emitted, receiver, estimate, semi_axes, fixed_view(receiver, orbit_radius)))
 

@@ -22,24 +22,27 @@ from numga.algebra import Algebra
 from numga.extensor import Extensor
 from numga.multivector import MultivectorFactory
 from numga.subspace import SubSpace, SubSpaceFactory
+from numga.units import Unit
 
 
 class ProjectiveMultivectorFactory(MultivectorFactory):
     """Euclidean coordinate helpers construct intrinsic points and ideal directions in plane-based
     projective algebras with a single null generator."""
 
-    def point(self, coordinates) -> Extensor:
-        """Dualizing a non-degenerate plane offset by the unit null generator maps Euclidean
-        `coordinates` of shape `[..., d]` to intrinsic points of unit weight."""
+    def point(self, coordinates, *, unit: Unit | None = None) -> Extensor:
+        """Combining the unit-weight origin with an ideal direction maps Euclidean `coordinates` of
+        shape `[..., d]` to intrinsic points of unit weight."""
         if self.algebra.degenerate_mask.bit_count() != 1:
             raise TypeError(f"points of weight one need a single degenerate basis vector; {self.algebra} has none or several")
-        planes = self(self.algebra.gatype.vector().derive.nondegenerate, coordinates)
-        return (planes + self.blade(self.algebra.degenerate_mask)).dual()
+        return self.blade(self.algebra.degenerate_mask).dual() + self.direction(coordinates, unit=unit)
 
-    def direction(self, coordinates) -> Extensor:
+    def direction(self, coordinates, *, unit: Unit | None = None) -> Extensor:
         """Dualizing a non-degenerate plane through the origin maps Euclidean direction `coordinates`
         of shape `[..., d]` to intrinsic ideal points at infinity."""
-        return self(self.algebra.gatype.vector().derive.nondegenerate, coordinates).dual()
+        plane_type = self.algebra.gatype.vector().derive.nondegenerate
+        if unit is not None:
+            plane_type = plane_type.derive.unit(Unit.require(unit))
+        return self(plane_type, coordinates).dual()
 
 
 PGA2D = Algebra(

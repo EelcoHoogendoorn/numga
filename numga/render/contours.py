@@ -20,7 +20,7 @@ from numga.gatype import GAType
 from numga.topology import Topology
 from numga.wgsl import Shader, level_lines, samples_per_side
 
-from .camera import Camera, placing, reading
+from .camera import Camera, check_projection, placing, reading
 from .drawing import Draw
 
 
@@ -123,6 +123,7 @@ def picture(points: Extensor, topology: Topology, values: np.ndarray, colours: n
     """Vertex `values` (`[V]`) and `colours` (`[V, 3]`) over `topology`'s triangles produce a `Draw` pass (or a
     transparent `[rows, columns, 4]` array when `topology` has no triangles) with `bands`, `lines`, and `levels`
     composited over the base shading."""
+    check_projection(points, camera)
     side = samples_per_side()
     if topology.n_elements[2] == 0:
         return np.zeros(camera.shape + (4,))

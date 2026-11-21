@@ -12,6 +12,7 @@ This directory holds the tutorials, user guides and reference pages for numga. F
 
 * [Extensor syntax and methods](extensor_syntax.md): algebras, subspaces, `GAType`, partial application, composition, linear algebra solvers and backend contexts.
 * [Orientation in numga](orientation.md): how intrinsic (`-`) and extrinsic (`+`) orientations are typed, propagated and statically checked.
+* [Physical units in numga](units.md): opting in to unit checking, units on the blades of values and the entries of maps, and the rule each operation follows.
 * [Fields and field maps](fields.md): site axes on extensors, pointwise and coupled maps, and `Sparse` operators.
 * [Simplicial topologies](topology.md): combinatorial simplicial complexes and their incidence, boundary, coboundary and dual operators.
 * [WebGPU shaders and rendering](rendering.md): compiling `Extensor` kernels to WGSL compute shaders and rendering 2D and 3D geometry on the GPU.

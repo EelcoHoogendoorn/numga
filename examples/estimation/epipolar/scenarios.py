@@ -7,8 +7,8 @@ from itertools import islice
 
 import numpy as np
 
-from numga import stack
-from examples.estimation.epipolar.core import Line, Motor, Point, Scalar, mv, reconstruction_states, triangulated_points
+from numga import dim, stack
+from examples.estimation.epipolar.core import Line, Motor, Point, Scalar, camera_scale, mv, reconstruction_states, triangulated_points
 
 # House wall corners, roof ridge corners, wireframe edge pairs, and ground-marker grid in camera 1's frame (+x right, +y down, +z forward).
 walls = [
@@ -42,7 +42,7 @@ def house_landmarks() -> Point:
     ahead = np.linspace(*ground_depths, n_ground_ahead)
     grid_x, grid_z = np.meshgrid(across, ahead)
     ground = np.stack([grid_x.ravel(), np.full(grid_x.size, ground_level), grid_z.ravel()], axis=-1)
-    return mv.point(np.concatenate([walls, roof, ground]))                    # [22] Point-
+    return mv.point(np.concatenate([walls, roof, ground]), unit=dim.length)   # [22] Point-, 1 | length
 
 
 def eased_states(rays: Line, estimated_motors: Motor, n_easing: int, n_hold: int) -> Iterator[tuple[Motor, Point]]:
@@ -68,23 +68,23 @@ def epipolar_scene(
     landmarks = house_landmarks()                                             # [22] Point-
     n_landmarks = landmarks.shape[0]
 
-    # Camera 1 sits at the origin looking along +z onto the image plane z == 1.
+    # Camera 1 sits at the origin looking along +z onto the image plane z == camera_scale.
     origin = mv.w.dual()                                                      # [] Point-
-    screen = mv.z - mv.w                                                      # [] Plane+
+    screen = mv.z - camera_scale * mv.w                                       # [] Plane+, 1 | length
     camera = (origin & Point) ^ screen                                        # [] Point- <- Point-
 
-    shift_generator = (stack((mv.xw, mv.yw, mv.zw)) * shift_vector).sum(axis=0) / 2  # [] Twist+
-    shift_motor = shift_generator.exp()                                       # [] Motor+
+    shift_generator = ((stack((mv.xw, mv.yw, mv.zw)) * shift_vector).sum(axis=0) / 2) * dim.length  # [] Twist+, length
+    shift_motor = shift_generator.exp()                                       # [] Motor+, 1 | length
     turn_motor = (mv.zx * (turn_angle / 2)).exp()                             # [] Motor+
-    true_motor = (shift_motor * turn_motor).normalized()                      # [] Motor+
+    true_motor = (shift_motor * turn_motor).normalized()                      # [] Motor+, 1 | length
 
-    # Dividing each projected point by its projective weight places all image points at unit weight on z == 1.
+    # Dividing each projected point by its projective weight places all image points at unit weight on z == camera_scale.
     raw_images = camera(stack([landmarks, true_motor << landmarks]))          # [2, n_landmarks] Point-
-    images = raw_images / (mv.w & raw_images)                                 # [2, n_landmarks] Point-
+    images = raw_images / (mv.w & raw_images)                                 # [2, n_landmarks] Point-, 1 | length
 
-    screen_axes = mv.direction([[1, 0, 0], [0, 1, 0]])                        # [2] Point-
+    screen_axes = mv.direction([[1, 0, 0], [0, 1, 0]], unit=dim.length)       # [2] Point-, length
     offsets = np.random.default_rng(seed).normal(0.0, noise, size=images.shape + (2,))
-    measured_images = images + (screen_axes * offsets).sum(axis=-1)           # [2, n_landmarks] Point-
+    measured_images = images + (screen_axes * offsets).sum(axis=-1)           # [2, n_landmarks] Point-, 1 | length
 
     rays = (origin & measured_images).normalized()                            # [2, n_landmarks] Line-
     initial_motor = shift_motor.normalized()                                  # [] Motor+
@@ -135,7 +135,7 @@ def main() -> None:
     )
     assert (axis_cosines > np.cos(np.radians(0.5))).all()
     assert (baseline_cosine > np.cos(np.radians(2.0))).all()
-    assert (landmark_rms < 0.1).all()
+    assert (landmark_rms < mv.scalar(0.1, unit=dim.length)).all()
 
 
 if __name__ == "__main__":

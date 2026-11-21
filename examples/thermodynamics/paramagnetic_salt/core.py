@@ -38,14 +38,15 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack, where
+from numga import Algebra, NumpyContext, dim, stack, where
 from numga.sparse import SparseExtensor, spdiag
 from numga.topology import Topology
 
 # Planar projective spacetime with null weight w joined with a metric-free direction s for entropy.
 space = Algebra("x+y+")
 ga = Algebra("x+y+t-w0") * Algebra("s0")
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
+
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 # Spatial planes along and across the crystal slab.
@@ -60,6 +61,9 @@ Quantity = Thermal.derive.dual                                                # 
 State = ga.gatype(Spin + Quantity)                                            # Antibivector- + Antivector-
 Potential = ga.gatype(Magnetic + Thermal)                                     # Bivector+ + Vector+
 Stiffness = ga.gatype((Potential, State))                                     # Potential+ <- State-
+
+boltzmann = mv.scalar(1.0, unit=dim.boltzmann)                                # [] Scalar+, boltzmann
+one_spin = mv.scalar(1.0, unit=dim.extent)                                    # [] Scalar+, extent
 # Unit turning plane, intrinsic spin patch, entropy quantity, time direction, and unit heat antiscalar.
 magnet_plane = mv.xy                                                          # [] Magnetic+
 spin = magnet_plane.dual()                                                    # [] Spin-
@@ -72,132 +76,142 @@ crystal_axes = stack((mv.x.dual(), mv.y.dual()))                              # 
 
 # --- math -----------------------------------------------------------------------------
 def spin_entropy(shares: Scalar) -> Scalar:
-    """Two-level mixing entropy per spin (`[...] Scalar+`) falls from `ln 2` at zero magnetization to zero as `shares`
+    """Two-level mixing entropy in nats (`[...] Scalar+`) falls from `ln 2` at zero magnetization to zero as `shares`
     (`[...] Scalar+`) approaches saturation."""
     aligned_share, opposed_share = (1 + shares) / 2, (1 - shares) / 2         # [...] Scalar+, Scalar+
     return -(aligned_share * aligned_share.log() + opposed_share * opposed_share.log())
 
 
-def potentials(state: State, moment: float, heat_capacity: float, reference: float) -> Potential:
-    """Differentiating the lattice internal energy at `state` (`[...] State-`) yields the equilibrium magnetic field
-    plane and temperature (`[...] Potential+`) as `temperature * (s - spin_slope)`."""
-    shares = (magnet_plane & state) / moment                                  # [...] Scalar+
+def potentials(state: State, spins: Scalar, moment: Scalar, heat_capacity: Scalar,
+               reference: Scalar) -> Potential:
+    """Differentiating the lattice internal energy at extensive `state` (`[...] State-`) for `spins` (`[...] Scalar+, extent`)
+    yields the intensive equilibrium magnetic field plane and temperature (`[...] Potential+, field | temperature`) as
+    `temperature * (s - spin_slope)`."""
+    shares = (magnet_plane & state) / (spins * moment)                        # [...] Scalar+
     # Constant lattice heat capacity makes temperature grow exponentially with the non-spin entropy.
-    lattice_entropy = (mv.s & state) - spin_entropy(shares)                   # [...] Scalar+
-    temperature = reference * (lattice_entropy / heat_capacity).exp()         # [...] Scalar+
+    lattice_entropy = (mv.s & state) - spins * boltzmann * spin_entropy(shares)   # [...] Scalar+, boltzmann*extent
+    temperature = reference * (lattice_entropy / (spins * heat_capacity)).exp()   # [...] Scalar+, temperature
     # Spin entropy decreases with alignment, giving an entropic restoring field proportional to temperature.
-    spin_slope = -(shares.arctanh() / moment) * magnet_plane                  # [...] Magnetic+
+    spin_slope = -(boltzmann * shares.arctanh() / moment) * magnet_plane      # [...] Magnetic+, field/temperature
     return temperature * (mv.s - spin_slope)
 
 
-def stiffness(state: State, moment: float, heat_capacity: float, reference: float) -> Stiffness:
-    """The second derivative of internal energy at `state` (`[...] State-`) sums the thermal and spin-ordering dyads
-    into a symmetric stiffness map (`[...] Potential+ <- State-`)."""
-    shares = (magnet_plane & state) / moment                                  # [...] Scalar+
-    salt_potentials = potentials(state, moment, heat_capacity, reference)     # [...] Potential+
-    temperature = salt_potentials & entropy                                   # [...] Scalar+
-    thermal_stiffness = salt_potentials * (salt_potentials & State) / (heat_capacity * temperature)   # [...] Potential+ <- State-
-    spin_stiffness = temperature / (moment ** 2 * (1 - shares ** 2)) * magnet_plane * (magnet_plane & State)   # [...] Potential+ <- State-
+def stiffness(state: State, spins: Scalar, moment: Scalar, heat_capacity: Scalar,
+              reference: Scalar) -> Stiffness:
+    """The second derivative of internal energy at extensive `state` (`[...] State-`) sums the thermal and spin-ordering
+    dyads into a symmetric stiffness map (`[...] Potential+ <- State-`)."""
+    shares = (magnet_plane & state) / (spins * moment)                        # [...] Scalar+
+    salt_potentials = potentials(state, spins, moment, heat_capacity, reference)   # [...] Potential+, field | temperature
+    temperature = salt_potentials & entropy                                   # [...] Scalar+, temperature
+    thermal_stiffness = salt_potentials * (salt_potentials & State) / ((spins * heat_capacity) * temperature)   # [...] Stiffness
+    spin_stiffness = boltzmann * temperature / (spins * moment ** 2 * (1 - shares ** 2)) * magnet_plane * (magnet_plane & State)   # [...] Stiffness
     return thermal_stiffness + spin_stiffness
 
 
-def equilibrium_state(field: Magnetic, temperature: Scalar, moment: float, heat_capacity: float,
-                      reference: float) -> State:
-    """Spin-half magnetization saturation and logarithmic lattice entropy determine the equilibrium state
-    (`[...] State-`) at `field` (`[...] Magnetic+`) and `temperature` (`[...] Scalar+`)."""
-    shares = (moment * (field & spin) / temperature).tanh()                   # [...] Scalar+
-    entropies = spin_entropy(shares) + heat_capacity * (temperature / reference).log()   # [...] Scalar+
-    return moment * shares * spin + entropies * entropy
+def equilibrium_state(field: Magnetic, temperature: Scalar, spins: Scalar, moment: Scalar,
+                      heat_capacity: Scalar, reference: Scalar) -> State:
+    """Spin-half magnetization saturation and logarithmic lattice entropy determine the extensive equilibrium state
+    (`[...] State-`) for `spins` (`[...] Scalar+, extent`) at `field` (`[...] Magnetic+, field`) and `temperature`
+    (`[...] Scalar+, temperature`)."""
+    shares = (moment * (field & spin) / (boltzmann * temperature)).tanh()     # [...] Scalar+
+    entropies = spins * (boltzmann * spin_entropy(shares) + heat_capacity * (temperature / reference).log())   # [...] Scalar+, boltzmann*extent
+    return (spins * moment) * shares * spin + entropies * entropy
 
 
-def drawn_spins(states: State, draws: Scalar, moment: float) -> Spin:
-    """Thresholding fixed uniform `draws` (`Scalar+[V]`) against the aligned population fraction of `states`
+def drawn_spins(states: State, spins: Scalar, draws: Scalar, moment: Scalar) -> Spin:
+    """Thresholding fixed uniform `draws` (`Scalar+[V]`) against the aligned population fraction of extensive `states`
     (`State-[V]`) assigns one two-level spin (`Spin-[V]`) per vertex that flips smoothly as magnetization changes."""
-    shares = (magnet_plane & states) / moment                                 # Scalar+[V]
+    shares = (magnet_plane & states) / (spins * moment)                       # Scalar+[V]
     is_aligned = draws < (1 + shares) / 2
     return moment * where(is_aligned, spin, -spin)
 
 
-def corner_fields(bath_temperature: float, load_temperature: float, highest_field: float, lowest_field: float,
-                  moment: float, heat_capacity: float, reference: float, n_halvings: int) -> Magnetic:
+def corner_fields(bath_temperature: Scalar, load_temperature: Scalar, highest_field: Scalar,
+                  lowest_field: Scalar, moment: Scalar, heat_capacity: Scalar,
+                  reference: Scalar, n_halvings: int) -> Magnetic:
     """Adiabatic entropy conservation between `bath_temperature` and `load_temperature` determines the four corner
-    magnetic fields (`[4] Magnetic+`) of the ideal rectangular refrigeration cycle."""
-    held_fields = stack((highest_field * magnet_plane, lowest_field * magnet_plane))   # [2] Magnetic+
-    held_entropies = mv.s & equilibrium_state(held_fields, mv.scalar([[bath_temperature], [load_temperature]]), moment,
-                                              heat_capacity, reference)       # [2] Scalar+
+    magnetic fields (`[4] Magnetic+, field`) of the ideal rectangular refrigeration cycle."""
+    held_fields = stack((highest_field * magnet_plane, lowest_field * magnet_plane))   # [2] Magnetic+, field
+    held_entropies = mv.s & equilibrium_state(held_fields, stack((bath_temperature, load_temperature)), one_spin,
+                                              moment, heat_capacity, reference)        # [2] Scalar+, boltzmann*extent
     # Adiabatic legs preserve total entropy, so the spin share absorbs the lattice entropy shift to the other bath.
-    target_temperatures = mv.scalar([[load_temperature], [bath_temperature]])   # [2] Scalar+
-    corner_shares = shares_at_entropy(held_entropies - heat_capacity * (target_temperatures / reference).log(),
-                                      n_halvings)                             # [2] Scalar+
-    corner_potentials = potentials(moment * corner_shares * spin + held_entropies * entropy, moment, heat_capacity,
-                                   reference)                                 # [2] Potential+
-    cooled_field, warmed_field = (corner_potentials & spin) * magnet_plane    # [] Magnetic+, Magnetic+
+    target_temperatures = stack((load_temperature, bath_temperature))                  # [2] Scalar+, temperature
+    corner_shares = shares_at_entropy(
+        (held_entropies - one_spin * heat_capacity * (target_temperatures / reference).log()) / (one_spin * boltzmann),
+        n_halvings)                                                                    # [2] Scalar+
+    corner_potentials = potentials((one_spin * moment) * corner_shares * spin + held_entropies * entropy, one_spin,
+                                   moment, heat_capacity, reference)                   # [2] Potential+, field | temperature
+    cooled_field, warmed_field = (corner_potentials & spin) * magnet_plane             # [] Magnetic+, field
     return stack((warmed_field, held_fields[0], cooled_field, held_fields[1]))
 
 
 def magnet_fields(corner_fields: Magnetic, from_corners: np.ndarray, to_corners: np.ndarray,
                   phase_progress: np.ndarray) -> Magnetic:
     """Logarithmic interpolation across `phase_progress` between `from_corners` and `to_corners` of `corner_fields`
-    (`[4] Magnetic+`) gives the applied magnetic field (`[...] Magnetic+`) at each step."""
-    log_strengths = (corner_fields & spin).log()                              # [4] Scalar+
-    return (log_strengths[from_corners] * (1 - phase_progress) + log_strengths[to_corners] * phase_progress).exp() * magnet_plane
+    (`[4] Magnetic+, field`) gives the applied magnetic field (`[...] Magnetic+, field`) at each step."""
+    start, end = corner_fields[from_corners], corner_fields[to_corners]       # [n_steps] Magnetic+, field
+    return start * ((end / start).log() * phase_progress).exp()
 
 
 def triangles(topology: Topology, vertices: Point) -> tuple[Scalar, Plane]:
-    """Joining opposite triangle corners across `vertices` (`Point-[V]`) yields triangle areas (`Scalar+[F]`) and
-    spatial simplex gradients (`[3] Plane+[F]`) on `topology`."""
-    corners = topology.incidence[2, 0] * vertices                             # [3] Point-[F]
-    opposite_vertices = topology.off[2, 0] * vertices                         # [2, 3] Point-[F]
+    """Joining opposite triangle corners across `vertices` (`Point-[V], 1 | length`) yields triangle areas (`Scalar+[F], length^2`) and spatial
+    simplex gradients (`[3] Plane+[F], 1/length`) on `topology`."""
+    corners = topology.incidence[2, 0] * vertices                             # [3] Point-[F], 1 | length
+    opposite_vertices = topology.off[2, 0] * vertices                         # [2, 3] Point-[F], 1 | length
     # Joining the opposite side with time and entropy and normalizing at the corner yields the affine plane whose
     # spatial projection is the corner's simplex gradient.
     sides = opposite_vertices[0] & opposite_vertices[1]                       # [3] Antibivector-[F]
-    gradients = ((sides & time & entropy) / (sides & time & entropy & corners)).cast(Plane)   # [3] Plane+[F]
-    double_areas = corners[0] & corners[1] & corners[2] & time & entropy      # Antiscalar-[F]
+    gradients = ((sides & time & entropy) / (sides & time & entropy & corners)).cast(Plane)   # [3] Plane+[F], 1/length
+    double_areas = corners[0] & corners[1] & corners[2] & time & entropy      # Antiscalar-[F], length^2
     return double_areas.norm() / 2, gradients
 
 
-def conduction(topology: Topology, areas: Scalar, gradients: Plane, conductivity: float) -> SparseExtensor:
-    """Pulling isotropic `conductivity` on triangle `areas` (`Scalar+[F]`) back through the adjugate of `gradients`
-    (`[3] Plane+[F]`) assembles the vertex heat-conduction map (`(Antiscalar- <- Scalar+)[V <- V]`)."""
-    gradient = (spdiag(gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar   # (Plane+ <- Scalar+)[F <- V]
+def conduction(topology: Topology, areas: Scalar, gradients: Plane, conductivity: Scalar) -> SparseExtensor:
+    """Pulling isotropic `conductivity` on triangle `areas` (`Scalar+[F], length^2`) back through the adjugate of `gradients`
+    (`[3] Plane+[F], 1/length`) assembles the vertex heat-conduction map (`(Antiscalar- <- Scalar+)[V <- V]`)."""
+    gradient = (spdiag(gradients) * topology.incidence[2, 0]).sum(axis=0) * Scalar   # (Plane+ <- Scalar+)[F <- V], 1/length
     medium = areas * conductivity * (crystal_axes * (Plane & crystal_axes)).sum(axis=0)   # (Point- <- Plane+)[F]
     return gradient.adjugate()(medium(gradient))
 
 
-def step(dual_areas: Scalar, lattice_conduction: SparseExtensor, states: State, field: Magnetic, links: Scalar,
-         reservoirs: Scalar, moment: float, heat_capacity: float, reference: float, dt: float) -> State:
-    """An implicit heat-balance solve over `dt` advances `states` (`State-[V]`) on `dual_areas` (`Scalar+[V]`) under
-    applied `field` (`[] Magnetic+`), `lattice_conduction`, and reservoir `links` (`Scalar+[V]`)."""
-    salt_potentials = potentials(states, moment, heat_capacity, reference)    # Potential+[V]
-    temperatures = salt_potentials & entropy                                  # Scalar+[V]
-    # Per-vertex compliance maps field and temperature increments to state increments at held temperature or field.
-    compliance = stiffness(states, moment, heat_capacity, reference).batch().inverse().field()   # (State- <- Potential+)[V]
+def step(cell_spins: Scalar, lattice_conduction: SparseExtensor, states: State, field: Magnetic,
+         links: Scalar, reservoirs: Scalar, moment: Scalar, heat_capacity: Scalar,
+         reference: Scalar, dt: Scalar) -> State:
+    """An implicit heat-balance solve over `dt` advances extensive dual-cell `states` (`State-[V]`) for
+    `cell_spins` (`Scalar+[V], extent`) under applied `field` (`[] Magnetic+, field`), `lattice_conduction`, and reservoir
+    `links` (`Scalar+[V], boltzmann*extent/time`)."""
+    salt_potentials = potentials(states, cell_spins, moment, heat_capacity, reference)   # Potential+[V], field | temperature
+    temperatures = salt_potentials & entropy                                  # Scalar+[V], temperature
+    # Per-vertex compliance maps field and temperature increments to extensive state increments at held temperature or field.
+    compliance = stiffness(states, cell_spins, moment, heat_capacity, reference).batch().inverse().field()   # (State- <- Potential+)[V]
     field_response = compliance(magnet_plane)                                 # State-[V]
     thermal_response = compliance(mv.s)                                       # State-[V]
     # Magnetizing at fixed temperature expels spin entropy and releases magnetocaloric heat into the dual cells.
-    field_shortfall = (field - salt_potentials) & spin                        # Scalar+[V]
-    cell_capacities = dual_areas * temperatures * (mv.s & thermal_response)   # Scalar+[V]
-    magnetocaloric_heat = dual_areas * temperatures * (mv.s & field_response) * field_shortfall   # Scalar+[V]
+    field_shortfall = (field - salt_potentials) & spin                        # Scalar+[V], field
+    cell_capacities = temperatures * (mv.s & thermal_response)                # Scalar+[V], boltzmann*extent
+    magnetocaloric_heat = temperatures * (mv.s & field_response) * field_shortfall   # Scalar+[V], boltzmann*extent*temperature
     # Implicit heat balance equates dual-cell warming to reservoir inflow and conduction minus isothermal heat intake.
     reservoir_coupling = spdiag(links * heat * Scalar)                        # (Antiscalar- <- Scalar+)[V <- V]
     heat_balance = spdiag(cell_capacities * heat * Scalar) + dt * (lattice_conduction + reservoir_coupling)   # (Antiscalar- <- Scalar+)[V <- V]
     net_heat = dt * (reservoir_coupling(reservoirs - temperatures) - lattice_conduction(temperatures)) - magnetocaloric_heat * heat   # Antiscalar-[V]
-    temperature_step = heat_balance.solve(net_heat)                           # Scalar+[V]
+    temperature_step = heat_balance.solve(net_heat)                           # Scalar+[V], temperature
     return states + field_shortfall * field_response + temperature_step * thermal_response
 
 
-def run(dual_areas: Scalar, lattice_conduction: SparseExtensor, states: State, fields: Magnetic, links: Scalar,
-        reservoirs: Scalar, durations: np.ndarray, steps_per_frame: np.ndarray, moment: float, heat_capacity: float,
-        reference: float) -> Iterator[tuple[State, Potential, Magnetic, Scalar]]:
-    """Yields vertex states (`State-[V]`), potentials (`Potential+[V]`), applied field (`[] Magnetic+`), and switch
-    conductances (`Scalar+[V]`) initially and after each frame's `steps_per_frame` implicit steps."""
-    yield states, potentials(states, moment, heat_capacity, reference), fields[0], links[0]
+def run(cell_spins: Scalar, lattice_conduction: SparseExtensor, states: State, fields: Magnetic,
+        links: Scalar, reservoirs: Scalar, durations: Scalar, steps_per_frame: np.ndarray,
+        moment: Scalar, heat_capacity: Scalar, reference: Scalar
+        ) -> Iterator[tuple[State, Potential, Magnetic, Scalar]]:
+    """Yields extensive vertex states (`State-[V]`), intensive potentials (`Potential+[V], field | temperature`), applied
+    field (`[] Magnetic+, field`), and switch conductances (`Scalar+[V], boltzmann*extent/time`) initially and after each frame's
+    `steps_per_frame` implicit steps."""
+    yield states, potentials(states, cell_spins, moment, heat_capacity, reference), fields[0], links[0]
     frame_ends = np.cumsum(steps_per_frame)
     for start, end in zip(frame_ends - steps_per_frame, frame_ends):
         for index in range(start, end):
-            states = step(dual_areas, lattice_conduction, states, fields[index], links[index], reservoirs, moment,
+            states = step(cell_spins, lattice_conduction, states, fields[index], links[index], reservoirs, moment,
                           heat_capacity, reference, durations[index])
-        yield states, potentials(states, moment, heat_capacity, reference), fields[end - 1], links[end - 1]
+        yield states, potentials(states, cell_spins, moment, heat_capacity, reference), fields[end - 1], links[end - 1]
 
 
 # --- plumbing -------------------------------------------------------------------------

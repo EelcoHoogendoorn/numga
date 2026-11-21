@@ -21,6 +21,12 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from numga.units import (
+    UnitGrid,
+    embed_and_merge,
+    remap_grid_subspaces,
+)
+
 from .errors import GATypeError
 from .orientation import Orientation
 from .propagation import (
@@ -48,23 +54,26 @@ Laws = Callable
 
 @dataclass(frozen=True, eq=False)
 class OperationRule:
-    """One operation's static type rule pairs an axis-orientation rule with a trait-propagation law,
+    """One operation's static type rule pairs an axis-orientation rule with trait and unit laws,
     comparing and hashing by object identity."""
 
     name: str
     orientations: Orientations
     laws: Laws = no_laws
+    unit: Callable = lambda _operands, axes: UnitGrid.unchecked(tuple(len(space) for space in axes))
 
     def result(self, operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> GAType:
-        """Applying this rule's orientation and trait laws to output-first axes produces the cached
-        result `GAType`."""
+        """Applying this rule's orientation, trait, and unit laws to output-first axes produces the
+        cached result `GAType`."""
         return _result(self, operands, axes)
 
 
 @lru_cache(maxsize=None)
 def _result(rule: OperationRule, operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> GAType:
     algebra = (operands[0] if operands else axes[0]).algebra
-    return algebra.gatype.oriented(axes, rule.orientations(operands), rule.laws(operands, axes))
+    return algebra.gatype.oriented(
+        axes, rule.orientations(operands), rule.laws(operands, axes), units=rule.unit(operands, axes),
+    )
 
 
 # --- orientation rules ----------------------------------------------------------------
@@ -105,26 +114,49 @@ def equal(operands: tuple[GAType, ...]) -> tuple[Orientation, ...]:
     return first.orientations
 
 
+def kept_unit(operands: tuple[GAType, ...], _axes: tuple[SubSpace, ...]) -> UnitGrid:
+    """Unary coefficient transforms preserve their operand's per-entry physical units."""
+    return operands[0].units
+
+
+def transpose_unit(operands: tuple[GAType, ...], _axes: tuple[SubSpace, ...]) -> UnitGrid:
+    """Transposing a map reverses its `UnitGrid` axis order alongside its subspaces."""
+    return operands[0].units.reverse_axes()
+
+
+def squeeze_unit(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> UnitGrid:
+    """Squeezing zero output blades restricts axis 0 of the `UnitGrid` to the surviving blades."""
+    return remap_grid_subspaces(operands[0].units, operands[0].subspaces, axes)
+
+
+def same_unit(operands: tuple[GAType, ...], axes: tuple[SubSpace, ...]) -> UnitGrid:
+    """Coefficient-wise sums and stacks embed operands onto `axes` and require matching units on
+    every shared nonzero blade."""
+    return embed_and_merge(operands, axes, "combine")
+
+
 # --- rules -----------------------------------------------------------------------------
 GEOMETRIC = OperationRule("geometric product", multiplied, geometric_product_laws)
 MULTIPLIED = OperationRule("product", multiplied)
 WEDGE = OperationRule("wedge", multiplied, blade_laws)
 REGRESSIVE = OperationRule("regressive product", through_volume, blade_laws)
 TRANSFORM = OperationRule("transform", carries_passenger, transform_laws)
-TRANSPOSE = OperationRule("transpose", reversed_axes, transpose_laws)
-ADD = OperationRule("add", equal)
-STACK = OperationRule("stack", equal, shared_laws)
-NEGATE = OperationRule("negate", kept, negation_laws)
-SCALE = OperationRule("scale", kept)
-SQUEEZE = OperationRule("squeeze", kept)
-REVERSE = OperationRule("reverse", kept, unless_identity("reverse", conjugation_laws(ReverseProduct)))
+TRANSPOSE = OperationRule("transpose", reversed_axes, transpose_laws, transpose_unit)
+ADD = OperationRule("add", equal, no_laws, same_unit)
+STACK = OperationRule("stack", equal, shared_laws, same_unit)
+NEGATE = OperationRule("negate", kept, negation_laws, kept_unit)
+SCALE = OperationRule("scale", kept, no_laws, kept_unit)
+SQUEEZE = OperationRule("squeeze", kept, no_laws, squeeze_unit)
+REVERSE = OperationRule("reverse", kept, unless_identity("reverse", conjugation_laws(ReverseProduct)), kept_unit)
 CLIFFORD_CONJUGATE = OperationRule(
-    "clifford conjugate", kept, unless_identity("clifford_conjugate", conjugation_laws(CliffordConjugateProduct)),
+    "clifford conjugate", kept, unless_identity("clifford_conjugate", conjugation_laws(CliffordConjugateProduct)), kept_unit,
 )
-INVOLUTE = OperationRule("involute", kept, unless_identity("involute", negation_laws))
-SCALAR_NEGATION = OperationRule("scalar negation", kept, unless_identity("scalar_negation", coefficient_orthogonality_laws))
+INVOLUTE = OperationRule("involute", kept, unless_identity("involute", negation_laws), kept_unit)
+SCALAR_NEGATION = OperationRule(
+    "scalar negation", kept, unless_identity("scalar_negation", coefficient_orthogonality_laws), kept_unit,
+)
 PSEUDOSCALAR_NEGATION = OperationRule(
-    "pseudoscalar negation", kept, unless_identity("pseudoscalar_negation", coefficient_orthogonality_laws),
+    "pseudoscalar negation", kept, unless_identity("pseudoscalar_negation", coefficient_orthogonality_laws), kept_unit,
 )
 # Grade transforms keyed by the names used on the operator factory.
 GRADE_TRANSFORMS = {

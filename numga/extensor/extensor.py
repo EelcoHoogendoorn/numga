@@ -50,6 +50,7 @@ from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_
 from numga.extension import ExtensionMethod
 from numga.gatype import GAType, GATypeError, Orientation, Trait, UnorientedSubspace, rules
 from numga.subspace import SubSpace
+from numga.units import Unit, UnitGrid, merge_grids, remap_grid_subspaces
 
 from . import operands
 
@@ -192,6 +193,22 @@ class Extensor:
     @property
     def gatype(self) -> GAType:
         return self._gatype
+
+    @property
+    def has_units(self) -> bool:
+        """Whether this extensor carries checked physical units (false when unchecked)."""
+        return self._gatype.has_units
+
+    @property
+    def unit(self) -> Unit:
+        """Single physical unit shared by every nonzero entry; raises `GATypeError` if unchecked,
+        structurally zero, or non-uniform."""
+        return self._gatype.unit
+
+    @property
+    def units(self) -> UnitGrid:
+        """Per-entry physical unit grid carried on this extensor's `GAType`."""
+        return self._gatype.units
 
     @property
     def kernel(self):
@@ -499,15 +516,26 @@ class Extensor:
         """Output blades are projected or zero-embedded into `target` without transferring algebraic
         traits, since matching a rotor's layout does not establish the rotor constraint."""
         target_subspace = target.output_subspace if isinstance(target, GAType) else target
-        if isinstance(target, GAType) and target.orientation is not self.gatype.orientation:
-            raise GATypeError(
-                f"a cast changes layout, not orientation: {self.gatype.signature} cannot become {target.signature}"
-            )
+        merged_units = None
+        if isinstance(target, GAType):
+            if target.orientation is not self.gatype.orientation:
+                raise GATypeError(
+                    f"a cast changes layout, not orientation: {self.gatype.signature} cannot become {target.signature}"
+                )
+            if self.has_units and target.has_units and self.arity == target.arity:
+                projected = remap_grid_subspaces(self.units, self.axes, (target_subspace,) + target.input_subspaces)
+                merged_units = merge_grids((projected, target.units), (target_subspace,) + target.input_subspaces, "cast")
         if self.output_subspace is target_subspace:
-            return self
-        return self.algebra.operator.cast(
-            self.gatype.derive.output, target_subspace,
-        ).bind({0: self})
+            result = self
+        else:
+            result = self.algebra.operator.cast(
+                self.gatype.derive.output, target_subspace,
+            ).bind({0: self})
+        if merged_units is not None and result.units != merged_units:
+            return type(self)._from_prepared_kernel(
+                result.context, result.gatype.derive.unit(merged_units), result._kernel,
+            )
+        return result
 
     @property
     def select(self) -> SelectNamespace:
@@ -570,7 +598,13 @@ class Extensor:
         unproven = [trait for trait in gatype.traits if trait not in embedded.gatype.traits]
         if unproven:
             raise GATypeError(f"{self.gatype} does not carry {unproven}, which {gatype} states; retyped only forgets facts")
-        return type(self)._from_prepared_kernel(self.context, gatype, embedded._kernel)
+        if not gatype.has_units:
+            result_units = embedded.gatype.units
+        elif not embedded.gatype.has_units:
+            result_units = UnitGrid.unchecked(tuple(len(space) for space in gatype.subspaces))
+        else:
+            result_units = merge_grids((embedded.gatype.units, gatype.units), gatype.subspaces, "retyped")
+        return type(self)._from_prepared_kernel(self.context, gatype.derive.unit(result_units), embedded._kernel)
 
     def _symmetric_product(
         self, transform: str, *, scalar_only: bool = False,
@@ -844,13 +878,24 @@ class _AtUpdate:
             len(target.structural_shape),
         )
         if isinstance(value, Extensor):
-            target._require_compatible(value)
+            if not target.context.is_compatible_with(value.context):
+                raise ValueError("Extensor contexts are incompatible")
+            if (
+                target.gatype.subspaces != value.gatype.subspaces
+                or target.gatype.orientations != value.gatype.orientations
+                or target.gatype.fields != value.gatype.fields
+            ):
+                raise GATypeError("Extensor GATypes differ")
+            merged_units = merge_grids((target.units, value.units), target.axes, "at")
             replacement = value._kernel
         else:
+            merged_units = target.units
             replacement = value
         # Drop explicit traits because elementwise updates need not preserve whole-value invariants.
         kernel = update(target._kernel, kernel_index, replacement)
-        return type(target)._from_prepared_kernel(target.context, target.gatype.derive.structural, kernel)
+        return type(target)._from_prepared_kernel(
+            target.context, target.gatype.derive.structural.derive.unit(merged_units), kernel,
+        )
 
 
 def _stacked_type(values: tuple[Extensor, ...]) -> GAType:

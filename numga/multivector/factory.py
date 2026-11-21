@@ -27,12 +27,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import lru_cache
 from inspect import Signature, signature
+from numbers import Number
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from numga.gatype import GAType, Orientation, ROTOR_TRAITS, ReverseProductZero, TraitSet, UnorientedSubspace
 from numga.subspace import SubSpace
+from numga.units import UnitGrid, dim
 
 if TYPE_CHECKING:
     from numga.algebra import Algebra
@@ -70,12 +72,28 @@ class MultivectorFactory:
     def blade(self, mask: int) -> Extensor:
         """Constructing from canonical blade `mask` returns the unit extrinsic basis blade on its
         single-blade subspace."""
-        return self(self.algebra.gatype(self.algebra.subspace.blade(mask), orientation=Orientation.extrinsic), [1.0])
+        unit = dim.none if (self.context.units or self.context.is_exact) else None
+        return self(self.algebra.gatype(self.algebra.subspace.blade(mask), orientation=Orientation.extrinsic, unit=unit), [1.0])
 
     def basis(self) -> Extensor:
         """Stacking the algebra's unit basis vectors along a leading batch axis allows unpacking as
         `x, y, z = mv.basis()`."""
         return self.vector(np.eye(len(self.algebra.subspace.vector())))
+
+    def zeros(self, gatype: GAType, shape: int | tuple[int, ...] = ()) -> Extensor:
+        """Constructing a zero-filled batch of `gatype` without attaching `ReverseProductZero`
+        gives a typed carry or accumulator of the exact requested type."""
+        if isinstance(gatype, (str, SubSpace)):
+            raise UnorientedSubspace()
+        if not isinstance(gatype, GAType):
+            raise TypeError("zeros requires a GAType")
+        if isinstance(shape, int):
+            shape = (shape,)
+        if not gatype.has_units and self.context.units:
+            gatype = gatype.derive.unit(UnitGrid.zero(tuple(len(space) for space in gatype.subspaces)))
+        return self.context.extensor(
+            gatype, self.context.xp.zeros(shape + gatype.structural_shape, dtype=self.dtype),
+        )
 
     def __call__(
         self,
@@ -102,7 +120,23 @@ class MultivectorFactory:
                     "omitted coefficients produce a projected unit whose known "
                     f"facts contradict {gatype.traits!r}"
                 ) from error
-            gatype = self.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, complete_traits)
+            if not gatype.has_units and (self.context.units or self.context.is_exact):
+                entries = {
+                    i: dim.none
+                    for i, mask in enumerate(gatype.output_subspace.masks)
+                    if mask == 0
+                }
+                projected_units = UnitGrid.from_entries((len(gatype.output_subspace),), entries)
+            else:
+                projected_units = gatype.units
+            gatype = self.algebra.gatype.oriented(
+                gatype.subspaces, gatype.orientations, complete_traits, units=projected_units,
+            )
+        elif gatype.is_scalar:
+            if isinstance(coefficients, Number):
+                coefficients = (coefficients,)
+            elif getattr(coefficients, "ndim", None) == 0:
+                coefficients = coefficients[None]
         return self.context.extensor(gatype, coefficients)
 
     def __getattr__(self, name: str) -> Callable | Extensor:
@@ -120,17 +154,19 @@ class MultivectorFactory:
             gatype_constructor = getattr(self.algebra.gatype, name)
             constructor_signature = signature(gatype_constructor)
 
-            if not constructor_signature.parameters:
+            if all(parameter.name == "unit" for parameter in constructor_signature.parameters.values()):
                 gatype = gatype_constructor()
 
-                def construct_value(coefficients: object = _MISSING) -> Extensor:
-                    return self(gatype, coefficients)
+                def construct_value(coefficients: object = _MISSING, *, unit: object = None) -> Extensor:
+                    target = gatype if unit is None else gatype.derive.unit(unit)
+                    return self(target, coefficients)
 
                 return construct_value
 
             def construct(
                 *type_and_coefficients: object,
                 coefficients: object = _MISSING,
+                unit: object = None,
                 **type_kwargs: object,
             ) -> Extensor:
                 if coefficients is _MISSING:
@@ -142,7 +178,7 @@ class MultivectorFactory:
                 else:
                     type_args = type_and_coefficients
                     value = coefficients
-                gatype = gatype_constructor(*type_args, **type_kwargs)
+                gatype = gatype_constructor(*type_args, unit=unit, **type_kwargs)
                 return self(gatype, value)
 
             construct.__name__ = name
@@ -158,7 +194,8 @@ class MultivectorFactory:
 
         # Basis blades represent products of basis planes and take extrinsic orientation.
         subspace = self.algebra.subspace.from_layout((oriented.mask,), (oriented.sign,))
-        return self(self.algebra.gatype(subspace, orientation=Orientation.extrinsic), [1.0])
+        unit = dim.none if (self.context.units or self.context.is_exact) else None
+        return self(self.algebra.gatype(subspace, orientation=Orientation.extrinsic, unit=unit), [1.0])
 
     def __dir__(self) -> list[str]:
         return sorted(

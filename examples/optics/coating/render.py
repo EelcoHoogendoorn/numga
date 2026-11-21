@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
-from numga import stack
+from numga import dim, stack
 from examples.optics.coating import core
 from examples.util import charts
 from numga.topology import Topology
@@ -27,7 +27,8 @@ sm = solids.mv
 pulse_elevation, pulse_azimuth = np.radians(6.0), np.radians(30.0)
 pulse_margin, n_pulse_pixels = 0.02, 600
 # Display length in nm per unit electric field, trimmed line-end shares, and stroke widths in pixels.
-field_length = 3000.0
+field_scale = core.real.scalar(3000.0, unit=dim.length)
+field_length = field_scale / core.electric_dim
 trim_start, trim_end = 0.08, 0.12
 path_width, spoke_width, optic_width, line_width = 2.25, 1.1, 1.5, 1.5
 # Spoke opacity factor, minimum spoke strength, optic-axis half-length, slab half-width in field units, and colours.
@@ -48,25 +49,27 @@ def quantity_axes(ax: plt.Axes) -> None:
 
 
 @charts.style()
-def spectra_figure(wavelengths: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+def spectra_figure(wavelengths: core.Scalar, reflectance: core.Scalar) -> plt.Figure:
     """Reflected power percentages across `wavelengths` (`[n_wavelengths]`) plot one curve per coating in `reflectance` (`[3, n_wavelengths] Scalar+`)."""
+    wavelength_nm = (wavelengths / dim.length).to_array()
     figure, ax = charts.subplots(*single_size, layout="constrained")
     ax.set_prop_cycle(color=case_colours)
     for spectrum in reflectance.real().to_array():
-        ax.plot(wavelengths, spectrum * 100)
-    ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, None),
+        ax.plot(wavelength_nm, spectrum * 100)
+    ax.set(xlim=(wavelength_nm[0], wavelength_nm[-1]), ylim=(0, None),
            xlabel="wavelength (nm)", ylabel="reflectance (%)")
     quantity_axes(ax)
     return figure
 
 
 @charts.style()
-def angular_figure(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+def angular_figure(wavelengths: core.Scalar, angles: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
     """Two side-by-side heatmaps display circular-polarization `reflectance` (`[2, n_angles, n_wavelengths] Scalar+`) across `wavelengths` and incidence `angles`."""
+    wavelength_nm = (wavelengths / dim.length).to_array()
     figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                      layout="constrained")
     for ax, spectrum in zip(panels, reflectance.real().to_array()):
-        ax.pcolormesh(wavelengths, np.degrees(angles), spectrum,
+        ax.pcolormesh(wavelength_nm, np.degrees(angles), spectrum,
                       shading="nearest", cmap="magma", vmin=0, vmax=1, rasterized=True)
         ax.set(xlabel="wavelength (nm)")
         quantity_axes(ax)
@@ -75,18 +78,18 @@ def angular_figure(wavelengths: np.ndarray, angles: np.ndarray, reflectance: cor
 
 
 @charts.style()
-def internal_field_figure(depths: np.ndarray, fields: core.Field) -> plt.Figure:
+def internal_field_figure(depths: core.Scalar, fields: core.Field) -> plt.Figure:
     """Signed `x`-component waveforms of `fields` (`[2, n_layers, n_samples] Field+`) across `depths` (`[n_layers, n_samples]`) render over two optical cycles."""
     n_cycles = 2
     n_samples_per_cycle = 80
     times = np.linspace(0, n_cycles, n_cycles * n_samples_per_cycle + 1)
     phase = 2 * np.pi * times
-    flat_depths = depths.reshape(-1)
+    flat_depths = (depths / dim.length).to_array().reshape(-1)
     mv = fields.real().context.multivector
     # Worldsheet plane swept by x along the observer's time direction.
     along_x = mv.x.dual() & -mv.t.dual()                                          # Excitation-
     cycle_fields = (fields.reshape(fields.shape[0], -1)[:, None] * np.exp(1j * phase)[:, None]).real()  # [...] Field+
-    waves = (cycle_fields & along_x).to_array()
+    waves = ((cycle_fields & along_x) / core.electric_dim).to_array()
     limit = np.max(np.abs(waves))
     figure, panels = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                      layout="constrained")
@@ -101,16 +104,17 @@ def internal_field_figure(depths: np.ndarray, fields: core.Field) -> plt.Figure:
 
 
 @charts.style()
-def handedness_figure(wavelengths: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+def handedness_figure(wavelengths: core.Scalar, reflectance: core.Scalar) -> plt.Figure:
     """Side-by-side panels plot circular-polarization `reflectance` (`[2, 2, n_wavelengths] Scalar+`) across `wavelengths` for opposite crystal twists."""
+    wavelength_nm = (wavelengths / dim.length).to_array()
     figure, axes = charts.subplots(*double_size, ncols=2, sharex=True, sharey=True,
                                    layout="constrained")
     values = reflectance.real().to_array()
     for twist_index, ax in enumerate(axes):
         ax.set_prop_cycle(color=case_colours)
         for spectrum in values[:, twist_index]:
-            ax.plot(wavelengths, spectrum * 100)
-        ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, 100),
+            ax.plot(wavelength_nm, spectrum * 100)
+        ax.set(xlim=(wavelength_nm[0], wavelength_nm[-1]), ylim=(0, 100),
                xlabel="wavelength (nm)")
         quantity_axes(ax)
     axes[0].set_ylabel("reflectance (%)")
@@ -118,13 +122,14 @@ def handedness_figure(wavelengths: np.ndarray, reflectance: core.Scalar) -> plt.
 
 
 @charts.style()
-def axion_figure(jumps: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
+def axion_figure(jumps: core.Scalar, reflectance: core.Scalar) -> plt.Figure:
     """Co-polarized, cross-polarized, and total `reflectance` (`[3, n_jumps] Scalar+`) plot as percentages across axion `jumps` (`[n_jumps]`)."""
+    jump_values = (jumps * core.Z_0).to_array()
     figure, ax = charts.subplots(*single_size, layout="constrained")
     ax.set_prop_cycle(color=case_colours)
     for channel in reflectance.real().to_array():
-        ax.plot(jumps, channel * 100)
-    ax.set(xlim=(jumps[0], jumps[-1]), ylim=(0, None), xticks=[0],
+        ax.plot(jump_values, channel * 100)
+    ax.set(xlim=(jump_values[0], jump_values[-1]), ylim=(0, None), xticks=[0],
            xlabel="axion jump", ylabel="reflectance (%)")
     quantity_axes(ax)
     return figure
@@ -147,19 +152,20 @@ def pulse_animation(
     across = stack((mv.x.dual(), mv.y.dual()))                                    # [2] Direction-
     swept = across & -mv.t.dual()                                                 # [2] Excitation-
     rod_middles = slab[::3]                                                       # [...] Direction-
-    rod_reach = directors[::3] * (optic_half_length * field_length)               # [...] Direction-
+    rod_reach = directors[::3] * (optic_half_length * field_scale)                # [...] Direction-
 
     length = nodes[-1] - nodes[0]                                                 # [] Direction-
     frame_ends = stack((nodes[0] + length * trim_start, nodes[-1] - length * trim_end))  # [2] Direction-
-    half_width = slab_half_width * field_length
+    half_width = slab_half_width * field_scale
     corners = frame_ends[:, None] + (across * (half_width * square_corners)).sum(axis=-1)  # [2, 4] Direction-
     scene_corners = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice(corners)))
     stations = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice(nodes)))
     view = solids.view([scene_corners], 0.0, pulse_elevation, pulse_azimuth, pulse_margin, n_pulse_pixels)
     line = solids.rods(stations[0], stations[-1], line_width / 2 * view.pixel)[None]
     middle = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice((slab[0] + slab[-1]) / 2)))
-    slab_half_length = float(((slab[-1] - slab[0]).antinorm() / 2).to_array())
-    half_extents = np.array([half_width, half_width, slab_half_length])
+    slab_half_length = float(((slab[-1] - slab[0]).antinorm() / 2 / dim.length).to_array())
+    half_width_nm = float((half_width / dim.length).to_array())
+    half_extents = np.array([half_width_nm, half_width_nm, slab_half_length])
     box = solids.boxes(solids.translator(middle - solids.origin) * upright_turn, half_extents)[None]
     rod_centres = solids.origin + (upright_turn >> solids.context.include_from_algebra(space_slice(rod_middles)))
     rod_offsets = upright_turn >> solids.context.include_from_algebra(space_slice(rod_reach))
@@ -172,9 +178,9 @@ def pulse_animation(
         directions = electric_direction(planes)                                   # [...] Direction-
         offsets = upright_turn >> solids.context.include_from_algebra(field_length * directions)
         tips = stations + offsets                                                 # [...] Point-
-        along_x, along_y = (planes[..., None] & swept).to_array().T
+        along_x, along_y = ((planes[..., None] & swept) / core.electric_dim).to_array().T
         hue = (np.arctan2(along_y, along_x) / (2 * np.pi)) % 1
-        strength = np.clip(directions.antinorm().to_array() * 4, 0, 1)
+        strength = np.clip((directions.antinorm() / core.electric_dim).to_array() * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
         spoke_indices = np.flatnonzero(strength > spoke_floor)[::2]
         n_spokes = len(spoke_indices)

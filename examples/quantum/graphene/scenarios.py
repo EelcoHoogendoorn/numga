@@ -10,49 +10,49 @@ from functools import partial
 
 import numpy as np
 
-from numga import stack
+from numga import dim, stack
 from examples.quantum.graphene import core
 
 mv = core.mv
-# The slope of the cones, in eV per inverse carbon-carbon distance.
-cone_slope = 1.5 * core.hopping
+# The slope of the cones, in eV per inverse carbon-carbon distance (`energy * length`).
+cone_slope = 1.5 * core.hopping * core.bond_length
 # The bands: the half width of the square of momenta that holds the Brillouin zone, its samples each way,
 # and no gap.
-zone_extent = 4.5
+zone_extent = mv.scalar(4.5, unit=1 / dim.length)
 n_zone_samples = 121
-gapless = np.array(0.0)
+gapless = mv.scalar(0.0, unit=dim.energy)
 # The pseudospin about the valleys: the half width of the square about each, its samples each way, and the gap.
-valley_extent = 0.5
+valley_extent = mv.scalar(0.5, unit=1 / dim.length)
 n_valley_samples = 11
-texture_gap = np.array(0.3)
+texture_gap = mv.scalar(0.3, unit=dim.energy)
 # The Berry phase: the loops' radii in inverse carbon-carbon distances, the gaps in eV, and the steps around.
 n_radii = 30
-radii = np.linspace(0.01, 0.6, n_radii)
+radii = mv.scalar(np.linspace(0.01, 0.6, n_radii)[:, None], unit=1 / dim.length)
 n_gaps = 4
-gaps = np.array([0.0, 0.2, 0.5, 1.0])
+gaps = mv.scalar(np.array([0.0, 0.2, 0.5, 1.0])[:, None], unit=dim.energy)
 n_loop_steps = 400
 
 
 # --- math -----------------------------------------------------------------------------
-def zone_bands(extent: float, n_samples: int, gap: np.ndarray) -> tuple[core.Wavevector, core.Field, core.Scalar]:
+def zone_bands(extent: core.Scalar, n_samples: int, gap: core.Scalar) -> tuple[core.Wavevector, core.Field, core.Scalar]:
     """The pseudospin field and Hamiltonian eigenvalues fill a `[n_samples, n_samples]` momentum grid across the Brillouin zone."""
-    grid_axis = np.linspace(-extent, extent, n_samples)
-    kx, ky = np.meshgrid(grid_axis, grid_axis)
+    grid_axis = np.linspace(-1.0, 1.0, n_samples) * extent
+    kx, ky = grid_axis[None, :], grid_axis[:, None]
     momenta = mv.x * kx + mv.y * ky                                             # [n_samples, n_samples] Wavevector+
     field = core.pseudospin_field(momenta, gap)                                 # [n_samples, n_samples] Field+
     energies, _ = core.hamiltonian(field).eigh()                                # [n_samples, n_samples, 4] Scalar+
     return momenta, field, energies
 
 
-def valley_textures(extent: float, n_samples: int, gap: np.ndarray) -> tuple[core.Wavevector, core.Pseudospin]:
+def valley_textures(extent: core.Scalar, n_samples: int, gap: core.Scalar) -> tuple[core.Wavevector, core.Pseudospin]:
     """Upper-band pseudospins (`[2, n_samples, n_samples] Pseudospin-`) sample a momentum square around each valley."""
-    grid_axis = np.linspace(-extent, extent, n_samples)
-    kx, ky = np.meshgrid(grid_axis, grid_axis)
+    grid_axis = np.linspace(-1.0, 1.0, n_samples) * extent
+    kx, ky = grid_axis[None, :], grid_axis[:, None]
     offsets = mv.x * kx + mv.y * ky                                             # [n_samples, n_samples] Wavevector+
     return offsets, core.upper_pseudospins(offsets, gap)
 
 
-def loop_berry(loop_radii: np.ndarray, sublattice_gaps: np.ndarray, n_steps: int) -> tuple[core.Rotor, core.Pseudospin]:
+def loop_berry(loop_radii: core.Scalar, sublattice_gaps: core.Scalar, n_steps: int) -> tuple[core.Rotor, core.Pseudospin]:
     """Transports a pseudospin frame around momentum circles at both valleys, giving the loop holonomies and starting pseudospins."""
     circle = core.momentum_circle(n_steps)                                      # [n_steps + 1] Wavevector+
     loops = core.valleys[:, None] + circle[:, None, None] * loop_radii          # [n_steps + 1, 2, ...] Wavevector+
@@ -80,8 +80,8 @@ def main() -> None:
     # vanishes at the valleys, where the cones meet.
     length = field.norm()                                                       # [n_zone_samples, n_zone_samples] Scalar+
     expected_energies = stack((-length, -length, length, length), axis=-1)      # [n_zone_samples, n_zone_samples, 4] Scalar+
-    assert ((energies - expected_energies).abs() < 1e-9).all()
-    assert (core.pseudospin_field(core.valleys, gapless).norm() < 1e-6).all()
+    assert ((energies - expected_energies).abs() < mv.scalar(1e-9, unit=dim.energy)).all()
+    assert (core.pseudospin_field(core.valleys, gapless).norm() < mv.scalar(1e-6, unit=dim.energy)).all()
     # The upper band's pseudospin points along the field.
     valley_field = core.pseudospin_field(core.valleys[:, None, None] + offsets, texture_gap)   # [2, n_valley_samples, n_valley_samples] Field+
     assert ((valley_directions - valley_field.normalized().dual()).antinorm() < 1e-9).all()
@@ -89,9 +89,9 @@ def main() -> None:
     # With one, a small loop's phase is that of a cone, pi times one less the gap over the field's length
     # there, in both valleys. The rotor's scalar part is the cosine of the phase; comparing one minus it
     # keeps small phases visible.
-    assert ((holonomies[gaps == 0.0].select[0] + 1).abs() < 1e-9).all()
-    cone_phases = np.pi * (1 - gaps / np.sqrt(gaps**2 + (cone_slope * radii[0]) ** 2))
-    expected_drop = 1 - np.cos(cone_phases)[:, None]
+    assert ((holonomies[gaps <= 0].select[0] + 1).abs() < 1e-9).all()
+    cone_phases = np.pi * (1 - gaps / (gaps.squared() + (cone_slope * radii[0]).squared()).square_root())
+    expected_drop = 1 - cone_phases.cos()[:, None]
     actual_drop = 1 - holonomies[:, :, 0].select[0]                             # [n_gaps, 2] Scalar+
     assert ((actual_drop - expected_drop).abs() <= 1e-2 * expected_drop).all()
 

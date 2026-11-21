@@ -30,6 +30,12 @@ from numga.extensor import Extensor
 from numga.extensions._linalg import _reading
 from numga.gatype import GAType, Orientation
 from numga.operator.kernel import SymbolicKernel
+from numga.units import contract_unit, contract_unnamed_unit, trace_unit, trace_unnamed_unit
+
+Extensor.trace.overload(1).set_unit(trace_unnamed_unit)
+Extensor.trace.overload(3).set_unit(trace_unit)
+Extensor.contract.overload(1).set_unit(contract_unnamed_unit)
+Extensor.contract.overload(3).set_unit(contract_unit)
 
 
 @Extensor.trace.register(lambda t: True)

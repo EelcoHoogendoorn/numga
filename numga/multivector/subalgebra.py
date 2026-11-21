@@ -73,10 +73,10 @@ def inclusion(source: GAType, target: GATypeFactory) -> Inclusion:
                 mask, _ = algebra.operator._volume_complement_inverse(mask)
             generators |= mask
     for generator, (name, square) in enumerate(zip(algebra.basis_names, algebra.signature)):
-        if generators >> generator & 1 and (
-                name not in larger.basis_names or larger.signature[larger.basis_names.index(name)] != square):
-            raise GATypeError(f"{algebra} is no subalgebra of {larger}: its generator {name} is not one of {larger}'s "
-                              f"with the same square")
+        if generators >> generator & 1:
+            if name not in larger.basis_names or larger.signature[larger.basis_names.index(name)] != square:
+                raise GATypeError(f"{algebra} is no subalgebra of {larger}: its generator {name} is not one of {larger}'s "
+                                  f"with the same square")
     axes, sources, signs = [], [], []
     for space, orientation in zip(source.subspaces, source.orientations):
         images = [_image(algebra, larger, mask, orientation) for mask in space.masks]
@@ -89,7 +89,12 @@ def inclusion(source: GAType, target: GATypeFactory) -> Inclusion:
         signs.append(tuple(images[i][1] * space.signs[i] * axis.signs[position[images[i][0]]] for i in order))
     # Extrinsic nullary inclusions preserve geometric products and therefore keep certified traits.
     keeps_traits = not source.arity and source.orientation is Orientation.extrinsic
-    gatype = target.oriented(axes, source.orientations, source.traits if keeps_traits else EMPTY_TRAITS, source.fields)
+    included_units = source.units
+    for axis, order in enumerate(sources):
+        included_units = included_units.take_axis(axis, order)
+    gatype = target.oriented(
+        axes, source.orientations, source.traits if keeps_traits else EMPTY_TRAITS, source.fields, units=included_units,
+    )
     return Inclusion(gatype, tuple(sources), tuple(signs))
 
 
@@ -114,4 +119,5 @@ def include_from_algebra(context: Context, extensor: Extensor) -> Extensor:
         kernel = xp.take(kernel, xp.asarray(sources, dtype=int), axis=axis - count) * signs
     if context.is_exact:
         kernel = SymbolicKernel(kernel)
-    return Extensor._from_prepared_kernel(context, plan.gatype, kernel)
+    gatype = plan.gatype if (context.is_exact or context.units) else plan.gatype.derive.unchecked
+    return Extensor._from_prepared_kernel(context, gatype, kernel)

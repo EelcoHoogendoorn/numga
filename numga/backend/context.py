@@ -50,15 +50,21 @@ if TYPE_CHECKING:
 class Context(ABC):
     """Subclasses bind one `Algebra` to a coefficient storage representation and contraction executor."""
 
-    __slots__ = ("_multivector_factory", "_execution", "_execute_bind", "_applications", "__weakref__")
+    __slots__ = (
+        "_multivector_factory", "_execution", "_execute_bind", "_applications",
+        "_units", "_unchecked", "_checked", "__weakref__",
+    )
 
-    def __init__(self, execution: Literal["dense", "sparse"] = "dense") -> None:
+    def __init__(self, execution: Literal["dense", "sparse"] = "dense", *, units: bool = False) -> None:
         from numga.multivector import MultivectorFactory
         from .dense import execute_dense_bind
         from .sparse import execute_sparse_bind
 
         object.__setattr__(self, "_applications", {})
         object.__setattr__(self, "_execution", execution)
+        object.__setattr__(self, "_units", bool(units))
+        object.__setattr__(self, "_unchecked", self if not units else None)
+        object.__setattr__(self, "_checked", self if units else None)
         object.__setattr__(self, "_execute_bind", {
             "dense": execute_dense_bind, "sparse": execute_sparse_bind,
         }[execution])
@@ -91,6 +97,28 @@ class Context(ABC):
     @property
     def execution(self) -> str:
         return self._execution
+
+    @property
+    def units(self) -> bool:
+        """Whether values constructed in this context carry checked physical units."""
+        return self._units
+
+    def _with_units(self, units: bool) -> Context:
+        return type(self)(self.algebra, self.dtype, execution=self.execution, units=units)
+
+    @property
+    def unchecked(self) -> Context:
+        """Sibling context on the same backend and dtype with `units=False`."""
+        if self._unchecked is None:
+            object.__setattr__(self, "_unchecked", self._with_units(False))
+        return self._unchecked
+
+    @property
+    def checked(self) -> Context:
+        """Sibling context on the same backend and dtype with `units=True`."""
+        if self._checked is None:
+            object.__setattr__(self, "_checked", self._with_units(True))
+        return self._checked
 
     @property
     def multivector(self) -> MultivectorFactory:
@@ -144,7 +172,7 @@ class Context(ABC):
 
     def with_dtype(self, dtype: object) -> Context:
         """Replacing `dtype` yields a sibling context on the same algebra, device, and execution mode."""
-        return type(self)(self.algebra, dtype, execution=self.execution)
+        return type(self)(self.algebra, dtype, execution=self.execution, units=self._units)
 
     def kernel_dtype(self, kernel: Any) -> np.dtype:
         """Backend storage reports its element type as the corresponding `np.dtype`."""
@@ -215,6 +243,11 @@ class Context(ABC):
             raise UnorientedSubspace()
         if not isinstance(gatype, GAType):
             raise TypeError("extensor construction requires a GAType")
+        if not self.is_exact:
+            if not self._units and gatype.has_units:
+                gatype = gatype.derive.unchecked
+            elif self._units and not gatype.has_units:
+                gatype = gatype.derive.dimensionless
         return Extensor(self, gatype, coefficients)
 
     def lower(self, extensor: Extensor) -> Extensor:
@@ -230,7 +263,8 @@ class Context(ABC):
             return Extensor._from_prepared_kernel(self, extensor.gatype, extensor._kernel)
         if extensor.context.is_exact and not self.is_exact:
             numeric = self.materialize(extensor._kernel)
-            return Extensor._from_prepared_kernel(self, extensor.gatype, numeric)
+            gatype = extensor.gatype if self._units else extensor.gatype.derive.unchecked
+            return Extensor._from_prepared_kernel(self, gatype, numeric)
         if not extensor.context.is_exact and not self.is_exact:
             # Concrete array backends transfer coefficients through a host NumPy array.
             return Extensor(self, extensor.gatype, np.asarray(extensor.kernel))
@@ -276,7 +310,7 @@ class Context(ABC):
         """Out-of-place scatter-addition returns a new storage buffer where repeated entries in `index` accumulate."""
 
 
-def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
+def context_from_key(algebra: Algebra, key: tuple[object, ...], *, units: bool = False) -> Context:
     """Static `key` metadata paired with `algebra` reconstructs the matching immutable `Context` across
     tracing boundaries."""
     if not isinstance(key, tuple) or not key:
@@ -285,7 +319,7 @@ def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
     if backend == "numpy":
         from .numpy import NumpyContext
 
-        return NumpyContext.from_key(algebra, key)
+        return NumpyContext.from_key(algebra, key, units=units)
     if backend == "exact":
         from .exact import ExactContext
 
@@ -296,11 +330,11 @@ def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
     if backend == "jax":
         from .jax import JaxContext
 
-        return JaxContext.from_key(algebra, key)
+        return JaxContext.from_key(algebra, key, units=units)
     if backend == "torch":
         from .torch import TorchContext
 
-        return TorchContext.from_key(algebra, key)
+        return TorchContext.from_key(algebra, key, units=units)
     raise ValueError(f"unknown Context backend key {backend!r}")
 
 
@@ -316,8 +350,17 @@ def binding_context(
 
     # NumPy operands act as host constants when paired with a JAX or PyTorch context of the same algebra.
     hosted = [context for context in concrete if context.key[0] != "numpy"]
-    context = hosted[0] if hosted else concrete[0]
+    if hosted:
+        context = hosted[0]
+    else:
+        # Promote compatible NumPy dtypes (such as float64 with complex128) symmetrically across operand order.
+        context = concrete[0]
+        for other in concrete[1:]:
+            if other.algebra is context.algebra and other.dtype != context.dtype:
+                if (not np.can_cast(other.dtype, context.dtype, casting="same_kind")
+                        and np.can_cast(context.dtype, other.dtype, casting="same_kind")):
+                    context = other
     if any(not other.is_compatible_with(context)
            and not (other.key[0] == "numpy" and other.algebra is context.algebra) for other in concrete):
         raise ValueError("all concrete operands must use compatible Contexts")
-    return context
+    return context.unchecked if any(not other.units for other in concrete) else context

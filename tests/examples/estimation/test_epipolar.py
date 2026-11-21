@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
+from numga import dim, stack
 from examples.estimation.epipolar import core, render, scenarios, textbook
 
 
@@ -19,6 +19,8 @@ def test_one_step_reconstructs_and_draws() -> None:
     axis_cosines, baseline_cosine, step_rms = scenarios.pose_and_landmark_errors(
         landmarks, reconstructed_landmarks[1], true_motor, estimated_motors[1],
     )
+    assert step_rms.unit == dim.length
+    assert axis_cosines.unit is dim.none
     assert (axis_cosines > 0.9).all()
     assert (baseline_cosine > 0.9).all()
     assert (step_rms < initial_rms).all()

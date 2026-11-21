@@ -54,22 +54,22 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
     shapes = deformed.batch()                                              # [..., V] Antivector-
     n_rows = (len(shapes) + n_columns - 1) // n_columns
     panels = []
+    bounds = []
     for i, shape in enumerate(shapes):
         axes = figure.add_subplot(n_rows, n_columns, i + 1)
         bounds_points = concatenate([point_coordinates(rest), point_coordinates(shape)], axis=-1)  # [2, ...] Scalar+
-        low, high = bounds_points.min(axis=-1).to_array(), bounds_points.max(axis=-1).to_array()
+        low, high = bounds_points.min(axis=-1), bounds_points.max(axis=-1)
         padding = mode_margin * (high - low)
-        axes.set(
-            xlim=(low[0] - padding[0], high[0] + padding[0]),
-            ylim=(low[1] - padding[1], high[1] + padding[1]),
-            aspect="equal",
-        )
+        xlim = stack((low[0] - padding[0], high[0] + padding[0]))
+        ylim = stack((low[1] - padding[1], high[1] + padding[1]))
+        axes.set(xlim=xlim.to_array(), ylim=ylim.to_array(), aspect="equal")
         axes.set_axis_off()
         panels.append(axes)
+        bounds.append((xlim, ylim))
     girder = Topology(rest.batch().shape[0], edges)
     mv = rest.context.multivector
-    for i, (axes, shape) in enumerate(zip(panels, shapes)):
-        camera = panel(axes, mv.x, mv.y, mv.w)
+    for i, (axes, (xlim, ylim), shape) in enumerate(zip(panels, bounds, shapes)):
+        camera = panel(axes, mv.x, mv.y, mv.w, xlim=xlim, ylim=ylim)
         overlay(
             axes,
             [
@@ -86,10 +86,10 @@ def chain_scene(edges: np.ndarray, reference: Point, lower: Point, upper: Point)
     figure, axes = plt.subplots(figsize=(6, 4), layout="constrained")
     mv = lower.context.multivector
     corners = stack((lower, upper))                                        # [2] Antivector-
-    axes.set(xlim=(mv.x & corners).to_array(), ylim=(mv.y & corners).to_array())
+    xlim, ylim = mv.x & corners, mv.y & corners
     axes.set_aspect("equal")
     axes.set_axis_off()
-    return figure, axes, panel(axes, mv.x, mv.y, mv.w)
+    return figure, axes, panel(axes, mv.x, mv.y, mv.w, xlim=xlim, ylim=ylim)
 
 
 def chain_composite(points: Point, edges: np.ndarray, reference: Point, camera: Camera) -> np.ndarray:
@@ -167,10 +167,10 @@ def beam_animation(edges: np.ndarray, states: Iterable) -> Iterator[np.ndarray]:
     extent = beam_room * max(heights.max(), (right - left) / 40)
     beyond = beam_end_room * (right - left)
     figure, axes = plt.subplots(figsize=(10, 1.6), dpi=60, layout="constrained")
-    axes.set(xlim=stack((left - beyond, right + beyond)).to_array(), ylim=stack((-extent, extent)).to_array())
+    xlim, ylim = stack((left - beyond, right + beyond)), stack((-extent, extent))
     axes.set_aspect("equal")
     axes.set_axis_off()
-    camera = panel(axes, mv.x, mv.y, mv.w)
+    camera = panel(axes, mv.x, mv.y, mv.w, xlim=xlim, ylim=ylim)
     image = overlay(axes, [np.zeros(camera.shape + (4,))])
     for points in chain([first], frames):
         image.set_data(drawing.composited([
@@ -187,12 +187,14 @@ def beam_animation(edges: np.ndarray, states: Iterable) -> Iterator[np.ndarray]:
 
 
 @charts.style()
-def buckling_figure(displacements: np.ndarray, midspans: Point, critical: float) -> plt.Figure:
+def buckling_figure(displacements: Extensor | np.ndarray, midspans: Point, critical: Extensor | float) -> plt.Figure:
     """Plots midspan lateral deflection against prescribed end displacement alongside the Euler
     critical threshold."""
     deflection = (midspans.context.multivector.y & midspans[:, 0].batch()).abs().to_array()
+    x_values = displacements.to_array() if isinstance(displacements, Extensor) else displacements
+    threshold = float(critical.to_array()) if isinstance(critical, Extensor) else critical
     figure, axes = charts.subplots(400, 220, layout="constrained")
-    axes.plot(displacements, deflection, color="#0f172a")
+    axes.plot(x_values, deflection, color="#0f172a")
     axes.axhline(0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     axes.axvline(0, color=cross_colour, linewidth=charts.FRAME_WIDTH, zorder=0)
     axes.text(1, 0, "end displacement", transform=axes.get_yaxis_transform(), ha="right", va="top", color=label_colour)
@@ -200,7 +202,7 @@ def buckling_figure(displacements: np.ndarray, midspans: Point, critical: float)
         0, 1, "midspan deflection ", transform=axes.get_xaxis_transform(),
         ha="right", va="bottom", color=label_colour, rotation=90, rotation_mode="anchor",
     )
-    axes.axvline(critical, linestyle=":", color=critical_colour)
-    axes.text(critical, 1, " critical", transform=axes.get_xaxis_transform(), ha="left", va="top", color=critical_colour)
+    axes.axvline(threshold, linestyle=":", color=critical_colour)
+    axes.text(threshold, 1, " critical", transform=axes.get_xaxis_transform(), ha="left", va="top", color=critical_colour)
     axes.set_axis_off()
     return figure

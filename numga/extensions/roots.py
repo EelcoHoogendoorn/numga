@@ -17,8 +17,12 @@ from __future__ import annotations
 
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductNonzero, ReverseProductOne, Versor
+from numga.units import inverse_root_unit, root_unit
 
 from ._scalar_functions import register_scalar_function
+
+Extensor.square_root.set_unit(root_unit)
+Extensor.inverse_square_root.set_unit(inverse_root_unit)
 
 
 def _denman_beavers(value: Extensor, iterations: int) -> Extensor:

@@ -531,10 +531,19 @@ fn sample(place: vec2<f32>) -> Sample {
 
 
 # --- shapes ---------------------------------------------------------------------------
+def _scene_value(value: Extensor) -> Extensor:
+    """Visual scene buffers operate in plain scene coordinates on `solids.context`."""
+    if not value.has_units:
+        return value
+    return Extensor._from_prepared_kernel(
+        context, value.gatype.derive.unchecked, context.prepare_kernel(value.kernel),
+    )
+
+
 def translator(offset: Extensor) -> Extensor:
     """Exponentiating `(mv.w ^ offset.dual()) / 2` translates every point along ideal point
     `offset`."""
-    return ((mv.w ^ offset.dual()) / 2).exp()
+    return ((mv.w ^ offset.cast(Point.derive.degenerate).dual()) / 2).exp()
 
 
 def placed(quadric: Extensor, motor: Extensor) -> Extensor:
@@ -574,7 +583,7 @@ def half_space(plane: Extensor) -> Extensor:
 def aligned(starts: Extensor, ends: Extensor) -> tuple[Extensor, np.ndarray, Extensor]:
     """Each segment between unit-weight endpoints defines a unit normal plane through the origin,
     its sign along `+z`, and the non-inverting rotor carrying `+z` onto that signed axis."""
-    across = (-(ends - starts).dual()).normalized()                           # [...] Plane
+    across = (-(ends - starts).cast(Point.derive.degenerate).dual()).normalized()   # [...] Plane
     sense = np.where((across & mv.z.dual()) >= 0, 1.0, -1.0)
     return across, sense, (1 + across * sense * mv.z).normalized()
 
@@ -665,6 +674,7 @@ class Ink(NamedTuple):
 def spheres(solid_quadrics: Extensor) -> tuple[Extensor, Extensor]:
     """Each solid in `solid_quadrics` is enclosed by the tightest bounding sphere derived from its
     quadrics' directional growth forms, with infinite radius when unbounded."""
+    solid_quadrics = _scene_value(solid_quadrics)
     # Diagonalize each quadric's directional growth form to classify ellipsoids, cylinders, and cones.
     rates, normals = (solid_quadrics(normal_direction) & normal_direction).eigh()   # [solids, quadrics, 3] Scalar, Plane
     directions = normals.dual()                                               # [solids, quadrics, 3] Point
@@ -742,6 +752,7 @@ def scene(parts: list[tuple], translucent: list[tuple],
     all_parts = [(part_solids, colour, 1.0) for part_solids, colour in parts] + list(translucent)
     quadrics, counts, colours, opacities, flats, centres, radii = [], [], [], [], [], [], []
     for part_solids, colour, opacity in all_parts:
+        part_solids = _scene_value(part_solids)
         # Nullary plane batches bound convex polyhedra directly as half-spaces with infinite sphere bounds.
         flat = part_solids.arity == 0
         if flat:
@@ -782,8 +793,8 @@ def scene(parts: list[tuple], translucent: list[tuple],
                                                     for ink, size in zip(matching, sizes)]),
                              width=np.repeat([ink.width for ink in matching], sizes),
                              opacity=np.repeat([ink.opacity for ink in matching], sizes)),
-                  f"{name}_quadrics": concatenate([ink.quadrics.reshape(-1) for ink in matching]),
-                  f"{name}_regions": concatenate([ink.regions.broadcast_to(ink.quadrics.shape).reshape(-1)
+                  f"{name}_quadrics": concatenate([_scene_value(ink.quadrics).reshape(-1) for ink in matching]),
+                  f"{name}_regions": concatenate([_scene_value(ink.regions).broadcast_to(ink.quadrics.shape).reshape(-1)
                                                   for ink in matching])}
     return (concatenate(quadrics),
             dict(first=ends - np.concatenate(counts), end=ends, flat=np.concatenate(flats).astype(np.uint32)),

@@ -13,7 +13,7 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from matplotlib.figure import Figure
 from matplotlib.ticker import MultipleLocator
 
-from numga import concatenate, stack
+from numga import Unit, concatenate, dim, stack
 from numga.extensor import Extensor
 from numga.render import Camera, contours, drawing, flow, simplices
 from numga.topology import Topology
@@ -22,9 +22,12 @@ from examples.util import charts
 from examples.util.panels import image_figure, offset_panel, overlay
 
 mv = core.mv
-State = tuple[np.ndarray, core.Potential, core.Spatial, core.Potential, core.Spatial]
+power_dim = dim.voltage * dim.current
+resistance_dim = dim.voltage / dim.current
+thermopower_dim = dim.voltage / dim.temperature
+State = tuple[core.Scalar, core.Potential, core.Spatial, core.Potential, core.Spatial]
 Frame = tuple[core.Magnetic, State, State]
-DrivenState = tuple[np.ndarray, core.Potential, core.Spatial]
+DrivenState = tuple[core.Scalar, core.Potential, core.Spatial]
 
 # Temperature palette, reach under electric current drive, rest fill, border strokes, and gold contact strokes.
 temperature_colours = LinearSegmentedColormap.from_list(
@@ -45,14 +48,14 @@ bar_streak_length, ring_streak_length = 45.0, 40.0
 
 # Magnetic field disc and sense chevron geometry.
 magnetic_colour, patch_opacity = np.array(to_rgb("dodgerblue")), 0.8
-patch_reach = 0.22
+patch_reach = mv.scalar(0.22, unit=dim.length)
 arc_reach = 1.25
 arc_start, arc_span = np.radians(-60.0), np.radians(240.0)
 n_arc = 32
 arc_width, arc_chevron = 1.8, 8.0
 
-# Framing margin, inter-panel gap, and quarter-turn rotor orienting the Hall bar upright.
-margin, gap = 0.08, 8
+# Framing margin (in length), inter-panel gap (in pixels), and quarter-turn rotor orienting the Hall bar upright.
+margin, gap = mv.scalar(0.08, unit=dim.length), 8
 upright = (mv.xy * (np.pi / 4)).exp()                                         # [] Rotor+
 
 # Flux turn diagram dimensions and stroke styling.
@@ -78,14 +81,9 @@ def white_composite(picture: np.ndarray) -> np.ndarray:
     return np.round(np.clip(composited_rgb, 0, 1) * 255).astype(np.uint8)
 
 
-def plane_readings(plane: Extensor, values: Extensor) -> np.ndarray:
-    """Pairing `plane` against `values` extracts scalar coordinate readings in the batch shape of `values`."""
-    return (plane & values.batch()).to_array().reshape(values.batch().shape)
-
-
-def potential_readings(potentials: Extensor, quantity: core.Parcel) -> np.ndarray:
-    """Pairing `potentials` (`[...] Potential+[V]`) with a unit `quantity` (`Parcel-`) extracts vertex electrochemical potentials or temperatures."""
-    return (potentials.batch() & quantity).to_array().reshape(potentials.batch().shape)
+def potential_readings(potentials: Extensor, quantity: core.Parcel, unit: Unit) -> np.ndarray:
+    """Pairing `potentials` (`[...] Potential+[V]`) with a unit `quantity` (`Parcel-`) and dividing by `unit` extracts dimensionless vertex electrochemical potentials or temperatures."""
+    return ((potentials.batch() & quantity) / unit).to_array().reshape(potentials.batch().shape)
 
 
 def temperature_tints(temperatures: np.ndarray, reach: float) -> np.ndarray:
@@ -93,18 +91,24 @@ def temperature_tints(temperatures: np.ndarray, reach: float) -> np.ndarray:
     return temperature_colours(np.clip(0.5 + temperatures / (2 * reach), 0, 1))[:, :3]
 
 
-def conductor_camera(vertices: core.Point, across_plane: core.Plane, up_plane: core.Plane, resolution: float) -> Camera:
-    """Frames `vertices` (`Point-[V]`) with `margin` padding in a `Camera` paired along `across_plane` and `up_plane` at `resolution` pixels per unit."""
-    coordinates = np.stack([plane_readings(across_plane, vertices), plane_readings(up_plane, vertices)], axis=-1)   # [V, 2]
-    lower_bound, upper_bound = coordinates.min(axis=0) - margin, coordinates.max(axis=0) + margin
-    return Camera(across_plane, up_plane, 0 * mv.x, mv.w, 0.0, (lower_bound + upper_bound) / 2,
-                  (upper_bound - lower_bound) / 2, round((upper_bound - lower_bound)[0] * resolution))
+def conductor_camera(vertices: core.Point, across_plane: core.Plane, up_plane: core.Plane,
+                     resolution: core.Scalar) -> Camera:
+    """Frames `vertices` (`Point-[V], 1 | length`) with `margin` padding in a `Camera` mapping `across_plane` and
+    `up_plane` into `dim.pixel` at `resolution` (`pixel/length`)."""
+    across, up = resolution * across_plane, resolution * up_plane             # Plane+, pixel/length
+    xs, ys = (across & vertices.batch()).reshape(-1), (up & vertices.batch()).reshape(-1)   # [V] Scalar+, pixel
+    pad = resolution * margin                                                 # [] Scalar+, pixel
+    lower_bound = stack((xs.min(), ys.min())) - pad                           # [2] Scalar+, pixel
+    upper_bound = stack((xs.max(), ys.max())) + pad                           # [2] Scalar+, pixel
+    return Camera(across, up, 0 * across, mv.w, 0.0, (lower_bound + upper_bound) / 2, (upper_bound - lower_bound) / 2)
 
 
-def patch_camera(height: int, resolution: float) -> Camera:
-    """Frames the magnetic-field indicator strip around the origin at `height` pixels tall and `resolution` pixels per bar width."""
-    pixels = round(2 * (arc_reach * patch_reach + margin) * resolution)
-    return Camera(mv.x, mv.y, 0 * mv.x, mv.w, 0.0, np.zeros(2), np.array([pixels, height]) / (2 * resolution), pixels)
+def patch_camera(height: int, resolution: core.Scalar) -> Camera:
+    """Frames the magnetic-field indicator strip around the origin at `height` pixels tall and `resolution` (`pixel/length`)."""
+    across, up = resolution * mv.x, resolution * mv.y                         # Plane+, pixel/length
+    half_width = resolution * (arc_reach * patch_reach + margin)              # [] Scalar+, pixel
+    half = stack((half_width, mv.scalar(height / 2, unit=dim.pixel)))         # [2] Scalar+, pixel
+    return Camera(across, up, 0 * across, mv.w, 0.0, 0 * half, half)
 
 
 def conductor_outline(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray],
@@ -116,16 +120,16 @@ def conductor_outline(topology: Topology, vertices: core.Point, contacts: tuple[
             simplices.strokes(points, topology.subset(contact_edges, 1), contact_colour, contact_width, camera)]
 
 
-def field_patch(centre: core.Point, magnetic: core.Magnetic, reference: core.Magnetic, radius: float,
-                camera: Camera) -> list:
+def field_patch(centre: core.Point, magnetic: core.Magnetic, reference: core.Magnetic, radius: core.Scalar,
+                resolution: core.Scalar, camera: Camera) -> list:
     """Draws `magnetic` (`[] Magnetic+`) relative to `reference` as an area-scaled disc with a sense-indicating rim chevron."""
     share = (magnetic.scalar_product(~reference) / reference.scalar_norm_squared()).to_array()
-    size = radius * np.sqrt(np.abs(share))
+    size = radius * np.sqrt(np.abs(share))                                    # [] Scalar+, length
     angles = np.sign(share) * (arc_start + np.linspace(0, arc_span, n_arc))   # [n_arc]
     turns = (reference.normalized() * (-angles / 2)).exp()                    # [n_arc] Rotor+
-    arc_points = centre + arc_reach * size * (turns >> core.x_direction)      # [n_arc] Point-
+    arc_points = centre + (arc_reach * size) * (turns >> core.x_direction)    # [n_arc] Point-, 1 | length
     tip_mask = np.arange(n_arc - 1) == n_arc - 2                              # [n_arc - 1]
-    return [simplices.markers(stack([centre]), magnetic_colour, size / camera.pixel, camera, opacity=patch_opacity),
+    return [simplices.markers(stack([centre]), magnetic_colour, resolution * size, camera, opacity=patch_opacity),
             simplices.strokes(arc_points, Topology.chains([n_arc]), magnetic_colour, arc_width, camera,
                               chevrons=tip_mask, chevron=arc_chevron)]
 
@@ -133,19 +137,19 @@ def field_patch(centre: core.Point, magnetic: core.Magnetic, reference: core.Mag
 def face_corners(topology: Topology, vertices: core.Point) -> tuple[core.Point, Topology]:
     """Splits `topology` into disconnected triangles (`[3 * F] Point-`) so piecewise-constant triangle velocities render cleanly."""
     V, E, F = topology.n_elements
-    corners = (topology.incidence[2, 0] * vertices).batch().reshape(-1)       # [3 * F] Point-
+    corners = (topology.incidence[2, 0] * vertices).batch().reshape(-1)       # [3 * F] Point-, 1 | length
     return corners, Topology(3 * F, np.arange(3 * F).reshape(3, F).T)
 
 
-def carrier_speeds(velocities: core.Spatial) -> np.ndarray:
-    """Antinorm of spatial drift `velocities` (`[2] Spatial-[F]`) gives scalar carrier speeds (`[2, F]`)."""
-    sizes = velocities.batch().antinorm()                                     # [2, F] Scalar+
-    return sizes.to_array()
+def reference_screen_speed(velocities: core.Spatial, resolution: core.Scalar) -> core.Scalar:
+    """Median screen speed (`[] Scalar+, pixel/time`) of spatial drift `velocities` (`[2] Spatial-[F], length/time`)."""
+    speeds = resolution * velocities.batch().antinorm()                       # [2, F] Scalar+, pixel/time
+    return mv.scalar(float(np.median(speeds.to_array())), unit=speeds.unit)
 
 
 def contact_voltage(potentials: core.Potential, contacts: tuple[np.ndarray, np.ndarray]) -> float:
     """Difference in electrochemical potential between the first vertices of the two contact sets gives the terminal voltage."""
-    values = potential_readings(potentials, core.time)
+    values = potential_readings(potentials, core.time, dim.voltage)
     return values[contacts[0][0]] - values[contacts[1][0]]
 
 
@@ -163,15 +167,15 @@ def picture_row(pictures: list[np.ndarray]) -> np.ndarray:
 
 def conductor_layers(topology: Topology, vertices: core.Point, contacts: tuple[np.ndarray, np.ndarray],
                      potentials: core.Potential, velocities: core.Spatial, shares: np.ndarray, reach: float,
-                     spacing: float, reference_speed: float, streak_length: float, camera: Camera) -> list:
+                     spacing: float, reference_speed: core.Scalar, streak_length: float, camera: Camera) -> list:
     """Assembles temperature tint, electrochemical equipotential contours, two-species velocity streaks, and gold contacts for one conductor."""
     points = vertices.batch()
     face_places, split_topology = face_corners(topology, vertices)
-    temperatures = potential_readings(potentials, core.entropy)               # [V]
+    temperatures = potential_readings(potentials, core.entropy, dim.temperature)   # [V]
     lines = contours.Lines(spacing, spacing / 2, np.append(level_colour, level_ink), level_width)
     corner_velocities = [concatenate([velocities[kind].batch()] * 3) for kind in range(len(streak_colours))]
     return [contours.picture(points, topology, temperatures, temperature_tints(temperatures, reach), camera),
-            contours.picture(points, topology, potential_readings(potentials, core.time), np.zeros(3), camera,
+            contours.picture(points, topology, potential_readings(potentials, core.time, dim.voltage), np.zeros(3), camera,
                              lines=(lines,), opacity=0.0),
             *[flow.layer(face_places, split_topology, velocity, camera, reference_speed, colour, length=streak_length,
                          grain_pixels=grain, speck_pixels=streak_speck, ink_opacity=streak_ink * share)
@@ -181,8 +185,8 @@ def conductor_layers(topology: Topology, vertices: core.Point, contacts: tuple[n
 
 def side_by_side_frames(bar_topology: Topology, bar_vertices: core.Point, bar_contacts: tuple[np.ndarray, np.ndarray],
                         ring_topology: Topology, ring_vertices: core.Point, ring_contacts: tuple[np.ndarray, np.ndarray],
-                        bar_resolution: float, ring_resolution: float, reference: core.Magnetic,
-                        scales: list[tuple[float, float, float]],
+                        bar_resolution: core.Scalar, ring_resolution: core.Scalar, reference: core.Magnetic,
+                        scales: list[tuple[float, float, core.Scalar]],
                         frames: Iterable[tuple[core.Magnetic, DrivenState, DrivenState]]) -> Iterator[np.ndarray]:
     """Yields side-by-side RGB frames of the upright Hall bar, magnetic-field indicator, and Corbino ring."""
     bar_cam = conductor_camera(bar_vertices, upright >> mv.x, upright >> mv.y, bar_resolution)
@@ -196,20 +200,20 @@ def side_by_side_frames(bar_topology: Topology, bar_vertices: core.Point, bar_co
         for view, (reach, spacing, reference_speed), (densities, potentials, velocities) in zip(
                 views, scales, driven_states):
             topology, vertices, contacts, camera, streak_length = view
-            shares = densities / densities.max()
+            shares = (densities / densities.max()).to_array()
             pictures.append(white_composite(drawing.composited(
                 conductor_layers(topology, vertices, contacts, potentials, velocities, shares, reach, spacing,
                                  reference_speed, streak_length, camera))))
         bar_picture, ring_picture = pictures
         patch_picture = white_composite(drawing.composited(
-            field_patch(core.origin, magnetic, reference, patch_reach, field_cam)))
+            field_patch(core.origin, magnetic, reference, patch_reach, bar_resolution, field_cam)))
         yield picture_row([bar_picture, patch_picture, ring_picture])
 
 
 # --- drawing --------------------------------------------------------------------------
 def conductors_figure(bar_topology: Topology, bar_vertices: core.Point, bar_contacts: tuple[np.ndarray, np.ndarray],
                       ring_topology: Topology, ring_vertices: core.Point, ring_contacts: tuple[np.ndarray, np.ndarray],
-                      bar_resolution: float, ring_resolution: float) -> Figure:
+                      bar_resolution: core.Scalar, ring_resolution: core.Scalar) -> Figure:
     """Renders the Hall bar and Corbino ring side by side with pale interiors and gold contacts."""
     pictures = []
     for topology, vertices, contacts, resolution in ((bar_topology, bar_vertices, bar_contacts, bar_resolution),
@@ -225,12 +229,14 @@ def conductors_figure(bar_topology: Topology, bar_vertices: core.Point, bar_cont
 def current_driven_animation(bar_topology: Topology, bar_vertices: core.Point,
                              bar_contacts: tuple[np.ndarray, np.ndarray], ring_topology: Topology,
                              ring_vertices: core.Point, ring_contacts: tuple[np.ndarray, np.ndarray],
-                             bar_resolution: float, ring_resolution: float, reference: Frame, frames: Iterable[Frame]
-                             ) -> Iterator[np.ndarray]:
+                             bar_resolution: core.Scalar, ring_resolution: core.Scalar, reference: Frame,
+                             frames: Iterable[Frame]) -> Iterator[np.ndarray]:
     """Yields side-by-side RGB frames of the isothermal current-driven Hall bar and Corbino ring scaled to `reference`."""
     field, *conductors = reference
-    scales = [(electric_reach, abs(contact_voltage(electric, contacts)) / n_levels, np.median(carrier_speeds(drifts)))
-              for (_, electric, drifts, _, _), contacts in zip(conductors, (bar_contacts, ring_contacts))]
+    scales = [(electric_reach, abs(contact_voltage(electric, contacts)) / n_levels,
+               reference_screen_speed(drifts, resolution))
+              for (_, electric, drifts, _, _), contacts, resolution in zip(
+                  conductors, (bar_contacts, ring_contacts), (bar_resolution, ring_resolution))]
     driven_states = ((magnetic, *[(densities, electric, drifts) for densities, electric, drifts, _, _ in states])
                      for magnetic, *states in frames)
     return side_by_side_frames(bar_topology, bar_vertices, bar_contacts, ring_topology, ring_vertices, ring_contacts,
@@ -240,13 +246,15 @@ def current_driven_animation(bar_topology: Topology, bar_vertices: core.Point,
 def heat_driven_animation(bar_topology: Topology, bar_vertices: core.Point,
                           bar_contacts: tuple[np.ndarray, np.ndarray], ring_topology: Topology,
                           ring_vertices: core.Point, ring_contacts: tuple[np.ndarray, np.ndarray],
-                          bar_resolution: float, ring_resolution: float, reference: Frame, frames: Iterable[Frame]
-                          ) -> Iterator[np.ndarray]:
+                          bar_resolution: core.Scalar, ring_resolution: core.Scalar, reference: Frame,
+                          frames: Iterable[Frame]) -> Iterator[np.ndarray]:
     """Yields side-by-side RGB frames of the open-circuit heat-driven Hall bar and Corbino ring scaled to `reference`."""
     field, *conductors = reference
-    scales = [(abs(potential_readings(thermal, core.entropy)[contacts[0][0]]),
-               abs(contact_voltage(thermal, contacts)) / n_levels, np.median(carrier_speeds(drifts)))
-              for (_, _, drifts, thermal, _), contacts in zip(conductors, (bar_contacts, ring_contacts))]
+    scales = [(abs(potential_readings(thermal, core.entropy, dim.temperature)[contacts[0][0]]),
+               abs(contact_voltage(thermal, contacts)) / n_levels,
+               reference_screen_speed(drifts, resolution))
+              for (_, _, drifts, thermal, _), contacts, resolution in zip(
+                  conductors, (bar_contacts, ring_contacts), (bar_resolution, ring_resolution))]
     driven_states = ((magnetic, *[(densities, thermal, drifts) for densities, _, _, thermal, drifts in states])
                      for magnetic, *states in frames)
     return side_by_side_frames(bar_topology, bar_vertices, bar_contacts, ring_topology, ring_vertices, ring_contacts,
@@ -268,9 +276,17 @@ def turns_figure(drive: core.Drive, fluxes: core.Flux) -> Figure:
     electrons, holes = fluxes
     compensated_flux = (electrons + holes) / 2                                # [] Flux-
     arrows = stack((0 * fluxes, fluxes), axis=-1).reshape(-1)                 # [4] Flux-
-    for ax, planes in zip(axes, ((local_mv.xt, local_mv.yt), (local_mv.xs, local_mv.ys))):
-        field_view = offset_panel(ax, x_dir & time_dir, y_dir & time_dir)
-        flux_view = offset_panel(ax, *planes)
+    charge_flux_dim = dim.current / dim.length
+    entropy_flux_dim = power_dim / (dim.temperature * dim.length)
+    electric_field_dim = dim.voltage / dim.length
+    field_xlim = np.array(turn_across) * local_mv.scalar(1.0, unit=electric_field_dim)
+    field_ylim = np.array(turn_up) * local_mv.scalar(1.0, unit=electric_field_dim)
+    for ax, planes, flux_dim in zip(axes, ((local_mv.xt, local_mv.yt), (local_mv.xs, local_mv.ys)),
+                                    (charge_flux_dim, entropy_flux_dim)):
+        flux_xlim = np.array(turn_across) * local_mv.scalar(1.0, unit=flux_dim)
+        flux_ylim = np.array(turn_up) * local_mv.scalar(1.0, unit=flux_dim)
+        field_view = offset_panel(ax, x_dir & time_dir, y_dir & time_dir, xlim=field_xlim, ylim=field_ylim)
+        flux_view = offset_panel(ax, *planes, xlim=flux_xlim, ylim=flux_ylim)
         overlay(ax, [
             simplices.strokes(stack((0 * drive, drive)), Topology.chains([2]), electric_colour, arrow_width,
                               field_view, chevrons=np.ones(1), chevron=arrow_chevron),
@@ -288,8 +304,8 @@ def readings_figure(balances: np.ndarray, resistance: core.Scalar, hall: core.Sc
                     nernst: core.Scalar, righi_leduc: core.Scalar, names: list[str]) -> Figure:
     """Plots longitudinal and Hall resistances, Seebeck and Nernst signals, and the Righi-Leduc temperature ratio (`[n_frames] Scalar+`) against carrier `balances`."""
     figure, axes = charts.subplots(*chart_size, nrows=3, sharex=True)
-    for ax, curves, label, spacing in zip(axes, (((resistance, along_colour, "along"), (hall, across_colour, "Hall")),
-                                                 ((seebeck, along_colour, "Seebeck"), (nernst, across_colour, "Nernst")),
+    for ax, curves, label, spacing in zip(axes, (((resistance / resistance_dim, along_colour, "along"), (hall / resistance_dim, across_colour, "Hall")),
+                                                 ((seebeck / thermopower_dim, along_colour, "Seebeck"), (nernst / thermopower_dim, across_colour, "Nernst")),
                                                  ((righi_leduc, heat_colour, "Righi–Leduc"),)),
                                           ("resistance", "thermopower", "temperature\nacross"), (1, 1, 0.1)):
         for values, colour, name in curves:
@@ -308,9 +324,9 @@ def readings_figure(balances: np.ndarray, resistance: core.Scalar, hall: core.Sc
 
 @charts.style()
 def spin_readings_figure(magnetizations: np.ndarray, resistance: core.Scalar, hall: core.Scalar) -> Figure:
-    """Plots longitudinal magnetoresistance and anomalous Hall resistance (`[n_frames] Scalar+`) against `magnetizations` at zero external magnetic field."""
+    """Plots longitudinal magnetoresistance and anomalous Hall resistance (`[n_frames] Scalar+, voltage/current`) against `magnetizations` at zero external magnetic field."""
     figure, ax = charts.subplots(*spin_chart_size)
-    for values, colour, name in ((resistance, along_colour, "along"), (hall, across_colour, "Hall")):
+    for values, colour, name in ((resistance / resistance_dim, along_colour, "along"), (hall / resistance_dim, across_colour, "Hall")):
         curve_values = values.to_array().reshape(-1)
         ax.plot(magnetizations, curve_values, color=colour)
         ax.annotate(name, (magnetizations[-1], curve_values[-1]), xytext=(4, 0), textcoords="offset points", va="center",

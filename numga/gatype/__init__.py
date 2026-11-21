@@ -1,5 +1,6 @@
 """Whole-extensor `GAType` metadata, orientation rules, trait inference, and signature dispatch."""
 
+from numga.units import Unit, UnitGrid
 from . import rules
 from .dispatch import AmbiguousGATypeDispatchWarning, GATypeDispatch
 from .errors import GATypeError, UnorientedSubspace

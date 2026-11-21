@@ -8,7 +8,7 @@ import numpy as np
 from scipy.sparse import bmat, coo_matrix
 from scipy.sparse.linalg import spsolve
 
-from numga.gatype import GAType
+from numga.gatype import GAType, GATypeError
 from numga.sparse import SparseExtensor
 
 if TYPE_CHECKING:
@@ -21,6 +21,21 @@ def solve_coupled(mechanical: SparseExtensor, coupling: SparseExtensor, dielectr
     """Solves the coupled mechanical and electrical work equations for vertex displacements and potentials."""
     Point = mechanical.gatype.derive.axis(1)
     Scalar = dielectric.gatype.derive.axis(1)
+    checked = all(
+        item.has_units
+        for item in (mechanical.cells, coupling.cells, dielectric.cells, force, charge)
+    )
+    if checked:
+        u_mech, u_coup, u_diel = mechanical.cells.unit, coupling.cells.unit, dielectric.cells.unit
+        if u_coup ** 2 != u_mech * u_diel:
+            raise GATypeError(f"coupled block units are inconsistent: {u_coup}^2 != {u_mech} * {u_diel}")
+        disp_unit = force.unit / u_mech
+        pot_unit = charge.unit / u_diel
+        if u_coup * pot_unit != force.unit:
+            raise GATypeError(f"coupled load units do not match: {u_coup} * {pot_unit} != {force.unit}")
+    else:
+        disp_unit = pot_unit = None
+
     stiffness = _matrix(mechanical, Point)
     mixed = _matrix(coupling, Point)
     electric = _matrix(dielectric, Scalar)
@@ -37,11 +52,15 @@ def solve_coupled(mechanical: SparseExtensor, coupling: SparseExtensor, dielectr
     solution = spsolve(system, rhs.reshape(-1, system.shape[0]).T)
     solution = solution.reshape(system.shape[1], -1).T.reshape(batch + (system.shape[1],))
 
-    displacement = mechanical.cells.context.extensor(
-        Point, solution[..., :stiffness.shape[1]].reshape(batch + (mechanical.shape[1], len(Point.output_subspace))),
+    disp_context = mechanical.cells.context if checked else mechanical.cells.context.unchecked
+    pot_context = dielectric.cells.context if checked else dielectric.cells.context.unchecked
+    displacement = disp_context.extensor(
+        Point.derive.unit(disp_unit),
+        solution[..., :stiffness.shape[1]].reshape(batch + (mechanical.shape[1], len(Point.output_subspace))),
     ).field()
-    potential = dielectric.cells.context.extensor(
-        Scalar, solution[..., stiffness.shape[1]:].reshape(batch + (dielectric.shape[1], len(Scalar.output_subspace))),
+    potential = pot_context.extensor(
+        Scalar.derive.unit(pot_unit),
+        solution[..., stiffness.shape[1]:].reshape(batch + (dielectric.shape[1], len(Scalar.output_subspace))),
     ).field()
     return displacement, potential
 

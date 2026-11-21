@@ -9,21 +9,23 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import NumpyContext, dim, stack
 from numga.algebras import PGA3D
 
 # --- algebra and types -----------------------------------------------------
 ga = PGA3D
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 
 Scalar = ga.gatype.scalar()                                                   # Scalar+
 Point = ga.gatype.antivector()                                                # Antivector-
 Line = ga.gatype.antibivector()                                               # Antibivector-
 Motor = ga.gatype.rotor()                                                     # Rotor+
 Twist = ga.gatype.bivector()                                                  # Bivector+
-# Six unit masses at unit distance along the three coordinate axes of camera 2 define the kinetic-energy metric on twists.
-body_masses = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]])  # [6] Point-
-kinetic_energy = Twist.regressive(body_masses.regressive(body_masses.commutator(Twist)).sum(axis=0))  # [] Scalar+ <- (Twist+, Twist+)
+# Unit length scale for camera 2's kinetic-energy metric and homogeneous weight pinning.
+camera_scale = mv.scalar(1.0, unit=dim.length)                                # [] Scalar+, length
+# Six unit masses at `camera_scale` along the three coordinate axes of camera 2 define the kinetic-energy metric on twists.
+body_masses = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]], unit=dim.length)  # [6] Point-, 1 | length
+kinetic_energy = Twist.regressive(body_masses.regressive(body_masses.commutator(Twist)).sum(axis=0))  # [] Scalar+ <- (Twist+, Twist+), 1 | length^2
 point_weight = mv.w & Point                                                   # [] Scalar+ <- Point-
 
 
@@ -49,8 +51,9 @@ def triangulated_points(rays_1: Line, rays_2: Line, motor: Motor) -> Point:
     # Joining a ray with a point spans the plane through both whose squared norm equals the point's squared distance to the ray.
     sight_rays = stack([rays_1, motor >> rays_2])                             # [2, ...] Line-
     distance_quadrics = (sight_rays & Point).scalar_norm_squared().sum(axis=0)  # [...] Scalar+ <- (Point-, Point-)
-    # Adding the projective weight dyad pins homogeneous scale without shifting the quadric vertex.
-    return (distance_quadrics + point_weight * point_weight).solve(point_weight).normalized()  # [...] Point-
+    # Adding the scaled projective weight dyad pins homogeneous scale without shifting the quadric vertex.
+    weight_pin = camera_scale * point_weight                                  # [] Scalar+ <- Point-, length
+    return (distance_quadrics + weight_pin * weight_pin).solve(camera_scale * weight_pin).normalized()  # [...] Point-, 1 | length
 
 
 def reconstruction_states(rays_1: Line, rays_2: Line, motor: Motor) -> Iterator[tuple[Motor, Point]]:

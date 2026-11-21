@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import dim, stack
 from examples.util import charts
 from examples.util.animation import capture
 from examples.util.shapes import delaunay
@@ -26,10 +26,12 @@ edge_colours = ["#64748b", "#0369a1", "#c2410c"]
 path_colours = ["#94a3b8", "#0284c7", "#ea580c"]
 impulse_colour = "#475569"
 # Clearance between lanes and around the bodies at the ends of the view.
-gap = 1.0
+gap = mv.scalar(1.0, unit=dim.length)
 # Pixel widths, dash pattern, and marker radius for impulse lines, centre paths, outlines, and nose markers.
-impulse_width, impulse_dashes = 1.1, (8.3, 5.6)
-path_width, outline_width, nose_radius = 1.95, 1.95, 3.5
+impulse_width, impulse_dashes = mv.scalar(1.1, unit=dim.pixel), (8.3, 5.6)
+path_width = mv.scalar(1.95, unit=dim.pixel)
+outline_width = mv.scalar(1.95, unit=dim.pixel)
+nose_radius = mv.scalar(3.5, unit=dim.pixel)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -91,11 +93,10 @@ def animate_gliding(impulse: core.Forque, body_outline: core.Point, nose: core.P
     aspect = float((height / (extent[1] - extent[0])).to_array())
     figure = plt.figure(figsize=(4.0, 4.0 * aspect), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
-    ax.set_xlim(*extent.to_array())
-    ax.set_ylim(*stack((-lane / 2, height - lane / 2)).to_array())
+    ylim = stack((-lane / 2, height - lane / 2))
     ax.set_aspect("equal")
     ax.set_axis_off()
-    camera = panel(ax, mv.x, mv.y, mv.w)
+    camera = panel(ax, mv.x, mv.y, mv.w, xlim=extent, ylim=ylim)
     impulses = simplices.strokes(impulse_segments, Topology.chains([2] * n_cases), rgb(impulse_colour), impulse_width,
                                  camera, dashes=impulse_dashes, cap=simplices.Cap.BUTT)
     image = overlay(ax, [impulses])

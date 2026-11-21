@@ -41,9 +41,9 @@ def rgb(colour: str) -> np.ndarray:
 
 
 def bounds(points: core.Point) -> tuple[core.Scalar, core.Scalar]:
-    """Pairings against the spatial axes read the minimum and maximum coordinates (`[2] Scalar+`) across `points`."""
+    """Pairings against the spatial axes read the minimum and maximum coordinates (`[2] Scalar+`, `length`) across `points`."""
     mv = points.context.multivector
-    readings = stack((mv.x, mv.y))[:, None] & points.batch()                      # [2, ...] Scalar+
+    readings = stack((mv.x, mv.y))[:, None] & points.batch()                      # [2, ...] Scalar+, length
     return readings.min(axis=-1), readings.max(axis=-1)
 
 
@@ -78,12 +78,13 @@ class DeviceView:
     """Holds the static clamp, reference outline and fixed colour scales for redrawing the deformed bimorph."""
 
     def __init__(self, topology: Strip, vertices: core.Point, areas: core.Scalar, displacement_scale: float,
-                 voltage_scale: float, strain_scale: float) -> None:
+                 voltage_scale: core.Scalar, strain_scale: float) -> None:
         V, E, F = topology.n_elements
         self.topology, self.vertices = topology, vertices
-        low, high = bounds(vertices)                                              # [2] Scalar+, [2] Scalar+
+        low, high = bounds(vertices)                                              # [2] Scalar+, [2] Scalar+, length
         self.displacement_scale = displacement_scale
-        self.voltage_norm = Normalize(-voltage_scale / 2, voltage_scale / 2)
+        voltage_limit = float(voltage_scale.to_array())
+        self.voltage_norm = Normalize(-voltage_limit / 2, voltage_limit / 2)
         self.strain_norm = Normalize(-strain_scale, strain_scale)
         # Share each triangle's area equally across its three corners for area-weighted vertex strain shading.
         self.corner_shares = topology.incidence[2, 0].mean(axis=0).adjugate()     # Scalar+[V <- F]
@@ -98,13 +99,13 @@ class DeviceView:
 
         self.figure, ax = plt.subplots(figsize=(5.25, 1.4), dpi=100)
         self.figure.subplots_adjust(0.015, 0.025, 0.995, 0.975)
-        half_height = stack((3.3 * self.thickness, 0.11 * strip_length)).max()    # Scalar+
-        limits = stack((low[0] - 0.045 * strip_length, high[0] + 0.025 * strip_length,
-                        middle - half_height, middle + half_height)).to_array()
-        ax.set(xlim=limits[:2], ylim=limits[2:], aspect="equal")
+        half_height = stack((3.3 * self.thickness, 0.11 * strip_length)).max()    # Scalar+, length
+        xlim = stack((low[0] - 0.045 * strip_length, high[0] + 0.025 * strip_length))   # [2] Scalar+, length
+        ylim = stack((middle - half_height, middle + half_height))                      # [2] Scalar+, length
+        ax.set_aspect("equal")
         ax.set_axis_off()
         mv = vertices.context.multivector
-        self.view = offset_panel(ax, mv.x, mv.y)
+        self.view = offset_panel(ax, mv.x, mv.y, xlim=xlim, ylim=ylim)
         foot, head = (topology.reading(topology.clamp_nodes[[0, -1]], 0) * vertices).batch()  # Point-, Point-
         clamp_low, clamp_high = foot - (head - foot) / 2, head + (head - foot) / 2  # Point-, Point-
         outline_nodes = np.concatenate((topology.bottom_nodes, topology.tip_nodes, topology.top_nodes[::-1]))
@@ -169,19 +170,19 @@ class DeviceView:
 def draw_strip(topology: Strip, vertices: core.Point) -> plt.Figure:
     """Draws the clamped end of the triangulated strip with its electrodes, central bond and pinned vertices."""
     V, E, F = topology.n_elements
-    low, high = bounds(vertices)                                                  # [2] Scalar+, [2] Scalar+
-    strip_thickness = high[1] - low[1]                                            # Scalar+
-    limits = stack((low[0] - 0.12 * strip_thickness, low[0] + 3 * strip_thickness,
-                    low[1] - 0.12 * strip_thickness, high[1] + 0.12 * strip_thickness)).to_array()
+    low, high = bounds(vertices)                                                  # [2] Scalar+, [2] Scalar+, length
+    strip_thickness = high[1] - low[1]                                            # Scalar+, length
+    xlim = stack((low[0] - 0.12 * strip_thickness, low[0] + 3 * strip_thickness))   # [2] Scalar+, length
+    ylim = stack((low[1] - 0.12 * strip_thickness, high[1] + 0.12 * strip_thickness))  # [2] Scalar+, length
     figure, ax = plt.subplots(figsize=(3.0, 1.45), dpi=100)
     figure.subplots_adjust(0, 0, 1, 1)
-    ax.set(xlim=limits[:2], ylim=limits[2:], aspect="equal")
+    ax.set_aspect("equal")
     ax.set_axis_off()
     mv = vertices.context.multivector
-    camera = offset_panel(ax, mv.x, mv.y)
-    places = vertices.batch()                                                     # [V] Point-
+    camera = offset_panel(ax, mv.x, mv.y, xlim=xlim, ylim=ylim)
+    places = vertices.batch()                                                     # [V] Point-, length
     foot, head = (topology.reading(topology.clamp_nodes[[0, -1]], 0) * vertices).batch()  # Point-, Point-
-    margin = 0.12 * (head - foot)                                                 # Point-
+    margin = 0.12 * (head - foot)                                                 # Point-, length
     overlay(ax, [
         *clamp(foot - margin, head + margin, mv.x.dual() * (0.12 * strip_thickness), camera),
         simplices.strokes(places, topology, rgb(rest_colour), edge_width, camera),
@@ -197,14 +198,14 @@ def draw_strip(topology: Strip, vertices: core.Point) -> plt.Figure:
 
 def draw_device(topology: Strip, vertices: core.Point, areas: core.Scalar, displacement: core.Point,
                 potential: core.Scalar, axial_strain: core.Scalar, displacement_scale: float,
-                voltage_scale: float, strain_scale: float) -> plt.Figure:
+                voltage_scale: core.Scalar, strain_scale: float) -> plt.Figure:
     """Draws a single equilibrium state of the clamped bimorph strip."""
     view = DeviceView(topology, vertices, areas, displacement_scale, voltage_scale, strain_scale)
     return view.update(displacement, potential, axial_strain)
 
 
 def animate(topology: Strip, vertices: core.Point, areas: core.Scalar,
-            displacement_scale: float, voltage_scale: float, strain_scale: float,
+            displacement_scale: float, voltage_scale: core.Scalar, strain_scale: float,
             states: Iterator[tuple[core.Point, core.Scalar, core.Scalar]]) -> Iterator[np.ndarray]:
     """Yields rendered RGB frames across `states` with fixed camera framing and colour scales."""
     view = DeviceView(topology, vertices, areas, displacement_scale, voltage_scale, strain_scale)

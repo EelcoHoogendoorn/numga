@@ -15,30 +15,35 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate
+from numga import concatenate, dim, stack
+from numga.algebras import PGA3D
 from numga.render import solids
 from numga.render.solids import lamp_shading, quadric_regions
 from numga.wgsl import Shader, supersampled
+from examples.mechanics.rattleback import core
 from examples.util.panels import image_figure
 
-ga = solids.ga
-mv = solids.mv
-origin = solids.origin                                                # [] Point-
+mv = core.mv
+origin = core.origin                                                  # [] Point-
+flip = mv.antipseudoscalar([1.0])                                     # [] Antipseudoscalar-
+axes_steps = stack((mv.x.dual(), mv.y.dual(), mv.z.dual())) * dim.length  # [3] Direction-
+view_step = -mv.z.dual() * dim.length                                 # [] Direction-
 
-Point = solids.Point
-Plane = solids.Plane
-Line = solids.Line
-Spin = ga.gatype.bivector().derive.nondegenerate
-Motor = solids.Motor
-Quadric = solids.Quadric
+Point = core.Point
+Plane = core.Plane
+Line = core.Rate
+Spin = core.Spin
+Motor = core.Motor
+Quadric = core.Quadric
 
 n_default_pixels = 300
 camera_angles = np.radians([25.0, 0.0])
 setup_angles = np.radians([58.0, 22.0])
 margin = 0.1
 
-lamp_offset = mv.direction([-0.3, -0.6, 0.85])                        # [] Point-
-lamp = lamp_offset / lamp_offset.dual().norm()                        # [] Point-
+lamp_offset = mv.direction([-0.3, -0.6, 0.85])                        # [] Direction-
+lamp = lamp_offset / lamp_offset.antinorm()                           # [] Direction-
+lamp_step = lamp * dim.length                                         # [] Direction-
 lighting = dict(ambient=0.38, fill_tilt=0.0, headlight=0.0, gloss=0.0, shininess=32.0)
 
 paint = np.array([0.19, 0.52, 0.62])
@@ -66,7 +71,7 @@ joint_darkness = 0.45
 
 n_framing_samples = 400
 n_turns = 16
-drift = 0.3
+drift = mv.scalar(0.3, unit=dim.length)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -132,7 +137,7 @@ fn surroundings(start: Point, direction: Point) -> vec3<f32> {
     let shaded = select(1.0, 1 - shadow, first_hit(on_ground, lamp_in_scene, clearance).distance < far);
     let floor_colour = stone * tone * mottle * (1 - joint_darkness * joint) * shaded;
     let rise = max(ground_plane & direction, 0.0);
-    let lamp_alignment = -(direction.dual() & lamp_in_scene);
+    let lamp_alignment = direction.dot(lamp_in_scene);
     let sky_colour = mix(horizon, zenith, sqrt(rise)) + lamp_brightness * smoothstep(lamp_size, 1.0, lamp_alignment);
     return select(sky_colour, floor_colour, (ground_plane & direction) < 0);
 }
@@ -154,8 +159,8 @@ fn seen(start: Point, direction: Point) -> vec3<f32> {
 
 fn sample(place: vec2<f32>) -> Sample {
     let screen_offset = screen(place) * half_height;
-    let start = camera >> (origin + (axes.dual() * vec3<f32>(screen_offset, back)).sum());
-    let direction = camera >> -ground_plane.dual();
+    let start = camera >> (origin + (axes_steps * vec3<f32>(screen_offset, back)).sum());
+    let direction = camera >> view_step;
     let hit = first_hit(start, direction, 0.0);
     let to_ground = -(ground_plane & start) / (ground_plane & direction);
     if (hit.distance >= far || hit.distance > to_ground) {
@@ -173,10 +178,10 @@ fn sample(place: vec2<f32>) -> Sample {
 """
     return Shader(
         supersampled() + quadric_regions() + lamp_shading() + solids.tangent_seen() + wgsl_source,
-        ga,
+        PGA3D,
         dict(Point=Point, Plane=Plane, Tangent=Plane, Motor=Motor, Quadric=Quadric),
         dict(
-            axes=solids.axes, origin=origin, plane_x=mv.x, plane_y=mv.y, ground_plane=mv.z,
+            axes_steps=axes_steps, view_step=view_step, origin=origin, plane_x=mv.x, plane_y=mv.y, ground_plane=mv.z,
             stone=stone, tile_variation=tile_variation, mottling=mottling, mottle_scale=mottle_scale,
             stone_reflectance=stone_reflectance, horizon=horizon, zenith=zenith, lamp_size=lamp_size,
             lamp_brightness=lamp_brightness, shadow=shadow, tile_size=tile_size,
@@ -200,7 +205,7 @@ def scene(wood: Quadric, balls: Quadric, motor: Motor) -> dict:
                 finishes=dict(colour=colours, gloss=gloss, mirroring=mirroring))
 
 
-def framing(motors: Motor, samples: Point, elevation: float, azimuth: float, clearance: float,
+def framing(motors: Motor, samples: Point, elevation: float, azimuth: float, clearance: core.Scalar | float,
             n_pixels: int) -> solids.View:
     """Sampled body points and their ground shadows across `motors` set an orthographic camera view `n_pixels` wide."""
     stride = max(1, samples.shape[0] // n_framing_samples)
@@ -219,7 +224,7 @@ def picture(wood: Quadric, balls: Quadric, motor: Motor, camera_view: solids.Vie
     raw_image = shader()(
         camera_view.shape, **scene(wood, balls, motor), camera=camera_view.camera,
         back=4 * camera_view.half.max(), half_height=camera_view.half[1],
-        lamp=solids.seen_lamp(camera_view, lamp), lamp_in_scene=lamp,
+        lamp=solids.seen_lamp(camera_view, lamp), lamp_in_scene=lamp_step,
         **lighting, **solids.steps(camera_view),
     )["image"]
     return np.round(np.clip(raw_image, 0, 1) * 255).astype(np.uint8)
@@ -227,7 +232,7 @@ def picture(wood: Quadric, balls: Quadric, motor: Motor, camera_view: solids.Vie
 
 def spin_orbit(motor: Motor) -> Motor:
     """Rotations about the vertical line through the centre of mass sweep `motor` across `n_turns` yaw orientations (`[n_turns] Motor+`)."""
-    vertical_line = ((motor >> origin) & mv.z.dual()) * solids.flip   # [] Line+
+    vertical_line = ((motor >> origin) & mv.z.dual()) * flip          # [] Line+
     turns = (vertical_line.normalized() * (np.pi * np.arange(n_turns) / n_turns)).exp()  # [n_turns] Motor+
     return turns * motor
 

@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate
+from numga import concatenate, dim
 from examples.estimation.epipolar.core import Motor, Point, mv
 from numga.topology import Topology
 from numga.render import solids
@@ -35,7 +35,7 @@ display_turn = (mv.yz * (np.pi / 4)).exp()                                    # 
 def camera_edges(pose: Motor) -> tuple[Point, Point]:
     """Start and end points (`[8] Point-`, `[8] Point-`) trace the eight pyramid edges of a camera placed by `pose` and rotated into display orientation."""
     corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * camera_half * camera_depth
-    local_vertices = mv.point(np.concatenate([[[0.0, 0.0, 0.0]], np.c_[corners, np.full(4, camera_depth)]]))  # [5] Point-
+    local_vertices = mv.point(np.concatenate([[[0.0, 0.0, 0.0]], np.c_[corners, np.full(4, camera_depth)]]), unit=dim.length)  # [5] Point-, 1 | length
     posed_vertices = pose >> local_vertices                                   # [5] Point-
     vertices = display_turn >> posed_vertices                                 # [5] Point-
     eye, ring = vertices[:1], vertices[1:]                                    # [1] Point-, [4] Point-

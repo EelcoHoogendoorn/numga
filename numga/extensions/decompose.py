@@ -19,6 +19,9 @@ from __future__ import annotations
 
 from numga.extensor import Extensor
 from numga.gatype import ReverseProductOne, Versor
+from numga.units import polar_unit
+
+Extensor.decompose_polar.set_unit(polar_unit)
 
 
 @Extensor.decompose_polar.register(

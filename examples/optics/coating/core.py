@@ -11,13 +11,24 @@ from itertools import accumulate
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, Orientation, stack
+from numga import Algebra, NumpyContext, Orientation, dim, stack
 from numga.algebras import STA as ga
 from numga.sparse import Sparse
 
-mv = NumpyContext(ga, dtype=np.complex128).multivector
-# Real spacetime context for stepping real fields along z without harmonic phase factors.
-real = NumpyContext(ga).multivector
+mv = NumpyContext(ga, dtype=np.complex128, units=True).multivector
+# Real spacetime context for physical parameters and stepping real fields along z without harmonic phase factors.
+real = NumpyContext(ga, units=True).multivector
+
+force_dim = dim.mass * dim.length / dim.time**2
+permeability_dim = force_dim / dim.current**2
+electric_dim = force_dim / (dim.current * dim.time)                               # mass*length/(current*time^3)
+# Coherent vacuum constants keep numerical values O(1) while tracking all electromagnetic dimensions.
+c = real.scalar(1.0, unit=dim.length / dim.time)                                  # [] Scalar+, length/time
+mu_0 = real.scalar(1.0, unit=permeability_dim)                                    # [] Scalar+, length*mass/(current^2*time^2)
+eps_0 = 1 / (mu_0 * c**2)                                                         # [] Scalar+, current^2*time^4/(length^3*mass)
+Z_0 = mu_0 * c                                                                    # [] Scalar+, length^2*mass/(current^2*time^3)
+admittance_dim = 1 / Z_0.unit                                                     # current^2*time^3/(length^2*mass)
+
 Scalar = ga.gatype.scalar()                                                       # Scalar+
 Wavevector = ga.gatype.vector()                                                   # Vector+
 Field = ga.gatype.bivector()                                                      # Bivector+
@@ -51,8 +62,8 @@ electric_trace = mv.z.inverse() | Boundary                                      
 
 
 # --- math -----------------------------------------------------------------------------
-def dielectric_response(permittivity: np.ndarray, reluctivity: np.ndarray) -> Constitutive:
-    """Principal `permittivity` (`[..., 3]`) and scalar `reluctivity` (`[...]`) in vacuum units assemble the rest-frame constitutive dyad sum (`[...] Excitation- <- Field+`)."""
+def dielectric_response(permittivity: Scalar, reluctivity: Scalar) -> Constitutive:
+    """Principal `permittivity` (`[..., 3]`, `eps_0`) and scalar `reluctivity` (`[...]`, `1/mu_0`) assemble the rest-frame constitutive dyad sum (`[...] Excitation- <- Field+`)."""
     # Time squares to minus one, so electric worldsheet dyads enter with a minus sign.
     electric = -(permittivity * swept_planes * (Field & swept_planes)).sum(axis=-1)
     magnetic = (patches * (Field & patches)).sum(axis=-1)
@@ -60,7 +71,7 @@ def dielectric_response(permittivity: np.ndarray, reluctivity: np.ndarray) -> Co
 
 
 def layer_operators(response: Constitutive, parallel: Wavevector) -> tuple[FieldMap, Propagation]:
-    """Reducing Maxwell's equations in a layer with constitutive map `response` (`[...] Excitation- <- Field+`) normal to `z` at tangential wavevector `parallel` yields the full-field reconstruction map and the normal propagation generator."""
+    """Reducing Maxwell's equations in a layer with constitutive map `response` (`[...] Excitation- <- Field+`) normal to `z` at tangential slowness `parallel` yields the full-field reconstruction map and the normal propagation generator."""
     # Four tangential combinations of field and excitation stay continuous across interfaces.
     boundary = field_boundary + excitation_boundary(response)                     # [...] Boundary+ <- Field+
     # Two longitudinal Maxwell equations contain no normal derivative and vanish identically.
@@ -73,13 +84,13 @@ def layer_operators(response: Constitutive, parallel: Wavevector) -> tuple[Field
     return reconstruction, generator                                              # [...] Field+ <- Boundary+, Boundary+ <- Boundary+
 
 
-def layer_propagation(generator: Propagation, optical_distance: np.ndarray) -> Propagation:
-    """Exponentiating `generator` (`[...] Boundary+ <- Boundary+`) over `optical_distance` in its eigenmodes builds the transfer map carrying boundary states from a layer's exit face back to its entrance face."""
+def layer_propagation(generator: Propagation, travel: Scalar) -> Propagation:
+    """Exponentiating `generator` (`[...] Boundary+ <- Boundary+`) over `travel` (`omega * thickness`, `length/time`) in its eigenmodes builds the transfer map carrying boundary states from a layer's exit face back to its entrance face."""
     indices, modes = generator.eig()                                              # [..., 4] Scalar+, Boundary+
     frame = (modes * modes.scalar_product(Boundary)).sum(axis=-1)                 # [...] Boundary+ <- Boundary+
     # Solving the mode-dyad frame supplies the biorthogonal reciprocal reading each mode's amplitude.
     reciprocal = frame[..., None].solve(modes)                                    # [..., 4] Boundary+
-    phases = (indices * (1j * optical_distance[..., None])).exp()                 # [..., 4] Scalar+
+    phases = (1j * indices * travel[..., None]).exp()                             # [..., 4] Scalar+
     return (phases * modes * reciprocal.scalar_product(Boundary)).sum(axis=-1)    # [...] Boundary+ <- Boundary+
 
 
@@ -88,27 +99,29 @@ def stack_propagation(layers: Iterable[Propagation]) -> Propagation:
     return reduce(lambda total, layer: total(layer), layers)                      # [...] Boundary+ <- Boundary+
 
 
-def exterior_wave(index: float, parallel: Wavevector) -> WaveMap:
-    """Completing the 4-potential perpendicular to the ray builds the forward exterior plane-wave map (`[...] Field+ <- Polarization+`) at refractive `index` and tangential wavevector `parallel`."""
-    normal_index = (index ** 2 - (parallel - unit_frequency).squared()).square_root()
+def exterior_wave(slowness: Scalar, parallel: Wavevector) -> WaveMap:
+    """Completing the 4-potential perpendicular to the ray builds the forward exterior plane-wave map (`[...] Field+ <- Polarization+`) at medium `slowness` (`n/c`, `time/length`) and tangential slowness `parallel`."""
+    spatial = mv.t.inverse() | (mv.t ^ parallel)
+    normal_slowness = (slowness ** 2 - spatial.squared()).square_root()
     # Undo the temporal wedge and add a normal part so wavevector ^ potential has Polarization as its tangential electric trace.
     tangential = unit_frequency.inverse() | Polarization                          # Wavevector+ <- Polarization+
-    potential = tangential - mv.z * (parallel | tangential) / normal_index
-    wavevector = parallel + mv.z * normal_index
+    potential = tangential - mv.z * (parallel | tangential) / normal_slowness
+    wavevector = parallel + mv.z * normal_slowness
     return wavevector ^ potential                                                 # [...] Field+ <- Polarization+
 
 
 def interface_scattering(
     entrance: Outgoing,
     incident_response: Constitutive,
-    incident_index: float,
+    incident_slowness: Scalar,
     parallel: Wavevector,
 ) -> tuple[PolarizationMap, PolarizationMap]:
-    """Matching an `entrance` boundary map (`[...] Boundary+ <- Polarization+`) against an exterior medium of `incident_response` and `incident_index` at `parallel` solves for the polarization reflection and transmission maps."""
+    """Matching an `entrance` boundary map (`[...] Boundary+ <- Polarization+`) against an exterior medium of `incident_response` and `incident_slowness` (`n/c`) at `parallel` solves for the polarization reflection and transmission maps."""
     _, generator = layer_operators(incident_response, parallel)
-    normal_index = (incident_index ** 2 - (parallel - unit_frequency).squared()).square_root()
-    incoming = electric_trace((Boundary + generator / normal_index) / 2)          # [...] Polarization+ <- Boundary+
-    returning = electric_trace((Boundary - generator / normal_index) / 2)         # [...] Polarization+ <- Boundary+
+    spatial = mv.t.inverse() | (mv.t ^ parallel)
+    normal_slowness = (incident_slowness ** 2 - spatial.squared()).square_root()
+    incoming = electric_trace((Boundary + generator / normal_slowness) / 2)       # [...] Polarization+ <- Boundary+
+    returning = electric_trace((Boundary - generator / normal_slowness) / 2)      # [...] Polarization+ <- Boundary+
     transmission = incoming(entrance).inverse()                                   # [...] Polarization+ <- Polarization+
     reflection = returning(entrance)(transmission)                                # [...] Polarization+ <- Polarization+
     return reflection, transmission
@@ -143,18 +156,18 @@ def scattering_powers(
 def interior_fields(
     reconstruction: FieldMap,
     generator: Propagation,
-    thicknesses: np.ndarray,
-    wavelength: float,
+    thicknesses: Scalar,
+    wavelength: Scalar,
     exit_state: Boundary,
     fractions: np.ndarray,
 ) -> Field:
     """Propagating `exit_state` (`[...] Boundary+`) backward across layers of `thicknesses` (`[n_layers]`) at `wavelength` reconstructs the full field bivectors (`[..., n_layers, n_samples] Field+`) at fractional layer depths `fractions` (`[n_samples]`)."""
-    optical_distances = 2 * np.pi * thicknesses / wavelength
-    crossings = layer_propagation(generator, optical_distances)                   # [...] Boundary+ <- Boundary+
+    travel = 2 * np.pi * c * thicknesses / wavelength
+    crossings = layer_propagation(generator, travel)                              # [...] Boundary+ <- Boundary+
     # Accumulate layer crossings from the substrate back so each layer knows the boundary state at its exit face.
     faces = accumulate(crossings[:0:-1], lambda state, crossing: crossing(state), initial=exit_state)
     right_faces = stack(tuple(faces)[::-1], axis=-1)                              # [...] Boundary+
-    inward = layer_propagation(generator[:, None], optical_distances[:, None] * (1 - fractions))  # [...] Boundary+ <- Boundary+
+    inward = layer_propagation(generator[:, None], travel[:, None] * (1 - fractions))  # [...] Boundary+ <- Boundary+
     return reconstruction[:, None](inward(right_faces[..., None]))                # [...] Field+
 
 
@@ -164,8 +177,8 @@ def leapfrog_states(
     edge_response: Constitutive,
     electric: Field,
     magnetic: Field,
-    spacing: float,
-    interval: float,
+    spacing: Scalar,
+    interval: Scalar,
     n_steps: int,
 ) -> Iterator[tuple[Field, Field]]:
     """Yields staggered `(electric, magnetic)` field states (`[...] Field+[V]`, `[...] Field+[E]`) across `n_steps` leapfrog updates of `d ^ F == 0` and `d ^ G == 0` on a 1D periodic loop."""
@@ -185,7 +198,7 @@ def electromagnetic_energy(
     magnetic: Field,
     node_response: Constitutive,
     edge_response: Constitutive,
-    spacing: float,
+    spacing: Scalar,
 ) -> Scalar:
     """Pairing `electric` (`[...] Field+[V]`) on the nodes and `magnetic` (`[...] Field+[E]`) on the staggered edges with their excitations returns the electromagnetic energy (`[...] Scalar+[V]`) of each staggered interval of length `spacing`."""
     # Spatial magnetic bivectors pair with their excitations to minus twice the magnetic energy density.

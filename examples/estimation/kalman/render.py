@@ -8,10 +8,10 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.estimation.kalman.core import Covariance, Motor, Point, Quadric, mv, origin
+from examples.estimation.kalman.core import Covariance, Motor, Point, Quadric, Scalar, mv, origin
 from examples.util.animation import capture
 from examples.util.panels import overlay, panel
-from numga import concatenate, stack
+from numga import concatenate, dim, stack
 from numga.render import Cap, contours, drawing, quadrics, simplices
 from numga.topology import Topology
 
@@ -23,9 +23,11 @@ margin = 0.12
 width_inches = 3.2
 point_px = 100 / 72
 # Trail widths in pixels, dead-reckoned dash pattern, reading marker radius, and vehicle fill opacity.
-true_width, dead_width, filter_width = 1.3 * point_px, 1.0 * point_px, 1.0 * point_px
+true_width = mv.scalar(1.3 * point_px, unit=dim.pixel)
+dead_width = mv.scalar(1.0 * point_px, unit=dim.pixel)
+filter_width = mv.scalar(1.0 * point_px, unit=dim.pixel)
 dead_dashes = (5.1, 2.2)
-reading_radius = 3.0
+reading_radius = mv.scalar(3.0, unit=dim.pixel)
 vehicle_opacity = 0.9
 
 
@@ -35,23 +37,23 @@ def rgb_colour(colour: str) -> np.ndarray:
     return np.array(mcolors.to_rgb(colour))
 
 
-def drive_window(increments) -> tuple[np.ndarray, float]:
-    """Commanded twist `increments` (`[n_readings, n_steps_per_reading] Twist+`) set a nominal camera box (`[2, 2]`) and
+def drive_window(increments) -> tuple[Scalar, float]:
+    """Commanded twist `increments` (`[n_readings, n_steps_per_reading] Twist+`) set a nominal camera box (`[2, 2] Scalar+, length`) and
     height-to-width aspect ratio around the meandering trajectory."""
     pose = mv.rotor()                                                           # [] Motor+
     nominal = [origin]
     for increment in increments.reshape(-1):
         pose = pose * (increment * 0.5).exp()                                   # [] Motor+
         nominal.append(pose >> origin)
-    outline = mv.point(outline_coordinates)                                     # [3] Point-
+    outline = mv.point(outline_coordinates, unit=dim.length)                    # [3] Point-, 1 | length
     enclosing = concatenate([stack(nominal), (pose >> outline)])
-    heights = stack((mv.x, mv.y))[:, None] & enclosing.normalized()             # [2, ...] Scalar+
-    low = heights.min(axis=-1)                                                  # [2] Scalar+
-    high = heights.max(axis=-1)                                                 # [2] Scalar+
-    spans = high - low                                                          # [2] Scalar+
+    heights = stack((mv.x, mv.y))[:, None] & enclosing.normalized()             # [2, ...] Scalar+, length
+    low = heights.min(axis=-1)                                                  # [2] Scalar+, length
+    high = heights.max(axis=-1)                                                 # [2] Scalar+, length
+    spans = high - low                                                          # [2] Scalar+, length
     # Extra breathing room around the nominal commanded path keeps noisy excursions and initial ellipses inside the frame.
     middle, half = (low + high) / 2, spans / 2 + 2.2 * margin * spans.max()     # [2] Scalar+, [2] Scalar+
-    limits = stack((middle - half, middle + half), axis=-1).to_array()
+    limits = stack((middle - half, middle + half), axis=-1)                     # [2, 2] Scalar+, length
     aspect = float((half[1] / half[0]).to_array())
     return limits, aspect
 
@@ -66,10 +68,9 @@ def tracking_animation(
     limits, aspect = drive_window(increments)
     figure = plt.figure(figsize=(width_inches, width_inches * aspect), dpi=100)
     ax = figure.add_axes([0, 0, 1, 1])
-    ax.set(xlim=limits[0], ylim=limits[1])
-    camera = panel(ax, mv.x, mv.y, mv.w)
+    camera = panel(ax, mv.x, mv.y, mv.w, xlim=limits[0], ylim=limits[1])
     image = overlay(ax, [np.zeros(camera.shape + (4,))])
-    outline = mv.point(outline_coordinates)                                     # [3] Point-
+    outline = mv.point(outline_coordinates, unit=dim.length)                    # [3] Point-, 1 | length
     vehicle = Topology(3, [[0, 1, 2]])
 
     true_points: list[Point] = []
@@ -95,7 +96,7 @@ def tracking_animation(
         filtered_trail = stack(filtered_points)
         pictures = [
             quadrics.regions(ellipsoid[:, None], filter_rgb, camera, 0.18),
-            quadrics.curves(ellipsoid, 1.0 * point_px, filter_rgb, camera),
+            quadrics.curves(ellipsoid, filter_width, filter_rgb, camera),
             simplices.strokes(true_trail, trail, rgb_colour(true_colour), true_width, camera),
             simplices.strokes(dead_trail, trail, rgb_colour(dead_colour), dead_width, camera,
                               dashes=dead_dashes, cap=Cap.BUTT),

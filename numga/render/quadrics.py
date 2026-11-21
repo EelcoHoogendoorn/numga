@@ -20,12 +20,12 @@ from functools import cache
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import GATypeError, NumpyContext, dim
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from numga.wgsl import Shader, level_lines, samples_per_side
 
-from .camera import Camera, extrinsic_first, placing, preimage, whole
+from .camera import Camera, extrinsic_first, placing, preimage, read, whole
 from .drawing import Draw
 
 
@@ -102,8 +102,8 @@ fn form_paired(plane: Form, point: Point) -> f32 {{
                   dict(Point=Point, Plane=Plane, Form=Form, Quadric=Point.algebra.gatype((Form, Point))), {})
 
 
-def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours: np.ndarray, camera: Camera,
-          opacity: float) -> Draw:
+def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: Extensor | float, colours: np.ndarray,
+          camera: Camera, opacity: float) -> Draw:
     """Build a full-screen `Draw` pass evaluating `quadrics` (`[n, bounds]`) plus linear `flats`
     (`[n, bounds]`) over `camera` according to `kind`, with RGB `colours` (`[n, 3]` or `[3]`) and
     stroke `width` in pixels."""
@@ -111,12 +111,28 @@ def layer(quadrics: Extensor, flats: Extensor, kind: Kind, width: float, colours
     Plane = whole(camera.across, algebra)
     Point = points_read_by(Plane)
     origin, step_across, step_up, _ = preimage(camera, Point)
+    if isinstance(width, Extensor):
+        if width.has_units and not width.units.is_zero and width.unit != dim.pixel:
+            raise GATypeError(f"quadric width must carry pixel units; got {width.gatype.signature}")
+        width_px = float(width.to_array())
+    else:
+        width_px = float(width)
+    if camera.has_units:
+        probe = origin + step_across * dim.pixel + step_up * dim.pixel
+        has_q = quadrics.has_units and not quadrics.units.is_zero
+        has_f = flats.has_units and not flats.units.is_zero
+        if has_q:
+            q_val = read(quadrics(probe), probe)
+        if has_f:
+            f_val = read(flats, probe)
+        if has_q and has_f:
+            _ = q_val + f_val
     side = samples_per_side()
     rows, columns = camera.shape
     return Draw(shader(Point, Plane, whole(flats, algebra)), camera.shape, 6 * len(quadrics), dict(
         quadrics=quadrics.reshape(-1), flats=flats.reshape(-1),
         bounds=quadrics.shape[1], colours=np.broadcast_to(colours, (len(quadrics), 3)), opacity=opacity, kind=float(kind),
-        width=width * side, samples=np.array([columns * side, rows * side], dtype=float), origin=origin,
+        width=width_px * side, samples=np.array([columns * side, rows * side], dtype=float), origin=origin,
         step_across=step_across, step_up=step_up, **camera.uniforms(1.0)))
 
 

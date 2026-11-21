@@ -11,10 +11,10 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import NumpyContext, dim, stack
 from numga.algebras import PGA3D as ga
 
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 Scalar = ga.gatype.scalar()                                # Scalar+
 Plane = ga.gatype.vector()                                 # Vector+
 Point = ga.gatype.antivector()                             # Antivector-
@@ -33,7 +33,7 @@ Shape = ga.gatype((Direction, Direction))                  # Direction- <- Direc
 Inertia = ga.gatype((Forque, Twist))                       # Forque- <- Twist+
 
 # The body's centre, the coordinate planes through it, and the directions normal to those planes.
-centre = mv.point([0, 0, 0])                               # [] Point-
+centre = mv.point([0, 0, 0], unit=dim.length)              # [] Point-, 1 | length
 axes = stack([mv.x, mv.y, mv.z])                           # [3] Plane+
 directions = axes.dual()                                   # [3] Direction-
 # The velocity of the centre under a twist, and the couple extracted from its rotational part.
@@ -42,40 +42,40 @@ turn_couple = directions.regressive(directions.commutator(Twist)).sum(axis=-1) /
 
 
 # --- math -----------------------------------------------------------------------------
-def ellipsoid_stretch(semi_axes: np.ndarray) -> Stretch:
-    """Linear stretch carrying the unit sphere onto an ellipsoid with the given semi-axes along the body axes."""
+def ellipsoid_stretch(semi_axes: Scalar) -> Stretch:
+    """Linear stretch carrying the unit sphere onto an ellipsoid with the given semi-axes (`[..., 3] Scalar+, length`) along the body axes."""
     # Scale each direction component along its corresponding axis plane by that axis's semi-axis length.
-    return (directions * semi_axes * (axes & Direction)).sum(axis=-1)   # [...] Direction- <- Direction-
+    return (directions * semi_axes * (axes & Direction)).sum(axis=-1)   # [...] Direction- <- Direction-, length
 
 
-def total_inertia(shape: Shape, density: np.ndarray, fluid_density: np.ndarray, n_widenings: int) -> Inertia:
+def total_inertia(shape: Shape, density: Scalar, fluid_density: Scalar, n_widenings: int) -> Inertia:
     """Combined solid and added-fluid inertia of an ellipsoid in an ideal fluid."""
     widenings, weights = quadrature(n_widenings)
     # Scale quadrature widenings by the mean squared semi-axis, and obtain the ellipsoid volume from det(shape).
-    mean_square = shape.trace() / len(axes)                # [...] Scalar+
-    volume = 4 / 3 * np.pi * shape.det().square_root()     # [...] Scalar+
+    mean_square = shape.trace() / len(axes)                # [...] Scalar+, length^2
+    volume = 4 / 3 * np.pi * shape.det().square_root()     # [...] Scalar+, length^3
     # Confocal ellipsoids grow every squared semi-axis equally, weighted by the ratio of body volume to confocal volume.
-    confocal_shapes = shape[..., None] + (mean_square[..., None] * widenings) * Direction   # [..., n_widenings] Direction- <- Direction-
-    quadrature_weights = (shape.det()[..., None] / confocal_shapes.det()).square_root() * mean_square[..., None] * weights   # [..., n_widenings] Scalar+
+    confocal_shapes = shape[..., None] + (mean_square[..., None] * widenings) * Direction   # [..., n_widenings] Direction- <- Direction-, length^2
+    quadrature_weights = (shape.det()[..., None] / confocal_shapes.det()).square_root() * mean_square[..., None] * weights   # [..., n_widenings] Scalar+, length^2
     # Confocal averages of the inverse shape and its couple outermorphism give the shift and turn depolarization factors.
     shift_factors = (confocal_shapes.inverse() * quadrature_weights).sum(axis=-1)   # [...] Direction- <- Direction-
-    turn_factors = (confocal_shapes.inverse().outermorphism(Couple) * quadrature_weights).sum(axis=-1)   # [...] Couple- <- Couple-
+    turn_factors = (confocal_shapes.inverse().outermorphism(Couple) * quadrature_weights).sum(axis=-1)   # [...] Couple- <- Couple-, 1/length^2
     # On each coordinate plane, `areas` multiplies the two squared semi-axes and `axis_sum` adds them via the mixed
     # outermorphism term; their discriminant `(a^2 - b^2)^2` vanishes for turns about an axis of symmetry.
-    areas = shape.outermorphism(Couple)                    # [...] Couple- <- Couple-
-    axis_sum = (Direction + shape).outermorphism(Couple) - Couple - areas   # [...] Couple- <- Couple-
-    discriminant = axis_sum(axis_sum) - 4 * areas          # [...] Couple- <- Couple-
+    areas = shape.outermorphism(Couple)                    # [...] Couple- <- Couple-, length^4
+    axis_sum = (mean_square * Direction + shape).outermorphism(Couple) / mean_square - mean_square * Couple - areas / mean_square   # [...] Couple- <- Couple-, length^2
+    discriminant = axis_sum(axis_sum) - 4 * areas          # [...] Couple- <- Couple-, length^4
     # Dimensionless translational and rotational added-mass operators per unit displaced fluid mass.
     fluid_shift = (2 * Direction - shift_factors).solve(shift_factors)   # [...] Direction- <- Direction-
-    fluid_turn = (2 * Couple - axis_sum(turn_factors)).solve(discriminant(turn_factors)) / 5   # [...] Couple- <- Couple-
+    fluid_turn = (2 * Couple - axis_sum(turn_factors)).solve(discriminant(turn_factors)) / 5   # [...] Couple- <- Couple-, length^2
     # Combine the solid's isotropic mass and fifth-moment rotational inertia with the displaced fluid's added inertia.
-    shift_inertia = (volume * density) * Direction + (volume * fluid_density) * fluid_shift   # [...] Direction- <- Direction-
-    turn_inertia = (volume * density / 5) * axis_sum + (volume * fluid_density) * fluid_turn   # [...] Couple- <- Couple-
+    shift_inertia = (volume * density) * Direction + (volume * fluid_density) * fluid_shift   # [...] Direction- <- Direction-, mass
+    turn_inertia = (volume * density / 5) * axis_sum + (volume * fluid_density) * fluid_turn   # [...] Couple- <- Couple-, mass*length^2
     # Translational momentum is a line through the centre; rotational momentum is an ideal couple.
     return (centre & shift_inertia(centre_velocity)) + turn_inertia(turn_couple)   # [...] Forque- <- Twist+
 
 
-def trajectory(motor: Motor, impulse: Forque, inertia: Inertia, dt: float, n_steps: int) -> Iterator[Motor]:
+def trajectory(motor: Motor, impulse: Forque, inertia: Inertia, dt: Scalar, n_steps: int) -> Iterator[Motor]:
     """Yield the body's motor placement from the start and after each Lie midpoint step under a space-fixed impulse."""
     mobility = inertia.inverse()                           # [...] Twist+ <- Forque-
     yield motor

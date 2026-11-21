@@ -22,8 +22,11 @@ from typing import NoReturn
 
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductScalar, ReverseProductZero
+from numga.units import normalized_unit
 
 from ._scalar_functions import register_scalar_function
+
+Extensor.normalized.set_unit(normalized_unit)
 
 
 @Extensor.study_norm_squared.register(lambda g: g.is_study)

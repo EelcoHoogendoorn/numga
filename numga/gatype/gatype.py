@@ -41,6 +41,17 @@ import numpy as np
 import numga
 from numga.algebra.self_product import grade_transform_signs, symmetric_product_support
 from numga.subspace import SubSpace
+from numga.units import (
+    Unit,
+    UnitGrid,
+    _dual_permutation,
+    _trace_axes,
+    coerce_unit_grid,
+    dim,
+    invert_map_units,
+    remap_grid_subspaces,
+    validate_reverse_product_one,
+)
 
 from .errors import GATypeError
 from .metric import Metric
@@ -81,7 +92,7 @@ class GAType:
     """Output-first `SubSpace` axes, per-axis `Orientation`s, certified `TraitSet` facts, and
     coupled field site counts define the static type of an extensor."""
 
-    __slots__ = ("_subspaces", "_orientations", "_traits", "_fields", "_algebra", "_hash", "__dict__")
+    __slots__ = ("_subspaces", "_orientations", "_traits", "_fields", "_units", "_algebra", "_hash", "__dict__")
     # Disable NumPy ufunc coercion so array * gatype uses GAType.__rmul__ instead of building an object array.
     __array_ufunc__ = None
 
@@ -91,6 +102,7 @@ class GAType:
         orientations: Iterable[Orientation],
         traits: TraitSet = EMPTY_TRAITS,
         fields: tuple = (),
+        units: UnitGrid | None = None,
     ) -> None:
         if isinstance(subspaces, SubSpace):
             raise TypeError("GAType subspaces must be an output-first iterable")
@@ -108,6 +120,16 @@ class GAType:
         algebra = normalized_subspaces[0].algebra
         if any(axis.algebra is not algebra for axis in normalized_subspaces[1:]):
             raise ValueError("every GAType axis must belong to the same algebra")
+
+        blade_shape = tuple(len(axis) for axis in normalized_subspaces)
+        if units is None:
+            resolved_units = UnitGrid.unchecked(blade_shape)
+        elif not isinstance(units, UnitGrid):
+            raise TypeError(f"GAType units must be a UnitGrid; got {units!r}")
+        elif units.shape != blade_shape:
+            raise GATypeError(f"UnitGrid shape {units.shape} does not match type shape {blade_shape}")
+        else:
+            resolved_units = units
 
         normalized_traits = normalize_explicit_traits(
             normalized_subspaces,
@@ -130,12 +152,18 @@ class GAType:
         object.__setattr__(self, "_orientations", normalized_orientations)
         object.__setattr__(self, "_traits", normalized_traits)
         object.__setattr__(self, "_fields", normalized_fields)
+        object.__setattr__(self, "_units", resolved_units)
         object.__setattr__(self, "_algebra", algebra)
         object.__setattr__(
             self,
             "_hash",
-            hash((type(self), normalized_subspaces, normalized_orientations, normalized_traits, normalized_fields)),
+            hash((type(self), normalized_subspaces, normalized_orientations, normalized_traits, normalized_fields, resolved_units)),
         )
+        if not resolved_units.is_unchecked and any(
+            isinstance(trait, ProductFact) and trait.result is ProductResult.ONE
+            for trait in normalized_traits
+        ):
+            validate_reverse_product_one(self)
 
     @property
     def subspaces(self) -> tuple[SubSpace, ...]:
@@ -186,6 +214,30 @@ class GAType:
     @property
     def traits(self) -> TraitSet:
         return self._traits
+
+    @property
+    def has_units(self) -> bool:
+        """Whether this type carries checked physical units (false when unchecked)."""
+        return not self._units.is_unchecked
+
+    @property
+    def units(self) -> UnitGrid:
+        """Per-entry physical units (`is_unchecked` when unit checking is off)."""
+        return self._units
+
+    @property
+    def unit(self) -> Unit:
+        """Single physical unit shared by every nonzero entry; raises `GATypeError` if unchecked,
+        structurally zero, or non-uniform."""
+        if self._units.is_unchecked:
+            raise GATypeError(f"{self.signature} is unchecked and has no unit")
+        if self._units.is_zero:
+            raise GATypeError(f"{self.signature} is structurally zero and has no unit")
+        if self._units.uniform is None:
+            raise GATypeError(
+                f"{self.signature} has multiple blade units ({self._units.format_for(self.subspaces)}); inspect .units"
+            )
+        return self._units.uniform
 
     @property
     def algebra(self) -> Algebra:
@@ -463,6 +515,7 @@ class GAType:
             and self.orientations == other.orientations
             and self.traits == other.traits
             and self.fields == other.fields
+            and self._units == other._units
         )
 
     def __hash__(self) -> int:
@@ -614,12 +667,13 @@ class GAType:
         return numga.expression.reverse_transform(self, other)
 
     def __reduce__(self) -> tuple:
-        return type(self), (self.subspaces, self.orientations, self.traits, self.fields)
+        return type(self), (self.subspaces, self.orientations, self.traits, self.fields, self._units)
 
     @property
     def signature(self) -> str:
         """Human-readable signature formatting lists output and inputs by orientation and subspace
-        name (`intrinsic bivector <- extrinsic bivector`), followed by any traits after `|`."""
+        name (`intrinsic bivector <- extrinsic bivector`), followed by any traits after `|` and any
+        non-dimensionless unit after `,`."""
         sites = dict(self.fields)
         output, *inputs = (
             f"{orientation.value} {space.type_name}"
@@ -627,7 +681,12 @@ class GAType:
             for axis, (space, orientation) in enumerate(zip(self.subspaces, self.orientations))
         )
         text = f"{output} <- {', '.join(inputs)}" if inputs else output
-        return f"{text} | {', '.join(trait.name for trait in self.traits)}" if self.traits else text
+        if self.traits:
+            text = f"{text} | {', '.join(trait.name for trait in self.traits)}"
+        suffix = self._units.format_for(self.subspaces)
+        if suffix:
+            return f"{text}, {suffix}"
+        return text
 
     def __repr__(self) -> str:
         return f"GAType({self.signature})"
@@ -684,27 +743,92 @@ class Derivations:
 
     @cached_property
     def structural(self) -> GAType:
-        """Stripping explicit `traits` leaves only the subspaces, orientations, and field sites."""
+        """Stripping explicit `traits` leaves only the subspaces, orientations, field sites, and units."""
         gatype = self._gatype
-        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, fields=gatype.fields)
+        return gatype.algebra.gatype.oriented(
+            gatype.subspaces, gatype.orientations, fields=gatype.fields, units=gatype.units,
+        )
 
     @lru_cache(maxsize=None)
     def with_traits(self, *traits: Trait) -> GAType:
-        """Adding certified `Trait` facts preserves all subspaces, orientations, and field sites."""
+        """Adding certified `Trait` facts preserves all subspaces, orientations, field sites, and units."""
         gatype = self._gatype
-        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, (*gatype.traits, *traits), gatype.fields)
+        return gatype.algebra.gatype.oriented(
+            gatype.subspaces, gatype.orientations, (*gatype.traits, *traits), gatype.fields, units=gatype.units,
+        )
 
     @cached_property
     def plain(self) -> GAType:
         """Dropping coupled `fields` reinterprets any site dimensions as ordinary batch axes."""
         gatype = self._gatype
-        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits) if gatype.fields else gatype
+        return (
+            gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits, units=gatype.units)
+            if gatype.fields else gatype
+        )
 
     @lru_cache(maxsize=None)
     def with_fields(self, fields: tuple) -> GAType:
         """Attaching `(axis, n_sites)` pairs marks output or input axes as coupled field axes."""
         gatype = self._gatype
-        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits, fields)
+        return gatype.algebra.gatype.oriented(
+            gatype.subspaces, gatype.orientations, gatype.traits, fields, units=gatype.units,
+        )
+
+    def unit(self, spec: object) -> GAType:
+        """Replacing the per-entry physical units preserves subspaces, orientations, traits, and fields."""
+        gatype = self._gatype
+        resolved = coerce_unit_grid(spec, gatype.subspaces)
+        if gatype.units == resolved:
+            return gatype
+        return gatype.algebra.gatype.oriented(
+            gatype.subspaces, gatype.orientations, gatype.traits, gatype.fields, units=resolved,
+        )
+
+    def scaled_unit(self, factor: Unit) -> GAType:
+        """Scaling every nonzero blade or entry unit by `factor` attaches `factor` to an unchecked
+        type and preserves subspaces, orientations, traits, and fields."""
+        factor = Unit.require(factor)
+        gatype = self._gatype
+        if gatype.units.is_unchecked:
+            return self.unit(factor)
+        return self.unit(gatype.units.scale(factor))
+
+    def projective(self, unit: Unit) -> GAType:
+        """Scaling degenerate blades by `unit` (with `dim.none` on non-degenerate blades when unchecked,
+        or multiplying existing degenerate blade units by `unit`) builds projective types such as
+        metre points, pixel points, screws, or Galilean boosts in a single-null algebra."""
+        unit = Unit.require(unit)
+        gatype = self._gatype
+        if gatype.arity:
+            raise GATypeError("projective unit scaling applies to nullary types")
+        deg = gatype.algebra.degenerate_mask
+        if deg.bit_count() != 1:
+            raise GATypeError("projective unit scaling requires an algebra with a single null generator")
+        space = gatype.output_subspace
+        if gatype.units.is_unchecked:
+            entries = {i: unit if (mask & deg) else dim.none for i, mask in enumerate(space.masks)}
+        else:
+            entries = {
+                i: (u * unit if (space.masks[i] & deg) else u)
+                for i, u in gatype.units.items
+            }
+        return self.unit(UnitGrid.from_entries((len(space),), entries))
+
+    @cached_property
+    def unchecked(self) -> GAType:
+        """Marking a type unchecked disables unit checks on values that carry it."""
+        return self.unit(None)
+
+    @cached_property
+    def dimensionless(self) -> GAType:
+        """Marking a type dimensionless (`dim.none`) preserves subspaces, orientations, traits, and fields."""
+        return self.unit(dim.none)
+
+    @cached_property
+    def inverted(self) -> GAType:
+        """Reversing a map's arrow and inverting its physical units gives the type of its inverse."""
+        gatype = self._gatype
+        return self.transposed.derive.unit(invert_map_units(gatype))
 
     @lru_cache(maxsize=None)
     def traced(self, axis: int) -> GAType:
@@ -716,9 +840,11 @@ class Derivations:
         if not inputs[axis].same_support(gatype.output_subspace):
             raise TypeError("trace pairs an output with an input of the same space")
         orientations = gatype.input_orientations
+        traced_units = None if gatype.units.is_unchecked else _trace_axes(gatype, 0, axis + 1, "trace")
         return gatype.algebra.gatype.oriented(
             (gatype.algebra.subspace.scalar(),) + inputs[:axis] + inputs[axis + 1:],
             (gatype.orientation * orientations[axis],) + orientations[:axis] + orientations[axis + 1:],
+            units=traced_units,
         )
 
     @lru_cache(maxsize=None)
@@ -746,15 +872,23 @@ class Derivations:
 
     @lru_cache(maxsize=None)
     def with_orientations(self, orientations: tuple[Orientation, ...]) -> GAType:
-        """Replacing per-axis orientations preserves subspaces, explicit traits, and field sites."""
+        """Replacing per-axis orientations preserves subspaces, explicit traits, field sites, and units."""
         gatype = self._gatype
-        return gatype.algebra.gatype.oriented(gatype.subspaces, orientations, gatype.traits, gatype.fields)
+        return gatype.algebra.gatype.oriented(
+            gatype.subspaces, orientations, gatype.traits, gatype.fields, units=gatype.units,
+        )
 
     @cached_property
     def transposed(self) -> GAType:
         """Reversing axis order reverses per-axis orientations and retains `CoefficientOrthogonal`."""
         gatype = self._gatype
         return numga.gatype.rules.TRANSPOSE.result((gatype,), tuple(reversed(gatype.subspaces)))
+
+    def _with_output_space(self, space: SubSpace) -> GAType:
+        gatype = self._gatype
+        axes = (space,) + gatype.input_subspaces
+        units = None if gatype.units.is_unchecked else remap_grid_subspaces(gatype.units, gatype.subspaces, axes)
+        return gatype.algebra.gatype.oriented(axes, gatype.orientations, units=units)
 
     @cached_property
     def nonscalar(self) -> GAType:
@@ -764,30 +898,26 @@ class Derivations:
         space = gatype.output_subspace.restrict(
             mask for mask in gatype.output_subspace.masks if mask
         )
-        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+        return self._with_output_space(space)
 
     @cached_property
     def degenerate(self) -> GAType:
         """Restricting the output to blades containing at least one null generator selects ideal
         elements in projective algebras (such as directions and translation bivectors) while
         preserving orientation and input axes."""
-        gatype = self._gatype
-        space = gatype.output_subspace.degenerate()
-        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+        return self._with_output_space(self._gatype.output_subspace.degenerate())
 
     @cached_property
     def nondegenerate(self) -> GAType:
         """Restricting the output to blades free of null generators selects origin-passing elements
         in projective algebras (such as Euclidean planes and rotation bivectors) while preserving
         orientation and input axes."""
-        gatype = self._gatype
-        space = gatype.output_subspace.nondegenerate()
-        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+        return self._with_output_space(self._gatype.output_subspace.nondegenerate())
 
     def _restricted(self, keep: Callable) -> GAType:
         gatype = self._gatype
         space = gatype.output_subspace.restrict(mask for mask in gatype.output_subspace.masks if keep(mask))
-        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+        return self._with_output_space(space)
 
     @lru_cache(maxsize=None)
     def within(self, part: Algebra | str) -> GAType:
@@ -828,15 +958,21 @@ class Derivations:
         algebra = gatype.algebra
         space = algebra.subspace.from_masks(algebra.complement(mask) for mask in gatype.output_subspace.masks)
         orientations = (gatype.orientation.flipped,) + gatype.input_orientations
-        return algebra.gatype.oriented((space,) + gatype.input_subspaces, orientations)
+        units = (
+            None if gatype.units.is_unchecked
+            else gatype.units.remap_axis(0, len(space), _dual_permutation(gatype.output_subspace, space))
+        )
+        return algebra.gatype.oriented((space,) + gatype.input_subspaces, orientations, units=units)
 
     @cached_property
     def flipped_orientation(self) -> GAType:
-        """Flipping only the output orientation keeps the same blades, traits, and fields (such as
-        passing between rates and forques in 3D PGA, or rotation centres and mass points in 2D PGA)."""
+        """Flipping only the output orientation keeps the same blades, traits, fields, and units (such
+        as passing between rates and forques in 3D PGA, or rotation centres and mass points in 2D PGA)."""
         gatype = self._gatype
         orientations = (gatype.orientation.flipped,) + gatype.input_orientations
-        return gatype.algebra.gatype.oriented(gatype.subspaces, orientations, gatype.traits, gatype.fields)
+        return gatype.algebra.gatype.oriented(
+            gatype.subspaces, orientations, gatype.traits, gatype.fields, units=gatype.units,
+        )
 
     @cached_property
     def reverse_fixed_subspace(self) -> SubSpace:
@@ -860,8 +996,21 @@ class Derivations:
             support = symmetric_product_support(gatype.output_subspace, transform)
             space = gatype.algebra.subspace.from_masks(support)
         # Multiplying equal orientations on both sides always gives an extrinsic output.
+        out_axes = (space,) + gatype.input_subspaces * 2
+        if gatype.units.is_unchecked:
+            units: UnitGrid | None = None
+        elif gatype.units.is_zero:
+            units = UnitGrid.zero(tuple(len(s) for s in out_axes))
+        else:
+            from numga.binding import BindingPlan, TypeRules
+
+            plain = gatype.derive.plain
+            op = gatype.algebra.operator._symmetric_product(plain.derive.unchecked, transform)
+            bound = TypeRules.bind(BindingPlan.from_types(op.gatype, ((0, plain), (1, plain))))
+            units = remap_grid_subspaces(bound.units, bound.subspaces, out_axes)
         return gatype.algebra.gatype.oriented(
-            (space,) + gatype.input_subspaces * 2, (Orientation.extrinsic,) + gatype.input_orientations * 2,
+            out_axes, (Orientation.extrinsic,) + gatype.input_orientations * 2,
+            units=units,
         )
 
     @property

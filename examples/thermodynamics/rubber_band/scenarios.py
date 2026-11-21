@@ -9,29 +9,39 @@ import numpy as np
 
 from examples.thermodynamics.rubber_band import core
 from examples.util import shapes
+from numga import dim
 from numga.topology import Topology
 
 mv = core.mv
+# Extensive mechanical and thermal amounts carry dim.extent; spatial coordinates and temperature carry none.
+mass_dim = dim.mass * dim.extent
+force_dim = mass_dim * dim.length / dim.time**2
+entropy_dim = force_dim * dim.length / dim.temperature
 
 # Band geometry and mass density, plus the denser, stiffer weight rows attached at the bottom.
-n_across, n_band_rows, density = 4, 11, 0.25
-n_weight_rows, weight_density, weight_stiffening = 2, 1.0, 6.0
+n_across, n_band_rows, density = 4, 11, mv.scalar(0.25, unit=mass_dim / dim.length**2)
+n_weight_rows, weight_density, weight_stiffening = 2, mv.scalar(1.0, unit=mass_dim / dim.length**2), 6.0
 # Room-temperature shear modulus, Poisson ratio (so the band narrows visibly when stretched), first plane-stress Lamé
 # modulus, heat capacity per area and degree, and thermal conductivity.
-lame_mu, poisson_ratio = 1.0, 1 / 3
+lame_mu, poisson_ratio = mv.scalar(1.0, unit=force_dim / dim.length), 1 / 3
 lame_lambda = 2 * lame_mu * poisson_ratio / (1 - poisson_ratio)
-heat_capacity, conductivity = 600.0, 6.0
+heat_capacity = mv.scalar(600.0, unit=entropy_dim / dim.length**2)
+conductivity = mv.scalar(6.0, unit=entropy_dim / dim.time)
 # Room temperature, gravitational acceleration and air drag per unit mass.
-room_temperature, gravity, drag = 1.0, 1.0, 0.5
+room_temperature = mv.scalar(1.0, unit=dim.temperature)
+gravity = mv.scalar(1.0, unit=dim.length / dim.time**2)
+drag = mv.scalar(0.5, unit=1 / dim.time)
 # Peak equilibrium lamp temperature at its half-intensity reach (exaggerated so the lift is plain) and warming time.
-lamp_temperature, reach, warming_time = 1.8, 1.0, 20.0
+lamp_temperature = mv.scalar(1.8, unit=dim.temperature)
+reach = mv.scalar(1.0, unit=dim.length)
+warming_time = mv.scalar(20.0, unit=dim.time)
 cooling = heat_capacity / warming_time
 lamp_heat = 2 * cooling * (lamp_temperature - room_temperature)
 # Lamp position beside the middle of the hanging band.
-lamp_across, lamp_up = -1.2, -2.4
-lamp = lamp_across * core.across + lamp_up * core.up                          # [] Point-
+lamp_across, lamp_up = mv.scalar(-1.2, unit=dim.length), mv.scalar(-2.4, unit=dim.length)
+lamp = lamp_across * core.across + lamp_up * core.up                          # [] Spatial-, length
 # Time step, unrendered settling steps, lit and dark step counts, frame stride and frame duration.
-dt = 0.025
+dt = mv.scalar(0.025, unit=dim.time)
 n_settling, n_lit, n_dark, n_stride = 3000, 2000, 2000, 40
 frame_duration_ms = 40
 # Downward hand-pull schedule on the lamp's timeline: a quick rise, a hold while heat leaks to the room, a quick
@@ -39,7 +49,7 @@ frame_duration_ms = 40
 hand_pull = 1.0
 n_rise = 160
 n_hold = n_lit - n_rise
-pull_swing, pull_drop = 6e-4, 0.9
+pull_swing, pull_drop = mv.scalar(6e-4, unit=dim.temperature), mv.scalar(0.9, unit=dim.length)
 # Per-step schedules for lamp exposure and downward hand pull.
 exposure = np.concatenate([np.ones(n_lit), np.zeros(n_dark)])
 rise = (1 - np.cos(np.pi * np.arange(n_rise) / n_rise)) / 2
@@ -60,19 +70,20 @@ def lattice(n_across: int, n_rows: int) -> np.ndarray:
 
 
 # --- scenes ---------------------------------------------------------------------------
-def hanging_band() -> tuple[Topology, core.Point, np.ndarray, core.Band]:
+def hanging_band() -> tuple[Topology, core.Spatial, np.ndarray, core.Band]:
     """Triangulated strip, unloaded rest positions, boolean face mask for the hanging weight, and assembled band."""
     coordinates = lattice(n_across, n_band_rows + n_weight_rows)              # [V, 2]
     topology, coordinates = shapes.delaunay(coordinates)
-    rest = mv(core.Upright, coordinates).dual().field()                       # Point-[V]
+    rest = (mv(core.Upright, coordinates) * dim.length).dual().field()        # Spatial-[V], length
     # Mark the bottom rows as the denser, stiffer weight and clamp the top row at y == 0.
     band_length = n_band_rows * np.sqrt(3) / 2 / (n_across - 1)
     in_weight = coordinates[topology.elements[2]][..., 1].max(axis=-1) < -band_length + 1e-9   # [F]
     held = np.flatnonzero(coordinates[:, 1] == 0)                            # [V_held]
+    weighting = mv.scalar(in_weight[:, None] * 1.0).field()                  # Scalar+[F]
     band = core.band(topology, rest, held, core.constitutive(lame_lambda, lame_mu),
-                     mv.scalar(np.where(in_weight, weight_stiffening, 1.0)[:, None]).field(),
-                     mv.scalar(np.where(in_weight, weight_density, density)[:, None]).field(),
-                     mv.scalar(in_weight[:, None] * 1.0).field(),
+                     1 + (weight_stiffening - 1) * weighting,
+                     density + (weight_density - density) * weighting,
+                     weighting,
                      heat_capacity, conductivity, cooling, room_temperature, gravity, drag, hand_pull)
     return topology, rest, in_weight, band
 

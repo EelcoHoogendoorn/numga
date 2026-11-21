@@ -20,6 +20,25 @@ from numga.extensor import Extensor
 from numga.gatype import GATypePattern
 
 from numga.extensions._linalg import _eigenpairs, _result, _scalars
+from numga.units import (
+    cholesky_unit,
+    det_unit,
+    eig_unit,
+    eigh_unit,
+    eigvals_unit,
+    eigvalsh_unit,
+    svd_unit,
+    svdvals_unit,
+)
+
+Extensor.det.set_unit(det_unit)
+Extensor.eig.set_unit(eig_unit)
+Extensor.eigvals.set_unit(eigvals_unit)
+Extensor.eigh.set_unit(eigh_unit)
+Extensor.eigvalsh.set_unit(eigvalsh_unit)
+Extensor.cholesky.set_unit(cholesky_unit)
+Extensor.svd.set_unit(svd_unit)
+Extensor.svdvals.set_unit(svdvals_unit)
 
 
 @Extensor.det.register(lambda t: t.is_endomorphism)

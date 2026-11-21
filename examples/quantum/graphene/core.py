@@ -27,10 +27,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import NumpyContext, dim
 from numga.algebras import VGA3D as ga
 
-mv = NumpyContext(ga).multivector
+mv = NumpyContext(ga, units=True).multivector
 Scalar = ga.gatype.scalar()                                                     # Scalar+
 # A momentum, read by pairing with a displacement, is a wavevector.
 Wavevector = ga.gatype.vector()                                                 # Vector+
@@ -40,16 +40,16 @@ Field = ga.gatype.bivector()                                                    
 Pseudospin = ga.gatype.antibivector()                                           # Antibivector-
 Spinor = ga.gatype.even()                                                       # Even+
 Rotor = ga.gatype.rotor()                                                       # Rotor+
-# The energy of a hop between neighbouring atoms, in eV.
-hopping = 2.8
-# The bonds from an atom to its three neighbours, a third of a turn apart, in carbon-carbon distances of 0.142 nm:
-# displacements, antivectors with intrinsic orientation.
+# The energy of a hop between neighbouring atoms (eV) and the carbon-carbon bond length (0.142 nm).
+hopping = mv.scalar(2.8, unit=dim.energy)                                       # [] Scalar+, energy
+bond_length = mv.scalar(1.0, unit=dim.length)                                   # [] Scalar+, length
+# The bonds from an atom to its three neighbours, a third of a turn apart: displacements, antivectors.
 bond_angles = np.array([1, 3, 5]) * np.pi / 3
 bond_turns = (mv.xy * (-bond_angles / 2)).exp()                                 # [3] Rotor+
-bonds = bond_turns >> mv.x.dual()                                               # [3] Displacement-
+bonds = (bond_turns >> mv.x.dual()) * bond_length                               # [3] Displacement-, length
 # The two inequivalent corners of the Brillouin zone, where the cones sit.
 valleys = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0],
-                     [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0]])        # [2] Wavevector+
+                     [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0]], unit=1 / dim.length)  # [2] Wavevector+, 1/length
 # The pseudospin of a state wholly on the first sublattice: the patch of the plane xy.
 first_sublattice = mv.xy.dual()                                                 # [] Pseudospin-
 # The Hamiltonian, for a given field a map on spinors: minus the field on the left, the plane xy on the right.
@@ -57,13 +57,13 @@ hamiltonian = -(Field * Spinor * mv.xy)                                         
 
 
 # --- math -----------------------------------------------------------------------------
-def pseudospin_field(momentum: Wavevector, gap: np.ndarray) -> Field:
+def pseudospin_field(momentum: Wavevector, gap: Scalar) -> Field:
     """Hopping across the three bonds turns the plane `yz` in `xy` by each bond phase and adds the sublattice gap in `xy` (`[...] Field+`)."""
     phases = momentum[..., None] & bonds                                        # [..., 3] Scalar+
     return -hopping * ((mv.xy * phases).exp() * mv.yz).sum(axis=-1) + gap * mv.xy   # [...] Field+
 
 
-def upper_pseudospins(offsets: Wavevector, gap: np.ndarray) -> Pseudospin:
+def upper_pseudospins(offsets: Wavevector, gap: Scalar) -> Pseudospin:
     """Diagonalizing the Hamiltonian near both valleys gives the upper band's unit pseudospin (`[2, ...] Pseudospin-`)."""
     valley_field = pseudospin_field(valleys[:, None, None] + offsets, gap)      # [2, ...] Field+
     _, states = hamiltonian(valley_field).eigh()                                # [2, ..., 4] Spinor+

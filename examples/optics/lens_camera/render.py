@@ -11,9 +11,9 @@ from functools import cache
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, ga, home, mv, origin, scene_point, unit_point
+from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, Scalar, ga, home, mv, origin, scene_point, unit_point
 from examples.util.panels import image_figure
-from numga import stack
+from numga import dim, stack
 from numga.render import Scene, solids
 from numga.wgsl import Shader, supersampled
 
@@ -119,14 +119,14 @@ def scene_spheres(view: solids.View, scene: Point) -> tuple[solids.Quadric, np.n
     return solids.ball(display_turn >> scene.reshape(-1), point_radius * view.pixel)[:, None], layers.reshape(-1, 3)
 
 
-def side_image(side: Scene, planes: Plane, radius: float, frame: Motor, ray_vertices: Point) -> np.ndarray:
+def side_image(side: Scene, planes: Plane, radius: Scalar, frame: Motor, ray_vertices: Point) -> np.ndarray:
     """Renders `[rows, columns, 3]` `uint8` RGB pixels of the two translucent lenses, the sensor plate, and the traced ray segments inside `side`."""
-    centres = unit_point(planes[:2] ^ mv.y ^ mv.z)                              # [2] Point-
+    centres = unit_point(planes[:2] ^ mv.y ^ mv.z)                              # [2] Point-, 1 | length
     around = np.linspace(0, 2 * np.pi, n_rim, endpoint=False)
     turns = (mv.yz * (-around / 2)).exp()                                       # [n_rim] Rotor+
     spokes = turns >> mv.y.dual()                                               # [n_rim] Point-
-    radii = np.array([radius, rear_half_height])
-    rims = centres[:, None] + spokes * radii[:, None]                           # [2, n_rim] Point-
+    radii = stack((radius, mv.scalar(rear_half_height, unit=dim.length)))       # [2] Scalar+, length
+    rims = centres[:, None] + spokes * radii[:, None]                           # [2, n_rim] Point-, 1 | length
     lenses = solids.plates(display_turn >> rims, thickness)                     # [2, n_rim + 2] Plane+
     corners = frame >> scene_point(
         np.array([[0, -1, -1], [0, 1, -1], [0, 1, 1], [0, -1, 1]]) * [0, *sensor_half_extents]
@@ -155,8 +155,9 @@ def camera_animation(scene: Point, states: Iterable[tuple]) -> Iterator[np.ndarr
     """Yields composite RGB frames stacking the live sensor image above the 3D side view for each state in `states`."""
     view = side_view()
     side = Scene(view, np.ones(3), [scene_spheres(view, scene)], [], inks=[], translucent=[])
+    reference = mv.scalar(reference_aperture, unit=dim.length)
     for _, _, radius, (_, _, frame, cones, planes, ray_vertices) in states:
-        sensor = sensor_image(frame, cones, (radius / reference_aperture)**2)
+        sensor = sensor_image(frame, cones, float(((radius / reference)**2).to_array()))
         below = side_image(side, planes, radius, frame, ray_vertices)
         pad = (below.shape[1] - sensor.shape[1]) // 2
         sensor = np.pad(sensor, ((0, 0), (pad, below.shape[1] - sensor.shape[1] - pad), (0, 0)), constant_values=255)

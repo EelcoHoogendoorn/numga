@@ -34,6 +34,7 @@ from typing import Mapping, Protocol
 from numga.gatype import GAType, GATypeError, Orientation
 from numga.gatype.propagation import bind_subspaces, bind_traits
 from numga.subspace import SubSpace
+from numga.units import UnitGrid, contract_units
 
 
 class HasGAType(Protocol):
@@ -144,6 +145,7 @@ class BindingPlan:
     result_subspaces: tuple[SubSpace, ...]
     result_orientations: tuple[Orientation, ...]
     equality_groups: tuple
+    result_unit: UnitGrid | None = None
 
     @classmethod
     def build(
@@ -276,15 +278,17 @@ def _binding_plan_from_types(
         equality_groups=equality_groups,
     )
     subspaces = bind_subspaces(plan)
-    return (
-        replace(plan, result_subspaces=subspaces)
-        if subspaces != plan.result_subspaces else plan
+    if subspaces != plan.result_subspaces:
+        plan = replace(plan, result_subspaces=subspaces)
+    result_unit = contract_units(
+        target_gatype, plan.bindings, plan.result_subspaces, plan.output_indices,
     )
+    return replace(plan, result_unit=result_unit)
 
 
 class TypeRules:
-    """Cached result-type inference combines a `BindingPlan`'s spliced subspaces, orientations, and
-    propagated traits into the output `GAType`."""
+    """Cached result-type inference combines a `BindingPlan`'s spliced subspaces, orientations,
+    propagated traits, and physical unit into the output `GAType`."""
 
     @staticmethod
     @lru_cache(maxsize=None)
@@ -293,6 +297,7 @@ class TypeRules:
             plan.result_subspaces,
             plan.result_orientations,
             bind_traits(plan),
+            units=plan.result_unit,
         )
 
 
